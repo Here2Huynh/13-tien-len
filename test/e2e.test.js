@@ -36,6 +36,8 @@ class FakeElement {
     this.hidden = false;
     this.scrollTop = 0;
     this.scrollHeight = 0;
+    this.style = {};
+    this.attrs = {};
     this.classList = {
       toggle: (name, force) => {
         if (force === undefined) force = !this._classes.has(name);
@@ -68,6 +70,12 @@ class FakeElement {
       this.children.push(node);
     }
   }
+  setAttribute(name, value) {
+    this.attrs[name] = String(value);
+  }
+  getAttribute(name) {
+    return this.attrs[name] ?? null;
+  }
   addEventListener(type, fn) {
     (this.listeners[type] ??= []).push(fn);
   }
@@ -81,6 +89,7 @@ const ELEMENT_IDS = [
   "message", "you-area", "you-header", "hand", "play-btn", "pass-btn",
   "hint-btn", "log", "banner", "banner-title", "banner-body",
   "continue-btn", "new-match-btn", "start-screen", "start-btn",
+  "round-num", "new-match-top", "sort-btn", "clear-btn",
 ];
 
 const registry = new Map();
@@ -128,10 +137,25 @@ function handCount() {
 }
 
 function scoreValues() {
-  return $("scores").children.map((chip) => {
-    const match = chip.textContent.match(/(-?\d+)\s*$/);
-    return match ? Number(match[1]) : NaN;
+  // Scoreboard boxes (TASK 010 layout): the points live in the .pts
+  // child of each box.
+  return $("scores").children.map((box) => {
+    const pts = box.children.find((child) =>
+      (child.className ?? "").split(/\s+/).includes("pts"),
+    );
+    return pts ? Number(pts.textContent) : NaN;
   });
+}
+
+function handOrder() {
+  // Rank+glyph of each rendered hand card, in display order.
+  return $("hand").children.map(
+    (btn) => btn.children[0].textContent + btn.children[1].textContent,
+  );
+}
+
+function sortArrow() {
+  return $("sort-btn").children.find((child) => child.className === "sort-arrow");
 }
 
 // Click through any round banners until it is the human's move.
@@ -165,6 +189,13 @@ function humanMove() {
 // ---------- the tests ----------
 
 test("e2e: start gate — nothing is dealt or running until Start Game is clicked", async () => {
+  // The real page's Sort button contains an arrow span; mirror it in
+  // the fake DOM before the page module grabs its elements.
+  const arrow = document.createElement("span");
+  arrow.className = "sort-arrow";
+  arrow.textContent = "↑";
+  $("sort-btn").append(arrow);
+
   await import("../src/main.js"); // boots the page; must NOT start a match
 
   // Before the click: start screen up, no hand dealt, no match
@@ -184,6 +215,47 @@ test("e2e: start gate — nothing is dealt or running until Start Game is clicke
   assert.equal($("start-screen").hidden, true);
   assert.equal(handCount(), 13);
   assert.ok($("log").children.length > 0);
+});
+
+test("e2e: Sort toggles the rendered hand asc -> desc -> asc; Clear empties the selection", async () => {
+  await import("../src/main.js"); // already booted and started by the gate test
+  settle();
+  const ascending = handOrder();
+  assert.ok(ascending.length > 1, "need a dealt hand to sort");
+
+  // Dealt ascending; arrow, title, and aria-label say so.
+  assert.equal(sortArrow().textContent, "↑");
+  assert.match($("sort-btn").title, /Sorted low to high \(ascending\)/);
+  assert.match($("sort-btn").getAttribute("aria-label"), /low to high ascending/);
+
+  // First tap: descending — the rendered order is the exact reverse.
+  $("sort-btn").click();
+  assert.deepEqual(handOrder(), [...ascending].reverse());
+  assert.equal(sortArrow().textContent, "↓");
+  assert.match($("sort-btn").title, /Sorted high to low \(descending\)/);
+  assert.match($("sort-btn").getAttribute("aria-label"), /high to low descending/);
+
+  // Second tap: back to ascending, strings restored.
+  $("sort-btn").click();
+  assert.deepEqual(handOrder(), ascending);
+  assert.equal(sortArrow().textContent, "↑");
+  assert.match($("sort-btn").title, /Sorted low to high \(ascending\)/);
+
+  // Clear: select a card, clear, selection is gone and Play agrees.
+  // (A click re-renders the hand, so re-read the card afterwards.)
+  settleToYourTurn();
+  $("hand").children[0].click();
+  assert.ok(
+    $("hand").children[0].className.includes("sel"),
+    "card should show selected",
+  );
+  $("clear-btn").click();
+  assert.ok(
+    $("hand").children.every((btn) => !btn.className.includes("sel")),
+    "no card should show selected after Clear",
+  );
+  $("play-btn").click();
+  assert.match($("message").textContent, /Select at least one card/);
 });
 
 test("e2e: a full match plays end to end through the real UI", async () => {
