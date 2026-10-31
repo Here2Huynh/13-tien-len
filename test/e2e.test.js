@@ -45,7 +45,32 @@ class FakeElement {
         else this._classes.delete(name);
         this._syncClass();
       },
+      add: (name) => {
+        this._classes.add(name);
+        this._syncClass();
+      },
+      remove: (name) => {
+        this._classes.delete(name);
+        this._syncClass();
+      },
     };
+  }
+  appendChild(node) {
+    const i = this.children.indexOf(node);
+    if (i >= 0) this.children.splice(i, 1);
+    this.children.push(node);
+    return node;
+  }
+  insertBefore(node, ref) {
+    const i = this.children.indexOf(node);
+    if (i >= 0) this.children.splice(i, 1);
+    const at = ref ? this.children.indexOf(ref) : -1;
+    if (at < 0) this.children.push(node);
+    else this.children.splice(at, 0, node);
+    return node;
+  }
+  getBoundingClientRect() {
+    return this._rect ?? { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
   }
   _syncClass() {
     this._className = [...this._classes].join(" ");
@@ -313,4 +338,124 @@ test("e2e: illegal clicks show a message and change nothing; New Match resets", 
   assert.equal($("play-btn").disabled, false);
 
   globalThis.setTimeout = realSetTimeout;
+});
+
+test("e2e: the pile shows a muted 'Before that' line for the play the current one beat", async () => {
+  await import("../src/main.js"); // already booted; a match is in progress
+  // The previous test restored real timers; reinstall the manual queue.
+  globalThis.setTimeout = (fn) => {
+    timerQueue.push(fn);
+    return timerQueue.length;
+  };
+  let seen = null;
+  for (let turn = 0; turn < 80 && !seen; turn++) {
+    if (settleToYourTurn() === "matchEnd") {
+      $("new-match-btn").click();
+      continue;
+    }
+    const before = $("to-beat").children.find((child) =>
+      child.textContent.startsWith("Before that:"),
+    );
+    if (before) seen = before;
+    $("hint-btn").click();
+    if ($("message").textContent.startsWith("Hint: pass")) $("pass-btn").click();
+    else $("play-btn").click();
+  }
+  assert.ok(seen, "a 'Before that' line should appear once plays chain in a trick");
+  assert.match(seen.textContent, /^Before that: (You|Mina|Kenji|Rosa) — /);
+  assert.equal(seen.style.opacity, ".65");
+});
+
+// --- Drag-to-rearrange (TASK 010) -------------------------------------
+// The fake DOM has no layout engine, so each hand card is given a
+// stubbed rect: two wrapped rows of 54x76 cards. The pointer events
+// are dispatched through the listeners main.js registered, exercising
+// its real insertion math against those rects.
+function fire(el, type, ev = {}) {
+  for (const fn of el.listeners[type] ?? []) fn({ button: 0, pointerId: 1, ...ev });
+}
+
+function layoutHand() {
+  const kids = $("hand").children;
+  const half = Math.ceil(kids.length / 2);
+  kids.forEach((node, i) => {
+    const row = i < half ? 0 : 1;
+    const left = (i % half) * 62;
+    const top = row * 84;
+    node._rect = { left, top, right: left + 54, bottom: top + 76, width: 54, height: 76 };
+  });
+  return half;
+}
+
+const RANK_SEQ = ["3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A", "2"];
+const SUIT_SEQ = ["♠", "♣", "♦", "♥"];
+function byValue(a, b) {
+  const rankDiff =
+    RANK_SEQ.indexOf(a.slice(0, -1)) - RANK_SEQ.indexOf(b.slice(0, -1));
+  if (rankDiff !== 0) return rankDiff;
+  return SUIT_SEQ.indexOf(a.at(-1)) - SUIT_SEQ.indexOf(b.at(-1));
+}
+
+function waitReal(ms) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    // Spin: the post-drag click suppression is wall-clock based.
+  }
+}
+
+test("e2e: drag reorders across rows and past the end; order persists; Sort overrides it", async () => {
+  await import("../src/main.js"); // already booted; a match is in progress
+  settleToYourTurn();
+  assert.ok($("hand").children.length >= 6, "need at least 6 cards to drag");
+
+  // Cross-row: drag a second-row card up into the first row, slot 2.
+  const half = layoutHand();
+  const before = handOrder();
+  const dragIdx = half + 2;
+  const dragEl = $("hand").children[dragIdx];
+  fire(dragEl, "pointerdown", { clientX: 151, clientY: 122 });
+  fire(dragEl, "pointermove", { clientX: 134, clientY: 40 });
+  assert.ok(dragEl.className.includes("dragging"), "card should lift while dragging");
+  assert.match(dragEl.style.transform, /^translate\(/);
+  fire(dragEl, "pointerup", {});
+  const expectedA = [...before];
+  const [moved] = expectedA.splice(dragIdx, 1);
+  expectedA.splice(2, 0, moved);
+  assert.deepEqual(handOrder(), expectedA);
+
+  // Past the end: drag the first card below/right of everything.
+  layoutHand();
+  const firstEl = $("hand").children[0];
+  fire(firstEl, "pointerdown", { clientX: 27, clientY: 38 });
+  fire(firstEl, "pointermove", { clientX: 600, clientY: 300 });
+  fire(firstEl, "pointerup", {});
+  const expectedB = [...expectedA.slice(1), expectedA[0]];
+  assert.deepEqual(handOrder(), expectedB);
+
+  // Persistence: a re-render (select + deselect) keeps the manual order.
+  waitReal(300); // outlast the 250ms post-drag click suppression
+  $("hand").children[0].click();
+  assert.ok($("hand").children[0].className.includes("sel"));
+  assert.deepEqual(handOrder(), expectedB);
+  $("hand").children[0].click();
+  assert.deepEqual(handOrder(), expectedB);
+
+  // Sort after a manual order: first tap restores ascending (the
+  // mockup's rule), second tap flips to descending.
+  $("sort-btn").click();
+  assert.deepEqual(handOrder(), [...expectedB].sort(byValue));
+  assert.equal(sortArrow().textContent, "↑");
+  $("sort-btn").click();
+  assert.deepEqual(handOrder(), [...expectedB].sort(byValue).reverse());
+  assert.equal(sortArrow().textContent, "↓");
+  $("sort-btn").click(); // leave the hand ascending for later tests
+  assert.equal(sortArrow().textContent, "↑");
+
+  // A plain tap (pointer down/up, no move) still selects via click.
+  const tapEl = $("hand").children[1];
+  fire(tapEl, "pointerdown", { clientX: 89, clientY: 38 });
+  fire(tapEl, "pointerup", {});
+  tapEl.click();
+  assert.ok($("hand").children[1].className.includes("sel"), "tap should select");
+  $("hand").children[1].click(); // deselect again
 });

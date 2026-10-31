@@ -49,6 +49,29 @@ const selected = new Set(); // card ids the player has tapped
 // selection and play are by card id.
 let sortAsc = true;
 
+// Manual drag order (adapter-only): card ids in the player's arranged
+// order for the current round, or null while the hand follows the sort
+// direction. orderTrick pins it to one round — a new trick state
+// object means a new round, which deals ascending again.
+let orderIds = null;
+let orderTrick = null;
+let lastDisplayIds = [];
+
+// Drag state (the mockup's): the card element being dragged, the drag
+// origin (adjusted as the card changes slots), and whether the pointer
+// has moved past the tap threshold. A finished drag suppresses the
+// click that follows it for 250ms so a drop never toggles selection.
+let dragState = null;
+let suppressClickUntil = 0;
+
+// The pile's "Before that" line: the trick state exposes only the
+// current play, so the adapter remembers the play it replaced,
+// watching successive renders. Reset when the trick clears or turns
+// over to a new round.
+let lastPlay = null;
+let prevPlay = null;
+let lastPlayKey = null;
+
 const ORDINALS = ["1st", "2nd", "3rd", "4th"];
 
 const controller = createController({ onChange: render });
@@ -177,6 +200,94 @@ function renderBanner(state) {
   els.newMatchBtn.hidden = state.phase !== "matchEnd";
 }
 
+// Drag-to-rearrange, ported from the mockup: while dragging, the
+// dragged card moves to wherever the pointer is in reading order (row
+// by row, left to right) — including across the wrap onto another row.
+// The dragged DOM node is moved, never recreated, so pointer capture
+// on it survives; on drop the manual order is synced from the DOM.
+function dragSwap(dragEl, clientX, clientY) {
+  if (!dragState) return;
+  const cards = Array.from(els.hand.children);
+  const from = cards.indexOf(dragEl);
+  if (from < 0) return;
+  const others = cards.filter((c) => c !== dragEl);
+  // Insertion slot among the other cards: the first card the pointer
+  // is "before" — above its row, or in its row but left of its centre.
+  // Hit-testing uses the other cards' layout positions only, never
+  // the dragged card's lifted visual position.
+  let target = others.length;
+  for (let i = 0; i < others.length; i++) {
+    const r = others[i].getBoundingClientRect();
+    if (clientY < r.top) {
+      target = i;
+      break;
+    }
+    if (clientY <= r.bottom && clientX < r.left + r.width / 2) {
+      target = i;
+      break;
+    }
+  }
+  if (target === from) return; // already in that slot — nothing to move
+  const before = dragEl.getBoundingClientRect();
+  if (target >= others.length) els.hand.appendChild(dragEl);
+  else els.hand.insertBefore(dragEl, others[target]);
+  // The card's transform is unchanged by the move, so the shift in its
+  // rect is the shift in its layout slot: absorb it into the drag
+  // origin (both axes, since the slot may now be on a different row)
+  // so the card stays glued under the pointer instead of jumping.
+  const after = dragEl.getBoundingClientRect();
+  dragState.startX += after.left - before.left;
+  dragState.startY += after.top - before.top;
+}
+
+function attachDragHandlers(btn) {
+  btn.addEventListener("pointerdown", (ev) => {
+    if (controller.state.phase !== "playing") return;
+    if (ev.button !== undefined && ev.button !== 0) return;
+    dragState = {
+      el: btn,
+      startX: ev.clientX,
+      startY: ev.clientY,
+      x: ev.clientX,
+      y: ev.clientY,
+      active: false,
+    };
+  });
+  btn.addEventListener("pointermove", (ev) => {
+    if (!dragState || dragState.el !== btn) return;
+    dragState.x = ev.clientX;
+    dragState.y = ev.clientY;
+    const dx = ev.clientX - dragState.startX;
+    const dy = ev.clientY - dragState.startY;
+    if (!dragState.active) {
+      if (Math.abs(dx) < 9 && Math.abs(dy) < 9) return; // still a tap
+      dragState.active = true;
+      btn.classList.add("dragging");
+      try {
+        btn.setPointerCapture(ev.pointerId);
+      } catch {
+        // No capture available (e.g. a simulated pointer) — drag on.
+      }
+    }
+    dragSwap(btn, ev.clientX, ev.clientY);
+    btn.style.transform = `translate(${dragState.x - dragState.startX}px, ${dragState.y - dragState.startY}px)`;
+  });
+  const endDrag = () => {
+    if (!dragState || dragState.el !== btn) return;
+    const wasActive = dragState.active;
+    dragState = null;
+    btn.classList.remove("dragging");
+    btn.style.transform = "";
+    if (wasActive) {
+      suppressClickUntil = Date.now() + 250;
+      orderIds = Array.from(els.hand.children).map((node) => node.cardId);
+      render(controller.state);
+    }
+  };
+  btn.addEventListener("pointerup", endDrag);
+  btn.addEventListener("pointercancel", endDrag);
+}
+
 function renderScoreboard(state) {
   els.roundNum.textContent = `${state.match ? state.match.roundNumber : 1}`;
   els.scores.textContent = "";
@@ -213,6 +324,17 @@ function renderScoreboard(state) {
 }
 
 function render(state) {
+  // A new trick state object = a new round: the manual drag order and
+  // the pile's previous-play tracking reset; the deal is ascending.
+  if (state.trick !== orderTrick) {
+    orderTrick = state.trick;
+    orderIds = null;
+    sortAsc = true;
+    lastPlay = null;
+    prevPlay = null;
+    lastPlayKey = null;
+  }
+
   // Score board — always visible.
   renderScoreboard(state);
 
@@ -228,14 +350,33 @@ function render(state) {
       : `Trick ${state.trick.trickNumber} — ${SEAT_NAMES[state.trick.currentPlayer]} to play`;
     els.toBeat.textContent = "";
     if (state.trick.currentPlay) {
+      const cp = state.trick.currentPlay;
+      const key = `${cp.player}:${cp.cards.map((c) => c.id).join(",")}`;
+      if (key !== lastPlayKey) {
+        prevPlay = lastPlay;
+        lastPlay = { player: cp.player, cards: cp.cards };
+        lastPlayKey = key;
+      }
       const line = el("div", "leadline");
-      const desc = el("b", null, describePlay(state.trick.currentPlay.cards));
-      const by = el("b", null, SEAT_NAMES[state.trick.currentPlay.player]);
+      const desc = el("b", null, describePlay(cp.cards));
+      const by = el("b", null, SEAT_NAMES[cp.player]);
       line.append(document.createTextNode("To beat: "), desc, document.createTextNode(" · played by "), by);
       const cards = el("div", "minicards");
-      state.trick.currentPlay.cards.forEach((card) => cards.append(miniCard(card)));
+      cp.cards.forEach((card) => cards.append(miniCard(card)));
       els.toBeat.append(line, cards);
+      if (prevPlay) {
+        const before = el(
+          "div",
+          "leadline",
+          `Before that: ${SEAT_NAMES[prevPlay.player]} — ${describePlay(prevPlay.cards)}`,
+        );
+        before.style.opacity = ".65";
+        els.toBeat.append(before);
+      }
     } else {
+      lastPlay = null;
+      prevPlay = null;
+      lastPlayKey = null;
       els.toBeat.append(el("div", "empty", "New trick — anything goes"));
     }
   } else {
@@ -247,11 +388,21 @@ function render(state) {
   }
   els.message.textContent = state.message;
 
-  // Your hand — rendered in the current sort direction; comeback-bomb
+  // Your hand — rendered in the manual drag order when one exists for
+  // this round, else in the current sort direction; comeback-bomb
   // cards carry the mockup's foil highlight.
   els.youArea.classList.toggle("myturn", Boolean(myTurn));
-  const myHand = state.trick ? sortHand(state.trick.hands[HUMAN]) : [];
-  if (!sortAsc) myHand.reverse();
+  const sortedHand = state.trick ? sortHand(state.trick.hands[HUMAN]) : [];
+  let myHand = sortedHand;
+  if (orderIds) {
+    const byId = new Map(sortedHand.map((card) => [card.id, card]));
+    const ordered = orderIds.filter((id) => byId.has(id)).map((id) => byId.get(id));
+    const rest = sortedHand.filter((card) => !orderIds.includes(card.id));
+    myHand = [...ordered, ...rest];
+  } else if (!sortAsc) {
+    myHand = [...sortedHand].reverse();
+  }
+  lastDisplayIds = myHand.map((card) => card.id);
   const heldIds = new Set(myHand.map((card) => card.id));
   for (const id of [...selected]) if (!heldIds.has(id)) selected.delete(id);
   els.youHeader.textContent = state.trick
@@ -266,6 +417,7 @@ function render(state) {
       `card ${label.color}${selected.has(card.id) ? " sel" : ""}${hot.has(card.id) ? " bombhot" : ""}`,
     );
     btn.type = "button";
+    btn.cardId = card.id;
     btn.disabled = !myTurn;
     btn.append(
       el("span", "r", label.rank),
@@ -273,10 +425,12 @@ function render(state) {
       el("span", "big", label.glyph),
     );
     btn.addEventListener("click", () => {
+      if (Date.now() < suppressClickUntil) return; // a drag just ended — not a tap
       if (selected.has(card.id)) selected.delete(card.id);
       else selected.add(card.id);
       render(state);
     });
+    attachDragHandlers(btn);
     els.hand.append(btn);
   }
 
@@ -343,7 +497,16 @@ els.newMatchTop.addEventListener("click", () => controller.newMatch());
 els.startBtn.addEventListener("click", () => controller.newMatch());
 
 els.sortBtn.addEventListener("click", () => {
-  sortAsc = !sortAsc;
+  if (!controller.state.trick) return;
+  // The mockup's semantics: direction derives from the hand's actual
+  // order — ascending flips to descending, descending to ascending,
+  // and a manually dragged order first restores ascending.
+  const ascIds = sortHand(controller.state.trick.hands[HUMAN]).map((c) => c.id);
+  const isAsc =
+    lastDisplayIds.length === ascIds.length &&
+    lastDisplayIds.every((id, i) => id === ascIds[i]);
+  sortAsc = !isAsc;
+  orderIds = null; // Sort overrides any manual drag order
   render(controller.state);
 });
 
