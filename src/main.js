@@ -32,6 +32,8 @@ const els = {
   bannerBody: $("banner-body"),
   continueBtn: $("continue-btn"),
   newMatchBtn: $("new-match-btn"),
+  startScreen: $("start-screen"),
+  startBtn: $("start-btn"),
 };
 
 const selected = new Set(); // card ids the player has tapped
@@ -162,7 +164,7 @@ function render(state) {
       els.toBeat.append(el("span", "beat-label", "New trick — anything goes"));
     }
   } else {
-    els.trickInfo.textContent = state.phase === "idle" ? "Dealing…" : "Round complete";
+    els.trickInfo.textContent = state.phase === "idle" ? "Waiting to start" : "Round complete";
     els.toBeat.textContent = "";
   }
   els.message.textContent = state.message;
@@ -199,6 +201,10 @@ function render(state) {
   for (const line of state.log) els.log.append(el("li", null, line));
   els.log.scrollTop = els.log.scrollHeight;
 
+  // Start gate: the start screen covers the table until the first
+  // match is started; it never comes back (New Match goes straight in).
+  els.startScreen.hidden = state.phase !== "idle";
+
   renderBanner(state);
 }
 
@@ -226,5 +232,8 @@ els.hintBtn.addEventListener("click", () => {
 
 els.continueBtn.addEventListener("click", () => controller.continueRound());
 els.newMatchBtn.addEventListener("click", () => controller.newMatch());
+els.startBtn.addEventListener("click", () => controller.newMatch());
 
-controller.newMatch();
+// No auto-start: paint the idle state (start screen up, nothing dealt)
+// and wait for the Start Game click.
+render(controller.state);
