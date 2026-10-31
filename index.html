@@ -3,14 +3,54 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>13 — Tien Len</title>
+    <title>13 — Tiến Lên</title>
+    <link rel="stylesheet" href="./src/styles.css" />
   </head>
   <body>
-    <main>
-      <h1>13 — Tien Len</h1>
-      <p>Scaffold only. Game UI comes in a later task.</p>
-      <p id="status">Loading…</p>
+    <header id="topbar">
+      <h1>13 <span class="subtitle">Tiến Lên · Nam Rules · first to 13</span></h1>
+      <div id="scores" aria-label="Match scores"></div>
+    </header>
+
+    <main id="table">
+      <section class="seat" id="seat-2" data-seat="2"></section>
+      <section class="seat" id="seat-3" data-seat="3"></section>
+
+      <section id="center">
+        <div id="trick-info">Dealing…</div>
+        <div id="to-beat"></div>
+        <div id="message" role="status"></div>
+      </section>
+
+      <section class="seat" id="seat-1" data-seat="1"></section>
+
+      <section id="you-area">
+        <div id="you-header"></div>
+        <div id="hand" aria-label="Your hand"></div>
+        <div id="controls">
+          <button id="play-btn" type="button">Play</button>
+          <button id="pass-btn" type="button">Pass</button>
+          <button id="hint-btn" type="button">Hint</button>
+        </div>
+      </section>
     </main>
+
+    <section id="log-wrap">
+      <h2>Play log</h2>
+      <ol id="log"></ol>
+    </section>
+
+    <div id="banner" hidden>
+      <div id="banner-card">
+        <h2 id="banner-title"></h2>
+        <div id="banner-body"></div>
+        <div id="banner-actions">
+          <button id="continue-btn" type="button">Continue</button>
+          <button id="new-match-btn" type="button" hidden>New Match</button>
+        </div>
+      </div>
+    </div>
+
     <script type="module" src="./src/main.js"></script>
   </body>
 </html>
