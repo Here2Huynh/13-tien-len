@@ -32,4 +32,13 @@ npm run build # static build
 - `src/engine/match.js` — match state: scores across rounds, first to 13, next-round leader
 - `src/engine/ai.js` — simple deterministic CPU policy: play enumeration + `chooseAction` per turn
 - `src/engine/runner.js` — headless AI-vs-AI full-match runner with a seeded rng
+- `src/ui/model.js` — pure view-model helpers (card labels, selection checks, trick view, log phrasing)
+- `src/ui/controller.js` — DOM-free game controller driving the engine; the page is a thin adapter over it
+- `src/main.js` + `src/styles.css` — the playable page: you vs Mina, Kenji, and Rosa, full match to 13
+
+## Play
+
+Run `npm run build` and open `dist/index.html` in a browser (or serve
+the `dist/` folder). Tap cards to select, then Play or Pass; Hint
+highlights the CPU policy's suggestion for your seat.
 - `test/` — unit tests
