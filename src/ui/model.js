@@ -60,9 +60,14 @@ export function applyToTrickView(view, event) {
 
 // Human-readable name for a play, for the log and banners. Detection
 // is the engine's; this only phrases the result.
-export function describePlay(cards) {
+export function describePlay(cards, wasBomb = false) {
   const bomb = detectBomb(cards);
-  if (bomb) {
+  // Pair sequences can only ever be played as bombs, so they always
+  // phrase as one. A four of a kind phrases as a bomb only when it
+  // actually functioned as one (played against a single 2 / pair of
+  // 2s via the bomb path, per the caller); led or played as a plain
+  // combination, it phrases as a plain four of a kind.
+  if (bomb && (bomb.kind !== "four-of-a-kind" || wasBomb)) {
     if (bomb.kind === "four-of-a-kind") return "a BOMB — four of a kind";
     if (bomb.kind === "pair-sequence-3") return "a BOMB — 3-pair double run";
     return "a BOMB — 4-pair double run";
