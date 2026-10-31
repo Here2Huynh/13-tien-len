@@ -1,5 +1,5 @@
 import { newDeal } from "../engine/deal.js";
-import { createMatch, startRound, applyInstantWin, finishRound } from "../engine/match.js";
+import { createMatch, startRound, applyInstantWin, finishRound, applyChop } from "../engine/match.js";
 import { playCards, passTurn } from "../engine/trick.js";
 import { chooseAction } from "../engine/ai.js";
 import { detectBomb, bombTarget } from "../engine/bombs.js";
@@ -9,6 +9,7 @@ import {
   emptyTrickView,
   applyToTrickView,
   describePlay,
+  chopLogLine,
   validateSelection,
 } from "./model.js";
 
@@ -50,6 +51,7 @@ export function createController(options = {}) {
   };
 
   let cpuPending = false;
+  let roundChops = []; // this round's chop transfers, for the summary
 
   const emit = () => onChange(state);
   const name = (player) => SEAT_NAMES[player];
@@ -62,6 +64,7 @@ export function createController(options = {}) {
     state.trickView = emptyTrickView();
     state.roundSummary = null;
     state.message = "";
+    roundChops = [];
     const roundNo = state.match.roundNumber;
     const start = startRound(state.match, dealHands());
     if (start.type === "instant-win") {
@@ -72,6 +75,7 @@ export function createController(options = {}) {
         finishOrder: [start.winner],
         deltas,
         penalties: [],
+        chops: [],
         scores: [...state.match.scores],
         matchWinner: state.match.winner,
       };
@@ -112,6 +116,16 @@ export function createController(options = {}) {
         bombTarget(prevPlay.cards) !== null &&
         detectBomb(action.cards) !== null;
       log(`${name(player)} plays ${describePlay(action.cards, wasBomb)}.`);
+      // Chop: bombing a played 2 / pair of 2s transfers 1 point per
+      // 2 from its owner to the bomber, instantly (TASK 012). The
+      // engine decides what counts (applyChop via bombBeats); the
+      // transfer lands on the match scores before this emit, so the
+      // score display moves on the same render.
+      const chop = applyChop(state.match, prevPlay, action.cards, player);
+      if (chop) {
+        roundChops.push(chop);
+        log(chopLogLine(chop));
+      }
     } else {
       log(`${name(player)} passes.`);
     }
@@ -134,6 +148,7 @@ export function createController(options = {}) {
         finishOrder: [...trick.finishOrder],
         deltas: result.deltas,
         penalties: result.penalties,
+        chops: [...roundChops],
         scores: [...state.match.scores],
         matchWinner: result.matchWinner,
       };

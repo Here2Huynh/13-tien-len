@@ -92,6 +92,16 @@ export function describePlay(cards, wasBomb = false) {
   }
 }
 
+// The log line for a chop (TASK 012): the moment a played 2 or pair
+// of 2s is bombed, its owner pays the bomber 1 point per 2.
+// "Chop: Mina's 2 was bombed — Mina pays 1 to Kenji."
+export function chopLogLine({ payer, payee, points }) {
+  const what = points === 2 ? "pair of 2s" : "2";
+  const whose = payer === HUMAN ? "Your" : `${SEAT_NAMES[payer]}'s`;
+  const pays = payer === HUMAN ? "pay" : "pays";
+  return `Chop: ${whose} ${what} was bombed — ${SEAT_NAMES[payer]} ${pays} ${points} to ${SEAT_NAMES[payee]}.`;
+}
+
 const PLACE_LABELS = ["1st", "2nd", "3rd", "4th"];
 
 // Rows for the round-end banner: finish order + score deltas.
