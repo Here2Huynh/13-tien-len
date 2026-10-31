@@ -69,10 +69,15 @@ test("describePlay phrases engine detections, bombs first", () => {
     ]),
     /BOMB — 3-pair/,
   );
-  assert.match(
-    describePlay([c("8", "spades"), c("8", "clubs"), c("8", "diamonds"), c("8", "hearts")]),
-    /BOMB — four of a kind/,
-  );
+});
+
+test("describePlay: a four of a kind is a bomb only when it functioned as one", () => {
+  const quad = [c("8", "spades"), c("8", "clubs"), c("8", "diamonds"), c("8", "hearts")];
+  // Led, or played as a plain combination: plain phrasing, no BOMB.
+  assert.equal(describePlay(quad), "four of a kind, high card 8♥");
+  assert.equal(describePlay(quad, false), "four of a kind, high card 8♥");
+  // Played against a single 2 / pair of 2s via the bomb path: a bomb.
+  assert.equal(describePlay(quad, true), "a BOMB — four of a kind");
 });
 
 test("roundResultRows and scoreRows map places, deltas, and the leader", () => {
