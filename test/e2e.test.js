@@ -459,3 +459,21 @@ test("e2e: drag reorders across rows and past the end; order persists; Sort over
   assert.ok($("hand").children[1].className.includes("sel"), "tap should select");
   $("hand").children[1].click(); // deselect again
 });
+
+test("e2e: select then deselect — the second tap clears .sel and Play reports no selection", async () => {
+  await import("../src/main.js"); // already booted; a match is in progress
+  settleToYourTurn();
+  // (Each click re-renders the hand, so re-read the card afterwards.)
+  $("hand").children[0].click();
+  assert.ok(
+    $("hand").children[0].className.includes("sel"),
+    "first tap should select the card",
+  );
+  $("hand").children[0].click();
+  assert.ok(
+    $("hand").children.every((btn) => !btn.className.includes("sel")),
+    "second tap must leave no card selected",
+  );
+  $("play-btn").click();
+  assert.match($("message").textContent, /Select at least one card/);
+});
