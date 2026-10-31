@@ -2,58 +2,79 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
     <title>13 — Tiến Lên</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,600;0,700;0,800;0,900;1,900&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="./src/styles.css" />
   </head>
   <body>
-    <header id="topbar">
-      <h1>13 <span class="subtitle">Tiến Lên · Nam Rules · first to 13</span></h1>
-      <div id="scores" aria-label="Match scores"></div>
-    </header>
+    <div class="wrap">
+      <header class="top">
+        <h1>13<span class="sub">Tiến Lên · Nam Rules · 1P vs CPU</span></h1>
+        <div class="matchbar">
+          <span class="chip">Round <b id="round-num">1</b></span>
+          <span class="chip gold">First to <b>13</b> wins the match</span>
+          <button class="ghost small" id="new-match-top" type="button">New match</button>
+        </div>
+      </header>
 
-    <main id="table">
-      <section class="seat" id="seat-2" data-seat="2"></section>
-      <section class="seat" id="seat-3" data-seat="3"></section>
+      <section class="scores" id="scores" aria-label="Match scores"></section>
 
-      <section id="center">
-        <div id="trick-info">Dealing…</div>
-        <div id="to-beat"></div>
-        <div id="message" role="status"></div>
-      </section>
+      <section class="table" aria-label="Card table">
+        <div class="tablegrid">
+          <div class="seat top" id="seat-2"></div>
+          <div class="seat side left" id="seat-1"></div>
 
-      <section class="seat" id="seat-1" data-seat="1"></section>
+          <div class="center">
+            <div class="pile" id="to-beat"></div>
+            <div class="turnbanner" id="trick-info">Waiting to start</div>
+          </div>
 
-      <section id="you-area">
-        <div id="you-header"></div>
-        <div id="hand" aria-label="Your hand"></div>
-        <div id="controls">
-          <button id="play-btn" type="button">Play</button>
-          <button id="pass-btn" type="button">Pass</button>
-          <button id="hint-btn" type="button">Hint</button>
+          <div class="seat side right" id="seat-3"></div>
+
+          <div class="handzone" id="you-area">
+            <div class="handlabel">
+              <span class="t" id="you-header">You</span>
+              <span class="hintline">Tap cards to select, then Play. Drag cards to rearrange your hand.</span>
+            </div>
+            <div class="hand" id="hand" aria-label="Your hand"></div>
+            <div class="selinfo" id="message" role="status"></div>
+            <div class="controls">
+              <button id="play-btn" type="button">Play cards</button>
+              <button id="pass-btn" class="ghost" type="button">Pass</button>
+              <button id="hint-btn" class="ghost" type="button">Hint</button>
+              <button id="sort-btn" class="ghost" type="button" title="Sorted low to high (ascending) — tap to sort high to low (descending)" aria-label="Sort hand low to high ascending, tap to sort high to low descending">Sort<span class="sort-arrow" aria-hidden="true">↑</span></button>
+              <button id="clear-btn" class="ghost" type="button">Clear</button>
+            </div>
+          </div>
         </div>
       </section>
-    </main>
 
-    <section id="log-wrap">
-      <h2>Play log</h2>
-      <ol id="log"></ol>
-    </section>
+      <div class="below">
+        <section class="panel">
+          <h2>Table talk</h2>
+          <ol class="log" id="log"></ol>
+        </section>
+      </div>
+    </div>
 
-    <div id="start-screen">
-      <div id="start-card">
+    <div class="overlay" id="start-screen">
+      <div class="modal">
         <h2>13 — Tiến Lên</h2>
-        <p class="start-seats">You vs Mina · Kenji · Rosa</p>
-        <p>First to 13 wins the match.</p>
+        <div class="sub2">You vs Mina · Kenji · Rosa</div>
+        <p class="note">First to 13 wins the match.</p>
         <button id="start-btn" type="button">Start Game</button>
       </div>
     </div>
 
-    <div id="banner" hidden>
-      <div id="banner-card">
+    <div class="overlay" id="banner" hidden>
+      <div class="modal">
         <h2 id="banner-title"></h2>
         <div id="banner-body"></div>
-        <div id="banner-actions">
+        <div class="banner-actions">
           <button id="continue-btn" type="button">Continue</button>
           <button id="new-match-btn" type="button" hidden>New Match</button>
         </div>

@@ -1,5 +1,7 @@
 import { createController } from "./ui/controller.js";
-import { isBomb } from "./engine/bombs.js";
+import { enumerateBombs } from "./engine/ai.js";
+import { isComebackBomb, bombBeats } from "./engine/bombs.js";
+import { hasComebackTurn } from "./engine/trick.js";
 import {
   SEAT_NAMES,
   HUMAN,
@@ -7,7 +9,6 @@ import {
   sortHand,
   describePlay,
   roundResultRows,
-  scoreRows,
 } from "./ui/model.js";
 
 // Thin DOM adapter over the game controller. All flow and rules live
@@ -35,9 +36,43 @@ const els = {
   newMatchBtn: $("new-match-btn"),
   startScreen: $("start-screen"),
   startBtn: $("start-btn"),
+  roundNum: $("round-num"),
+  newMatchTop: $("new-match-top"),
+  sortBtn: $("sort-btn"),
+  clearBtn: $("clear-btn"),
 };
 
 const selected = new Set(); // card ids the player has tapped
+
+// Hand display order (adapter-only): dealt ascending; the Sort button
+// toggles the rendered order. The engine's hand never changes order —
+// selection and play are by card id.
+let sortAsc = true;
+
+// Manual drag order (adapter-only): card ids in the player's arranged
+// order for the current round, or null while the hand follows the sort
+// direction. orderTrick pins it to one round — a new trick state
+// object means a new round, which deals ascending again.
+let orderIds = null;
+let orderTrick = null;
+let lastDisplayIds = [];
+
+// Drag state (the mockup's): the card element being dragged, the drag
+// origin (adjusted as the card changes slots), and whether the pointer
+// has moved past the tap threshold. A finished drag suppresses the
+// click that follows it for 250ms so a drop never toggles selection.
+let dragState = null;
+let suppressClickUntil = 0;
+
+// The pile's "Before that" line: the trick state exposes only the
+// current play, so the adapter remembers the play it replaced,
+// watching successive renders. Reset when the trick clears or turns
+// over to a new round.
+let lastPlay = null;
+let prevPlay = null;
+let lastPlayKey = null;
+
+const ORDINALS = ["1st", "2nd", "3rd", "4th"];
 
 const controller = createController({ onChange: render });
 
@@ -50,29 +85,57 @@ function el(tag, className, text) {
 
 function miniCard(card) {
   const label = cardLabel(card);
-  return el("span", `mini-card ${label.color}`, label.text);
+  const node = el("div", `card mini ${label.color}`);
+  node.append(el("span", "r", label.rank), el("span", "s", label.glyph));
+  return node;
 }
 
+// Mockup seat presentation: name + cards-left count, a status line,
+// and one card back per card held (side seats stack them vertically
+// via CSS). Played cards live in the center pile, as in the mockup.
 function renderSeat(player, state) {
   const box = els.seats[player];
   box.textContent = "";
+  const trick = state.trick;
   const active =
-    state.phase === "playing" && state.trick && state.trick.currentPlayer === player;
-  box.classList.toggle("active", Boolean(active));
-  box.append(el("div", "seat-name", SEAT_NAMES[player]));
-  const count = state.trick ? state.trick.hands[player].length : 0;
-  const countLine = el("div", "seat-count");
-  const backs = el("span", "backs");
-  for (let i = 0; i < Math.min(count, 5); i++) backs.append(el("span", "back"));
-  countLine.append(backs, document.createTextNode(`${count} cards`));
-  box.append(countLine);
-  const playBox = el("div", "seat-play");
+    state.phase === "playing" && trick && trick.currentPlayer === player;
+  const finishIdx = trick ? trick.finishOrder.indexOf(player) : -1;
+  const count = trick ? trick.hands[player].length : 0;
+  const opp = el("div", `opp${active ? " active" : ""}`);
+  const who = el("div", "who");
+  who.append(
+    document.createTextNode(`${SEAT_NAMES[player]} · `),
+    el("span", "cnt", `${count}`),
+    document.createTextNode(" cards"),
+  );
+  opp.append(who);
   const entry = state.trickView.entries[player];
-  // Foil hook (TASK 009): bomb plays get the holographic treatment.
-  if (entry?.type === "play" && isBomb(entry.cards)) playBox.classList.toggle("bomb", true);
-  if (entry?.type === "play") entry.cards.forEach((card) => playBox.append(miniCard(card)));
-  else if (entry?.type === "pass") playBox.append(el("span", "pass-badge", "PASS"));
-  box.append(playBox);
+  let status = "";
+  if (finishIdx >= 0) status = `Out — ${ORDINALS[finishIdx]}`;
+  else if (active) status = "Thinking…";
+  else if (entry?.type === "pass") status = "Passed this trick";
+  opp.append(el("div", "status", status));
+  const backs = el("div", "backs");
+  if (finishIdx < 0) for (let i = 0; i < count; i++) backs.append(el("div", "back"));
+  opp.append(backs);
+  box.append(opp);
+}
+
+// Cards in the human's hand that could jump back in as a comeback
+// bomb right now (passed this trick, a bombable 2 is on top, and a
+// comeback-legal bomb in hand beats it) — the mockup's foil set.
+// Pure engine reads; nothing here changes game state.
+function comebackHotIds(state) {
+  const trick = state.trick;
+  if (!trick || state.phase !== "playing" || !trick.currentPlay) return new Set();
+  if (!hasComebackTurn(trick, HUMAN)) return new Set();
+  const hot = new Set();
+  for (const bomb of enumerateBombs(trick.hands[HUMAN])) {
+    if (isComebackBomb(bomb) && bombBeats(bomb, trick.currentPlay.cards)) {
+      bomb.forEach((card) => hot.add(card.id));
+    }
+  }
+  return hot;
 }
 
 function renderBanner(state) {
@@ -91,7 +154,7 @@ function renderBanner(state) {
     body.append(
       el(
         "p",
-        null,
+        "note",
         `${SEAT_NAMES[winner]} was dealt an instant-win hand (${kind.replaceAll("-", " ")}). Everyone else pays 2.`,
       ),
     );
@@ -128,7 +191,7 @@ function renderBanner(state) {
     body.append(
       el(
         "p",
-        null,
+        "note",
         `Penalty: ${SEAT_NAMES[penalty.player]} pays ${penalty.points} to ${SEAT_NAMES[penalty.paidTo]} (leftover 2s / unused bombs).`,
       ),
     );
@@ -137,63 +200,237 @@ function renderBanner(state) {
   els.newMatchBtn.hidden = state.phase !== "matchEnd";
 }
 
-function render(state) {
-  // Score board — always visible.
-  els.scores.textContent = "";
-  for (const row of scoreRows(state.match ? state.match.scores : [0, 0, 0, 0])) {
-    const chip = el(
-      "span",
-      `score-chip${row.isLeader ? " leader" : ""}${row.player === HUMAN ? " you" : ""}`,
-      `${row.name} ${row.score}`,
-    );
-    els.scores.append(chip);
+// Drag-to-rearrange, ported from the mockup: while dragging, the
+// dragged card moves to wherever the pointer is in reading order (row
+// by row, left to right) — including across the wrap onto another row.
+// The dragged DOM node is moved, never recreated, so pointer capture
+// on it survives; on drop the manual order is synced from the DOM.
+function dragSwap(dragEl, clientX, clientY) {
+  if (!dragState) return;
+  const cards = Array.from(els.hand.children);
+  const from = cards.indexOf(dragEl);
+  if (from < 0) return;
+  const others = cards.filter((c) => c !== dragEl);
+  // Insertion slot among the other cards: the first card the pointer
+  // is "before" — above its row, or in its row but left of its centre.
+  // Hit-testing uses the other cards' layout positions only, never
+  // the dragged card's lifted visual position.
+  let target = others.length;
+  for (let i = 0; i < others.length; i++) {
+    const r = others[i].getBoundingClientRect();
+    if (clientY < r.top) {
+      target = i;
+      break;
+    }
+    if (clientY <= r.bottom && clientX < r.left + r.width / 2) {
+      target = i;
+      break;
+    }
   }
+  if (target === from) return; // already in that slot — nothing to move
+  const before = dragEl.getBoundingClientRect();
+  if (target >= others.length) els.hand.appendChild(dragEl);
+  else els.hand.insertBefore(dragEl, others[target]);
+  // The card's transform is unchanged by the move, so the shift in its
+  // rect is the shift in its layout slot: absorb it into the drag
+  // origin (both axes, since the slot may now be on a different row)
+  // so the card stays glued under the pointer instead of jumping.
+  const after = dragEl.getBoundingClientRect();
+  dragState.startX += after.left - before.left;
+  dragState.startY += after.top - before.top;
+}
+
+function attachDragHandlers(btn) {
+  btn.addEventListener("pointerdown", (ev) => {
+    if (controller.state.phase !== "playing") return;
+    if (ev.button !== undefined && ev.button !== 0) return;
+    dragState = {
+      el: btn,
+      startX: ev.clientX,
+      startY: ev.clientY,
+      x: ev.clientX,
+      y: ev.clientY,
+      active: false,
+    };
+  });
+  btn.addEventListener("pointermove", (ev) => {
+    if (!dragState || dragState.el !== btn) return;
+    dragState.x = ev.clientX;
+    dragState.y = ev.clientY;
+    const dx = ev.clientX - dragState.startX;
+    const dy = ev.clientY - dragState.startY;
+    if (!dragState.active) {
+      if (Math.abs(dx) < 9 && Math.abs(dy) < 9) return; // still a tap
+      dragState.active = true;
+      btn.classList.add("dragging");
+      try {
+        btn.setPointerCapture(ev.pointerId);
+      } catch {
+        // No capture available (e.g. a simulated pointer) — drag on.
+      }
+    }
+    dragSwap(btn, ev.clientX, ev.clientY);
+    btn.style.transform = `translate(${dragState.x - dragState.startX}px, ${dragState.y - dragState.startY}px)`;
+  });
+  const endDrag = () => {
+    if (!dragState || dragState.el !== btn) return;
+    const wasActive = dragState.active;
+    dragState = null;
+    btn.classList.remove("dragging");
+    btn.style.transform = "";
+    if (wasActive) {
+      suppressClickUntil = Date.now() + 250;
+      orderIds = Array.from(els.hand.children).map((node) => node.cardId);
+      render(controller.state);
+    }
+  };
+  btn.addEventListener("pointerup", endDrag);
+  btn.addEventListener("pointercancel", endDrag);
+}
+
+function renderScoreboard(state) {
+  els.roundNum.textContent = `${state.match ? state.match.roundNumber : 1}`;
+  els.scores.textContent = "";
+  const scores = state.match ? state.match.scores : [0, 0, 0, 0];
+  const trick = state.trick;
+  for (const player of [0, 1, 2, 3]) {
+    const isTurn =
+      state.phase === "playing" && trick && trick.currentPlayer === player;
+    const finishIdx = trick ? trick.finishOrder.indexOf(player) : -1;
+    const box = el(
+      "div",
+      `score${isTurn ? " turn" : ""}${finishIdx >= 0 ? " fin" : ""}`,
+    );
+    const nm = el("div", "nm");
+    nm.append(el("span", null, SEAT_NAMES[player]));
+    if (finishIdx >= 0) nm.append(el("span", "badge done", ORDINALS[finishIdx]));
+    else if (trick?.currentPlay && state.trickView.entries[player]?.type === "pass")
+      nm.append(el("span", "badge pass", "Passed"));
+    box.append(nm);
+    box.append(el("div", "pts", `${scores[player]}`));
+    const meta = !trick
+      ? "Not dealt yet"
+      : finishIdx >= 0
+        ? `Finished ${ORDINALS[finishIdx]}`
+        : `${trick.hands[player].length} cards left`;
+    box.append(el("div", "meta", meta));
+    const bar = el("div", "bar");
+    const fill = el("i");
+    fill.style.width = `${Math.max(0, Math.min(100, (scores[player] / 13) * 100))}%`;
+    bar.append(fill);
+    box.append(bar);
+    els.scores.append(box);
+  }
+}
+
+function render(state) {
+  // A new trick state object = a new round: the manual drag order and
+  // the pile's previous-play tracking reset; the deal is ascending.
+  if (state.trick !== orderTrick) {
+    orderTrick = state.trick;
+    orderIds = null;
+    sortAsc = true;
+    lastPlay = null;
+    prevPlay = null;
+    lastPlayKey = null;
+  }
+
+  // Score board — always visible.
+  renderScoreboard(state);
 
   for (const player of [1, 2, 3]) renderSeat(player, state);
 
   const myTurn =
     state.phase === "playing" && state.trick && state.trick.currentPlayer === HUMAN;
 
-  // Center: trick info + the play to beat.
+  // Center: the pile (play to beat) + the turn banner under it.
   if (state.phase === "playing" && state.trick) {
     els.trickInfo.textContent = myTurn
       ? `Trick ${state.trick.trickNumber} — your turn`
       : `Trick ${state.trick.trickNumber} — ${SEAT_NAMES[state.trick.currentPlayer]} to play`;
     els.toBeat.textContent = "";
-    els.toBeat.classList.toggle("bomb", Boolean(state.trick.currentPlay && isBomb(state.trick.currentPlay.cards)));
     if (state.trick.currentPlay) {
-      els.toBeat.append(el("span", "beat-label", "To beat"));
-      state.trick.currentPlay.cards.forEach((card) => els.toBeat.append(miniCard(card)));
+      const cp = state.trick.currentPlay;
+      const key = `${cp.player}:${cp.cards.map((c) => c.id).join(",")}`;
+      if (key !== lastPlayKey) {
+        prevPlay = lastPlay;
+        lastPlay = { player: cp.player, cards: cp.cards };
+        lastPlayKey = key;
+      }
+      const line = el("div", "leadline");
+      const desc = el("b", null, describePlay(cp.cards));
+      const by = el("b", null, SEAT_NAMES[cp.player]);
+      line.append(document.createTextNode("To beat: "), desc, document.createTextNode(" · played by "), by);
+      const cards = el("div", "minicards");
+      cp.cards.forEach((card) => cards.append(miniCard(card)));
+      els.toBeat.append(line, cards);
+      if (prevPlay) {
+        const before = el(
+          "div",
+          "leadline",
+          `Before that: ${SEAT_NAMES[prevPlay.player]} — ${describePlay(prevPlay.cards)}`,
+        );
+        before.style.opacity = ".65";
+        els.toBeat.append(before);
+      }
     } else {
-      els.toBeat.append(el("span", "beat-label", "New trick — anything goes"));
+      lastPlay = null;
+      prevPlay = null;
+      lastPlayKey = null;
+      els.toBeat.append(el("div", "empty", "New trick — anything goes"));
     }
   } else {
     els.trickInfo.textContent = state.phase === "idle" ? "Waiting to start" : "Round complete";
     els.toBeat.textContent = "";
-    els.toBeat.classList.toggle("bomb", false);
+    els.toBeat.append(
+      el("div", "empty", state.phase === "idle" ? "Waiting to start" : "Round over"),
+    );
   }
   els.message.textContent = state.message;
 
-  // Your hand.
-  els.youArea.classList.toggle("your-turn", Boolean(myTurn));
-  const myHand = state.trick ? sortHand(state.trick.hands[HUMAN]) : [];
+  // Your hand — rendered in the manual drag order when one exists for
+  // this round, else in the current sort direction; comeback-bomb
+  // cards carry the mockup's foil highlight.
+  els.youArea.classList.toggle("myturn", Boolean(myTurn));
+  const sortedHand = state.trick ? sortHand(state.trick.hands[HUMAN]) : [];
+  let myHand = sortedHand;
+  if (orderIds) {
+    const byId = new Map(sortedHand.map((card) => [card.id, card]));
+    const ordered = orderIds.filter((id) => byId.has(id)).map((id) => byId.get(id));
+    const rest = sortedHand.filter((card) => !orderIds.includes(card.id));
+    myHand = [...ordered, ...rest];
+  } else if (!sortAsc) {
+    myHand = [...sortedHand].reverse();
+  }
+  lastDisplayIds = myHand.map((card) => card.id);
   const heldIds = new Set(myHand.map((card) => card.id));
   for (const id of [...selected]) if (!heldIds.has(id)) selected.delete(id);
   els.youHeader.textContent = state.trick
     ? `You — ${myHand.length} cards${myTurn ? " · ● your turn" : ""}`
     : "You";
+  const hot = comebackHotIds(state);
   els.hand.textContent = "";
   for (const card of myHand) {
     const label = cardLabel(card);
-    const btn = el("button", `card ${label.color}${selected.has(card.id) ? " selected" : ""}`);
+    const btn = el(
+      "button",
+      `card ${label.color}${selected.has(card.id) ? " sel" : ""}${hot.has(card.id) ? " bombhot" : ""}`,
+    );
     btn.type = "button";
+    btn.cardId = card.id;
     btn.disabled = !myTurn;
-    btn.append(el("span", "rank", label.rank), el("span", "glyph", label.glyph));
+    btn.append(
+      el("span", "r", label.rank),
+      el("span", "s", label.glyph),
+      el("span", "big", label.glyph),
+    );
     btn.addEventListener("click", () => {
+      if (Date.now() < suppressClickUntil) return; // a drag just ended — not a tap
       if (selected.has(card.id)) selected.delete(card.id);
       else selected.add(card.id);
       render(state);
     });
+    attachDragHandlers(btn);
     els.hand.append(btn);
   }
 
@@ -210,7 +447,26 @@ function render(state) {
   // match is started; it never comes back (New Match goes straight in).
   els.startScreen.hidden = state.phase !== "idle";
 
+  updateSortButton();
+
   renderBanner(state);
+}
+
+// The Sort toggle's label, title, and arrow track the current
+// direction — the mockup's exact strings.
+function updateSortButton() {
+  els.sortBtn.setAttribute(
+    "aria-label",
+    sortAsc
+      ? "Sort hand low to high ascending, tap to sort high to low descending"
+      : "Sort hand high to low descending, tap to sort low to high ascending",
+  );
+  els.sortBtn.title = sortAsc
+    ? "Sorted low to high (ascending) — tap to sort high to low (descending)"
+    : "Sorted high to low (descending) — tap to sort low to high (ascending)";
+  for (const child of els.sortBtn.children) {
+    if (child.className === "sort-arrow") child.textContent = sortAsc ? "↑" : "↓";
+  }
 }
 
 els.playBtn.addEventListener("click", () => {
@@ -237,7 +493,27 @@ els.hintBtn.addEventListener("click", () => {
 
 els.continueBtn.addEventListener("click", () => controller.continueRound());
 els.newMatchBtn.addEventListener("click", () => controller.newMatch());
+els.newMatchTop.addEventListener("click", () => controller.newMatch());
 els.startBtn.addEventListener("click", () => controller.newMatch());
+
+els.sortBtn.addEventListener("click", () => {
+  if (!controller.state.trick) return;
+  // The mockup's semantics: direction derives from the hand's actual
+  // order — ascending flips to descending, descending to ascending,
+  // and a manually dragged order first restores ascending.
+  const ascIds = sortHand(controller.state.trick.hands[HUMAN]).map((c) => c.id);
+  const isAsc =
+    lastDisplayIds.length === ascIds.length &&
+    lastDisplayIds.every((id, i) => id === ascIds[i]);
+  sortAsc = !isAsc;
+  orderIds = null; // Sort overrides any manual drag order
+  render(controller.state);
+});
+
+els.clearBtn.addEventListener("click", () => {
+  selected.clear();
+  render(controller.state);
+});
 
 // No auto-start: paint the idle state (start screen up, nothing dealt)
 // and wait for the Start Game click.
