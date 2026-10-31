@@ -10,7 +10,7 @@ import { createTrickState, playCards, passTurn } from "../src/engine/trick.js";
 import { detectBomb, bombBeats, isComebackBomb } from "../src/engine/bombs.js";
 import { detectInstantWin } from "../src/engine/instantWin.js";
 import { scoreRound, scoreInstantWin, leftoverPenalty, countUnusedBombs } from "../src/engine/scoring.js";
-import { createMatch, startRound, applyInstantWin } from "../src/engine/match.js";
+import { createMatch, startRound, applyInstantWin, finishRound } from "../src/engine/match.js";
 import { seededRng } from "../src/engine/runner.js";
 
 // Consolidated engine suite: cards, deal, combinations, plays, trick
@@ -65,6 +65,33 @@ test("plays: same type compares by highest card (rank, then suit); different typ
   assert.equal(beats([c("7", "spades")], [c("7", "hearts")]), false);
   assert.equal(beats([c("8", "spades"), c("8", "clubs")], [c("7", "spades"), c("7", "hearts")]), true);
   assert.equal(beats([c("2", "hearts")], [c("3", "spades"), c("3", "hearts")]), false);
+});
+
+test("plays: a legal play must match the card count — a 4-card straight never beats a 3-card straight", () => {
+  const three = [c("3", "spades"), c("4", "clubs"), c("5", "diamonds")];
+  const four = [c("3", "spades"), c("4", "clubs"), c("5", "diamonds"), c("6", "hearts")];
+  assert.equal(beats(four, three), false);
+  assert.equal(beats(three, four), false);
+});
+
+test("plays: equal plays do not beat", () => {
+  assert.equal(beats([c("7", "hearts")], [c("7", "hearts")]), false);
+  assert.equal(
+    beats([c("9", "spades"), c("9", "hearts")], [c("9", "spades"), c("9", "hearts")]),
+    false,
+  );
+});
+
+test("plays: straights compare by highest card, suit included", () => {
+  const lowStraight = [c("3", "spades"), c("4", "clubs"), c("5", "diamonds")];
+  const highStraight = [c("4", "spades"), c("5", "clubs"), c("6", "diamonds")];
+  assert.equal(beats(highStraight, lowStraight), true);
+  assert.equal(beats(lowStraight, highStraight), false);
+  // Same ranks: the straight whose top card has the higher suit wins.
+  const heartsTop = [c("3", "clubs"), c("4", "diamonds"), c("5", "hearts")];
+  const spadesTop = [c("3", "diamonds"), c("4", "clubs"), c("5", "spades")];
+  assert.equal(beats(heartsTop, spadesTop), true);
+  assert.equal(beats(spadesTop, heartsTop), false);
 });
 
 // ---------- trick flow ----------
@@ -330,6 +357,32 @@ test("match: instant win at the deal ends the round before any play", () => {
   assert.equal(start.type, "instant-win");
   assert.equal(start.winner, 2);
   assert.equal(start.kind, "six-pairs");
+});
+
+function finishedState(finishOrder, lastHand = [c("9", "clubs")]) {
+  const state = createTrickState([[], [], [], []], { leader: 0, openingLead: false });
+  state.hands[finishOrder[3]] = lastHand; // last place still holds cards
+  state.finishOrder = [...finishOrder];
+  state.roundOver = true;
+  return state;
+}
+
+test("match: an exact tie at 13+ goes to the higher finisher in the final round", () => {
+  const match = createMatch();
+  match.scores = [11, 12, 0, 0];
+  const result = finishRound(match, finishedState([0, 1, 2, 3]));
+  // Deltas +2/+1/-1/-2 put both player 0 and player 1 on exactly 13.
+  assert.deepEqual(result.scores, [13, 13, -1, -2]);
+  assert.equal(result.matchWinner, 0); // player 0 finished higher
+});
+
+test("match: when several players cross 13 in one round, the highest score wins", () => {
+  const match = createMatch();
+  match.scores = [12, 12, 0, 0];
+  const result = finishRound(match, finishedState([1, 0, 2, 3]));
+  // Player 1 takes +2 to 14, player 0 takes +1 to 13: no tiebreak needed.
+  assert.deepEqual(result.scores, [13, 14, -1, -2]);
+  assert.equal(result.matchWinner, 1);
 });
 
 test("match: scores accumulate across rounds; first to 13 wins; the winner leads next", () => {
