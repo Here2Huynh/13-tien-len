@@ -80,7 +80,7 @@ const ELEMENT_IDS = [
   "scores", "seat-1", "seat-2", "seat-3", "trick-info", "to-beat",
   "message", "you-area", "you-header", "hand", "play-btn", "pass-btn",
   "hint-btn", "log", "banner", "banner-title", "banner-body",
-  "continue-btn", "new-match-btn",
+  "continue-btn", "new-match-btn", "start-screen", "start-btn",
 ];
 
 const registry = new Map();
@@ -164,8 +164,30 @@ function humanMove() {
 
 // ---------- the tests ----------
 
+test("e2e: start gate — nothing is dealt or running until Start Game is clicked", async () => {
+  await import("../src/main.js"); // boots the page; must NOT start a match
+
+  // Before the click: start screen up, no hand dealt, no match
+  // running — controls dead, log empty, no banner, no timers pending.
+  assert.equal($("start-screen").hidden, false);
+  assert.equal(handCount(), 0);
+  assert.deepEqual(scoreValues(), [0, 0, 0, 0]);
+  assert.equal($("play-btn").disabled, true);
+  assert.equal($("pass-btn").disabled, true);
+  assert.equal($("hint-btn").disabled, true);
+  assert.equal($("log").children.length, 0);
+  assert.equal($("banner").hidden, true);
+  assert.equal(timerQueue.length, 0);
+
+  // The click deals and begins the match; the gate drops for good.
+  $("start-btn").click();
+  assert.equal($("start-screen").hidden, true);
+  assert.equal(handCount(), 13);
+  assert.ok($("log").children.length > 0);
+});
+
 test("e2e: a full match plays end to end through the real UI", async () => {
-  await import("../src/main.js"); // boots the page and starts a match
+  await import("../src/main.js"); // already booted by the gate test
 
   // Opening state: scores visible, hand dealt face up, log started.
   assert.deepEqual(scoreValues(), [0, 0, 0, 0]);
