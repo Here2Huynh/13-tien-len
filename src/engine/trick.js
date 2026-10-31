@@ -18,26 +18,38 @@ import { detectBomb, bombBeats, bombTarget, isComebackBomb } from "./bombs.js";
 // - When all other active players pass, the trick clears and the player
 //   who made the last play leads the next trick (any legal combination).
 // - Turn order is clockwise to the next player who can still act.
+// - A round is played all the way down: finish order is recorded as
+//   each player sheds their last card, and the round ends when only
+//   one player still holds cards (that player is last).
 
 export function findOpeningLeader(hands) {
   return hands.findIndex((hand) => hand.some((card) => card.id === "3-spades"));
 }
 
-export function createTrickState(hands) {
+export function createTrickState(hands, options = {}) {
   if (!Array.isArray(hands) || hands.length !== 4) {
     throw new Error("Trick state needs exactly 4 hands");
   }
-  const leader = findOpeningLeader(hands);
-  const opening = leader !== -1;
+  // Default (first round of a match): the player holding 3 of spades
+  // leads and the opening-lead rule applies. Later rounds pass an
+  // explicit leader (the previous round's winner) and no opening rule.
+  const hasExplicitLeader = typeof options.leader === "number";
+  const leader = hasExplicitLeader ? options.leader : findOpeningLeader(hands);
+  const opening = options.openingLead ?? (!hasExplicitLeader && leader !== -1);
   return {
     hands: hands.map((hand) => [...hand]),
-    currentPlayer: opening ? leader : 0,
-    leader: opening ? leader : 0,
+    currentPlayer: leader !== -1 ? leader : 0,
+    leader: leader !== -1 ? leader : 0,
     currentPlay: null, // { player, cards, type }
     lastPlayer: null,
     passed: [],
     openingLead: opening, // true until the first play of the hand is made
     trickNumber: 1,
+    // Players in the order they shed their last card. When only one
+    // player still holds cards the round is over and that player is
+    // appended as last place, completing the four.
+    finishOrder: [],
+    roundOver: false,
     // Players who had already passed when the current play was made.
     // Only they can get a comeback turn against that play.
     comebackCandidates: [],
@@ -101,6 +113,7 @@ function clearTrick(state) {
 }
 
 export function playCards(state, player, cards) {
+  if (state.roundOver) throw new Error("The round is over");
   if (player !== state.currentPlayer) {
     throw new Error(`Not player ${player}'s turn`);
   }
@@ -141,6 +154,9 @@ export function playCards(state, player, cards) {
   state.hands[player] = hand.filter(
     (held) => !cards.some((card) => card.id === held.id),
   );
+  if (state.hands[player].length === 0 && !state.finishOrder.includes(player)) {
+    state.finishOrder.push(player);
+  }
   if (comeback) {
     // Bombing back in: the player is active in this trick again.
     state.passed = state.passed.filter((p) => p !== player);
@@ -152,6 +168,15 @@ export function playCards(state, player, cards) {
   };
   state.lastPlayer = player;
   state.openingLead = false;
+  // The round is played all the way down: when only one player still
+  // holds cards, that player is last and the round ends immediately.
+  const holders = [0, 1, 2, 3].filter((p) => state.hands[p].length > 0);
+  if (holders.length === 1) {
+    state.finishOrder.push(holders[0]);
+    state.roundOver = true;
+    state.currentPlayer = holders[0];
+    return state;
+  }
   // A new play resets comeback chances: only players who had already
   // passed before this play can come back against it.
   state.comebackCandidates = [...state.passed];
@@ -167,6 +192,7 @@ export function playCards(state, player, cards) {
 }
 
 export function passTurn(state, player) {
+  if (state.roundOver) throw new Error("The round is over");
   if (player !== state.currentPlayer) {
     throw new Error(`Not player ${player}'s turn`);
   }
