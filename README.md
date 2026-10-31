@@ -30,4 +30,6 @@ npm run build # static build
 - `src/engine/instantWin.js` — instant-win hand detection at deal: four 2s, six pairs, five consecutive pairs, dragon straight 3–A, three consecutive triples
 - `src/engine/scoring.js` — round scoring: baseline transfers, leftover 2 / unused bomb penalties, instant-win payout
 - `src/engine/match.js` — match state: scores across rounds, first to 13, next-round leader
+- `src/engine/ai.js` — simple deterministic CPU policy: play enumeration + `chooseAction` per turn
+- `src/engine/runner.js` — headless AI-vs-AI full-match runner with a seeded rng
 - `test/` — unit tests
