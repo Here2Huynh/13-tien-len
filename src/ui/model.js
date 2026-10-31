@@ -95,12 +95,13 @@ export function describePlay(cards, wasBomb = false) {
 // The log line for the bomb penalty (TASK 012, John's wording): the
 // moment a played 2 or pair of 2s is bombed, its owner pays the
 // bomber 1 point per 2.
-// "Bomb penalty: Mina pays 1 to Kenji — their 2 was bombed."
+// "Bomb penalty: Mina pays 1 to Kenji — her 2 was bombed."
+const POSSESSIVES = ["your", "her", "his", "her"]; // by seat: You, Mina, Kenji, Rosa
+
 export function bombPenaltyLogLine({ payer, payee, points }) {
   const what = points === 2 ? "pair of 2s" : "2";
-  const whose = payer === HUMAN ? "your" : "their";
   const pays = payer === HUMAN ? "pay" : "pays";
-  return `Bomb penalty: ${SEAT_NAMES[payer]} ${pays} ${points} to ${SEAT_NAMES[payee]} — ${whose} ${what} was bombed.`;
+  return `Bomb penalty: ${SEAT_NAMES[payer]} ${pays} ${points} to ${SEAT_NAMES[payee]} — ${POSSESSIVES[payer]} ${what} was bombed.`;
 }
 
 const PLACE_LABELS = ["1st", "2nd", "3rd", "4th"];

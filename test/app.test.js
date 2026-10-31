@@ -318,11 +318,19 @@ test("controller: log — a four of a kind played against a single 2 is logged a
 test("model: the bomb penalty log line names payer, points, and payee", () => {
   assert.equal(
     bombPenaltyLogLine({ payer: 1, payee: 2, points: 1 }),
-    "Bomb penalty: Mina pays 1 to Kenji — their 2 was bombed.",
+    "Bomb penalty: Mina pays 1 to Kenji — her 2 was bombed.",
   );
   assert.equal(
     bombPenaltyLogLine({ payer: 1, payee: 2, points: 2 }),
-    "Bomb penalty: Mina pays 2 to Kenji — their pair of 2s was bombed.",
+    "Bomb penalty: Mina pays 2 to Kenji — her pair of 2s was bombed.",
+  );
+  assert.equal(
+    bombPenaltyLogLine({ payer: 2, payee: 0, points: 1 }),
+    "Bomb penalty: Kenji pays 1 to You — his 2 was bombed.",
+  );
+  assert.equal(
+    bombPenaltyLogLine({ payer: 0, payee: 2, points: 1 }),
+    "Bomb penalty: You pay 1 to Kenji — your 2 was bombed.",
   );
   assert.equal(
     bombPenaltyLogLine({ payer: 0, payee: 3, points: 2 }),
@@ -344,7 +352,7 @@ test("controller: a bombed 2 is chopped instantly — log line and scores move m
   // Kenji bombs it — the chop lands on the same CPU chain.
   assert.equal(controller.humanPlay([c("3", "spades")]), true);
   assert.ok(
-    s.log.some((line) => line === "Bomb penalty: Mina pays 1 to Kenji — their 2 was bombed."),
+    s.log.some((line) => line === "Bomb penalty: Mina pays 1 to Kenji — her 2 was bombed."),
     `expected a bomb penalty log line, got: ${s.log.join(" | ")}`,
   );
   assert.deepEqual(s.match.scores, [0, -1, 1, 0]);
