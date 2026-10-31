@@ -24,4 +24,6 @@ npm run build # static build
 - `src/engine/cards.js` — deck, rank/suit ordering
 - `src/engine/deal.js` — shuffle and 4 x 13 deal
 - `src/engine/combinations.js` — single / pair / triple / four of a kind / straight detection
+- `src/engine/plays.js` — play comparison (`beats` / `canBeat`): same type, same card count, higher by highest card
+- `src/engine/trick.js` — trick/turn state machine: lead, follow, pass lockout, trick clear, next leader
 - `test/` — unit tests
