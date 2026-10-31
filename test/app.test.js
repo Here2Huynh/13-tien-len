@@ -8,7 +8,7 @@ import { playMatch, seededRng } from "../src/engine/runner.js";
 import { newDeal, shuffle } from "../src/engine/deal.js";
 import {
   cardLabel, sortHand, validateSelection,
-  emptyTrickView, applyToTrickView, describePlay, chopLogLine,
+  emptyTrickView, applyToTrickView, describePlay, bombPenaltyLogLine,
   roundResultRows, scoreRows,
 } from "../src/ui/model.js";
 import { createController } from "../src/ui/controller.js";
@@ -315,14 +315,18 @@ test("controller: log — a four of a kind played against a single 2 is logged a
   assert.ok(s.log.some((line) => line === "Mina plays single 2♣."));
 });
 
-test("model: the chop log line names payer, points, and payee", () => {
+test("model: the bomb penalty log line names payer, points, and payee", () => {
   assert.equal(
-    chopLogLine({ payer: 1, payee: 2, points: 1 }),
-    "Chop: Mina's 2 was bombed — Mina pays 1 to Kenji.",
+    bombPenaltyLogLine({ payer: 1, payee: 2, points: 1 }),
+    "Bomb penalty: Mina pays 1 to Kenji — their 2 was bombed.",
   );
   assert.equal(
-    chopLogLine({ payer: 0, payee: 3, points: 2 }),
-    "Chop: Your pair of 2s was bombed — You pay 2 to Rosa.",
+    bombPenaltyLogLine({ payer: 1, payee: 2, points: 2 }),
+    "Bomb penalty: Mina pays 2 to Kenji — their pair of 2s was bombed.",
+  );
+  assert.equal(
+    bombPenaltyLogLine({ payer: 0, payee: 3, points: 2 }),
+    "Bomb penalty: You pay 2 to Rosa — your pair of 2s was bombed.",
   );
 });
 
@@ -340,8 +344,8 @@ test("controller: a bombed 2 is chopped instantly — log line and scores move m
   // Kenji bombs it — the chop lands on the same CPU chain.
   assert.equal(controller.humanPlay([c("3", "spades")]), true);
   assert.ok(
-    s.log.some((line) => line === "Chop: Mina's 2 was bombed — Mina pays 1 to Kenji."),
-    `expected a chop log line, got: ${s.log.join(" | ")}`,
+    s.log.some((line) => line === "Bomb penalty: Mina pays 1 to Kenji — their 2 was bombed."),
+    `expected a bomb penalty log line, got: ${s.log.join(" | ")}`,
   );
   assert.deepEqual(s.match.scores, [0, -1, 1, 0]);
   assert.equal(s.phase, "playing"); // mid-round: the round did not end

@@ -9,7 +9,7 @@ import {
   emptyTrickView,
   applyToTrickView,
   describePlay,
-  chopLogLine,
+  bombPenaltyLogLine,
   validateSelection,
 } from "./model.js";
 
@@ -124,7 +124,7 @@ export function createController(options = {}) {
       const chop = applyChop(state.match, prevPlay, action.cards, player);
       if (chop) {
         roundChops.push(chop);
-        log(chopLogLine(chop));
+        log(bombPenaltyLogLine(chop));
       }
     } else {
       log(`${name(player)} passes.`);
