@@ -2,6 +2,7 @@ import { newDeal } from "../engine/deal.js";
 import { createMatch, startRound, applyInstantWin, finishRound } from "../engine/match.js";
 import { playCards, passTurn } from "../engine/trick.js";
 import { chooseAction } from "../engine/ai.js";
+import { detectBomb, bombTarget } from "../engine/bombs.js";
 import {
   SEAT_NAMES,
   HUMAN,
@@ -91,6 +92,7 @@ export function createController(options = {}) {
   function applyAction(player, action) {
     const trick = state.trick;
     const trickNumberBefore = trick.trickNumber;
+    const prevPlay = trick.currentPlay;
     try {
       if (action.type === "play") playCards(trick, player, action.cards);
       else passTurn(trick, player);
@@ -100,6 +102,19 @@ export function createController(options = {}) {
       return false;
     }
     state.message = "";
+    // Log first: an action that clears the trick is logged like any
+    // other action, even though the trick view then resets.
+    if (action.type === "play") {
+      // The play functioned as a bomb when it answered a single 2 /
+      // pair of 2s with a bomb — that context decides the phrasing.
+      const wasBomb =
+        prevPlay !== null &&
+        bombTarget(prevPlay.cards) !== null &&
+        detectBomb(action.cards) !== null;
+      log(`${name(player)} plays ${describePlay(action.cards, wasBomb)}.`);
+    } else {
+      log(`${name(player)} passes.`);
+    }
     if (trick.trickNumber !== trickNumberBefore) {
       // The action cleared the trick; the new trick starts blank.
       state.trickView = emptyTrickView();
@@ -109,10 +124,8 @@ export function createController(options = {}) {
         player,
         cards: action.cards,
       });
-      log(`${name(player)} plays ${describePlay(action.cards)}.`);
     } else {
       state.trickView = applyToTrickView(state.trickView, { type: "pass", player });
-      log(`${name(player)} passes.`);
     }
     if (trick.roundOver) {
       const result = finishRound(state.match, trick);

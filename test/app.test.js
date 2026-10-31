@@ -196,6 +196,15 @@ test("model: play phrasing and result/score rows", () => {
   assert.deepEqual(scoreRows([5, 12, 12, -3]).map((s) => s.isLeader), [false, true, true, false]);
 });
 
+test("model: a four of a kind is a bomb only when it functioned as one", () => {
+  const quad = [c("8", "spades"), c("8", "clubs"), c("8", "diamonds"), c("8", "hearts")];
+  // Led, or played as a plain combination: plain phrasing, no BOMB.
+  assert.equal(describePlay(quad), "four of a kind, high card 8♥");
+  assert.equal(describePlay(quad, false), "four of a kind, high card 8♥");
+  // Played against a single 2 / pair of 2s via the bomb path: a bomb.
+  assert.equal(describePlay(quad, true), "a BOMB — four of a kind");
+});
+
 // ---------- controller ----------
 
 test("controller: a full match runs headlessly to a winner at 13+", () => {
@@ -268,4 +277,47 @@ test("controller: illegal selections surface the engine error and change nothing
   assert.ok(hint.cards.some((card) => card.id === "3-spades"));
   assert.equal(controller.humanPlay([c("3", "spades")]), true);
   assert.equal(s.trick.hands[0].length, 12);
+});
+
+test("controller: log — a four of a kind played against a single 2 is logged as a bomb", () => {
+  const hands = [
+    [c("3", "spades"), c("5", "clubs"), c("8", "diamonds")],
+    [c("2", "clubs"), c("2", "diamonds")],
+    [c("9", "spades"), c("9", "clubs"), c("9", "diamonds"), c("9", "hearts"), c("7", "clubs")],
+    [c("10", "spades"), c("J", "diamonds")],
+  ];
+  const controller = createController({ schedule: sync, dealHands: () => hands });
+  controller.newMatch();
+  const s = controller.state;
+  // You open with the 3 of spades; Mina answers with a single 2 and
+  // Kenji bombs it with four of a kind — all on the CPU chain.
+  assert.equal(controller.humanPlay([c("3", "spades")]), true);
+  assert.ok(
+    s.log.some((line) => line === "Kenji plays a BOMB — four of a kind."),
+    `expected a bomb log line, got: ${s.log.join(" | ")}`,
+  );
+  assert.ok(s.log.some((line) => line === "Mina plays single 2♣."));
+});
+
+test("controller: log — a play that clears the trick is logged like any other play", () => {
+  // You lead the pair of 3s; Mina and Kenji hold only singles (they
+  // pass), Rosa answers with her last cards (a pair of 4s, going
+  // out), and your pair of kings then clears the trick — every other
+  // seat is passed or out when it lands.
+  const hands = [
+    [c("3", "spades"), c("3", "hearts"), c("K", "clubs"), c("K", "diamonds")],
+    [c("9", "spades"), c("J", "diamonds")],
+    [c("10", "spades"), c("Q", "diamonds")],
+    [c("4", "clubs"), c("4", "diamonds")],
+  ];
+  const controller = createController({ schedule: sync, dealHands: () => hands });
+  controller.newMatch();
+  const s = controller.state;
+  assert.equal(controller.humanPlay([c("3", "spades"), c("3", "hearts")]), true);
+  assert.equal(controller.humanPlay([c("K", "clubs"), c("K", "diamonds")]), true);
+  assert.ok(
+    s.log.some((line) => line === "You plays a pair, high card K♦."),
+    `expected the clearing play in the log, got: ${s.log.join(" | ")}`,
+  );
+  assert.ok(s.trick.trickNumber >= 2, "the trick should have cleared");
 });
