@@ -1,4 +1,5 @@
 import { createController } from "./ui/controller.js";
+import { isBomb } from "./engine/bombs.js";
 import {
   SEAT_NAMES,
   HUMAN,
@@ -67,6 +68,8 @@ function renderSeat(player, state) {
   box.append(countLine);
   const playBox = el("div", "seat-play");
   const entry = state.trickView.entries[player];
+  // Foil hook (TASK 009): bomb plays get the holographic treatment.
+  if (entry?.type === "play" && isBomb(entry.cards)) playBox.classList.toggle("bomb", true);
   if (entry?.type === "play") entry.cards.forEach((card) => playBox.append(miniCard(card)));
   else if (entry?.type === "pass") playBox.append(el("span", "pass-badge", "PASS"));
   box.append(playBox);
@@ -157,6 +160,7 @@ function render(state) {
       ? `Trick ${state.trick.trickNumber} — your turn`
       : `Trick ${state.trick.trickNumber} — ${SEAT_NAMES[state.trick.currentPlayer]} to play`;
     els.toBeat.textContent = "";
+    els.toBeat.classList.toggle("bomb", Boolean(state.trick.currentPlay && isBomb(state.trick.currentPlay.cards)));
     if (state.trick.currentPlay) {
       els.toBeat.append(el("span", "beat-label", "To beat"));
       state.trick.currentPlay.cards.forEach((card) => els.toBeat.append(miniCard(card)));
@@ -166,6 +170,7 @@ function render(state) {
   } else {
     els.trickInfo.textContent = state.phase === "idle" ? "Waiting to start" : "Round complete";
     els.toBeat.textContent = "";
+    els.toBeat.classList.toggle("bomb", false);
   }
   els.message.textContent = state.message;
 

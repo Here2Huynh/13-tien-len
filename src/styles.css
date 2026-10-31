@@ -1,14 +1,17 @@
-/* 13 — Balatro-leaning table styling. CSS only, no assets. */
+/* 13 — Balatro restyle (TASK 009). CSS only, no assets: swirling
+   red/teal/blue marbled vortex, deep-teal panels, pill score chips,
+   chunky thick-edged buttons, a fanned tilted hand, red patterned
+   card backs, and a holographic foil treatment for bomb plays. */
 
 :root {
-  --felt-1: #14532d;
-  --felt-2: #052e16;
   --ink: #111827;
   --paper: #fffdf5;
   --red: #d43d2a;
   --gold: #fbbf24;
   --gold-deep: #b45309;
-  --panel: rgba(0, 0, 0, 0.35);
+  --teal-deep: #06363b;
+  --teal-panel: #0a4547;
+  --teal-edge: rgba(94, 234, 212, 0.38);
   --card-w: 56px;
   --card-h: 80px;
 }
@@ -20,8 +23,57 @@ body {
   min-height: 100vh;
   font-family: "Avenir Next", "Trebuchet MS", Verdana, sans-serif;
   color: #f9fafb;
+  background: #0b2038;
+  overflow-x: hidden;
+}
+
+/* The vortex: a huge, slowly turning conic swirl of Balatro red,
+   teal, and blue, softened by radial marbling on top. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: -55vmax;
+  z-index: -1;
+  pointer-events: none;
   background:
-    radial-gradient(ellipse at 50% 30%, var(--felt-1), var(--felt-2) 75%);
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.10), transparent 42%),
+    repeating-conic-gradient(
+      from 0deg at 50% 50%,
+      rgba(239, 62, 74, 0.55) 0deg 24deg,
+      rgba(8, 145, 178, 0.55) 24deg 52deg,
+      rgba(27, 59, 111, 0.65) 52deg 84deg,
+      rgba(0, 180, 162, 0.5) 84deg 112deg,
+      rgba(239, 62, 74, 0.55) 112deg 140deg,
+      rgba(8, 145, 178, 0.55) 140deg 172deg,
+      rgba(27, 59, 111, 0.65) 172deg 204deg,
+      rgba(0, 180, 162, 0.5) 204deg 236deg,
+      rgba(239, 62, 74, 0.55) 236deg 264deg,
+      rgba(8, 145, 178, 0.55) 264deg 296deg,
+      rgba(27, 59, 111, 0.65) 296deg 328deg,
+      rgba(0, 180, 162, 0.5) 328deg 360deg
+    );
+  animation: vortex-spin 140s linear infinite;
+}
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 70% 45% at 18% 12%, rgba(239, 62, 74, 0.20), transparent 70%),
+    radial-gradient(ellipse 65% 50% at 85% 20%, rgba(0, 180, 162, 0.22), transparent 70%),
+    radial-gradient(ellipse 80% 55% at 50% 95%, rgba(38, 92, 190, 0.28), transparent 70%),
+    radial-gradient(ellipse at 50% 45%, transparent 40%, rgba(3, 12, 24, 0.55) 100%);
+}
+
+@keyframes vortex-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body::before { animation: none; }
+  .seat-play.bomb .mini-card, #to-beat.bomb .mini-card { animation: none; }
 }
 
 #topbar {
@@ -31,7 +83,7 @@ body {
   justify-content: space-between;
   gap: 8px 16px;
   padding: 10px 16px;
-  background: var(--panel);
+  background: linear-gradient(160deg, var(--teal-panel), var(--teal-deep));
   border-bottom: 3px solid var(--gold-deep);
 }
 
@@ -48,17 +100,17 @@ body {
 #scores { display: flex; gap: 8px; flex-wrap: wrap; }
 
 .score-chip {
-  background: var(--paper);
-  color: var(--ink);
-  border: 2px solid var(--gold-deep);
+  background: var(--teal-deep);
+  color: #f9fafb;
+  border: 2px solid var(--teal-edge);
   border-radius: 999px;
-  padding: 3px 12px;
+  padding: 3px 14px;
   font-weight: 700;
   font-size: 14px;
-  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.5);
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.45);
 }
 
-.score-chip.leader { background: var(--gold); }
+.score-chip.leader { background: var(--gold); border-color: var(--gold-deep); color: var(--ink); }
 .score-chip.you { outline: 2px solid #f9fafb; }
 
 #table {
@@ -81,12 +133,13 @@ body {
 #you-area { grid-area: you; }
 
 .seat {
-  background: var(--panel);
-  border: 2px solid rgba(251, 191, 36, 0.35);
-  border-radius: 14px;
+  background: linear-gradient(165deg, var(--teal-panel), var(--teal-deep));
+  border: 2px solid var(--teal-edge);
+  border-radius: 18px;
   padding: 8px 10px;
   min-height: 92px;
   text-align: center;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
 }
 
 .seat.active { border-color: var(--gold); box-shadow: 0 0 14px rgba(251, 191, 36, 0.55); }
@@ -99,8 +152,11 @@ body {
   display: inline-block;
   width: 16px; height: 23px;
   border-radius: 3px;
-  background: repeating-linear-gradient(45deg, #7f1d1d, #7f1d1d 3px, #991b1b 3px, #991b1b 6px);
+  background:
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.14) 0 2px, transparent 2px 5px),
+    repeating-linear-gradient(-45deg, #8c1d18, #8c1d18 3px, #b3271e 3px, #b3271e 6px);
   border: 1px solid #fecaca;
+  box-shadow: inset 0 0 0 2px rgba(127, 29, 29, 0.85);
   vertical-align: middle;
 }
 
@@ -129,16 +185,39 @@ body {
 .mini-card.red { color: var(--red); }
 .mini-card.black { color: var(--ink); }
 
+/* Holographic foil for bomb plays: gold glow + a rainbow sheen that
+   slowly sweeps across the played cards. */
+.seat-play.bomb .mini-card, #to-beat.bomb .mini-card {
+  background:
+    linear-gradient(115deg,
+      rgba(255, 0, 128, 0.28), rgba(255, 200, 0, 0.32), rgba(0, 255, 170, 0.28),
+      rgba(0, 140, 255, 0.30), rgba(200, 0, 255, 0.28), rgba(255, 0, 128, 0.28)),
+    var(--paper);
+  background-size: 220% 220%, 100% 100%;
+  border-color: var(--gold);
+  box-shadow:
+    0 0 10px rgba(251, 191, 36, 0.9),
+    0 0 22px rgba(251, 191, 36, 0.45),
+    0 1px 0 rgba(0, 0, 0, 0.4);
+  animation: holo-sheen 2.6s linear infinite;
+}
+
+@keyframes holo-sheen {
+  from { background-position: 0% 50%, 0 0; }
+  to { background-position: 220% 50%, 0 0; }
+}
+
 #center {
-  background: var(--panel);
-  border: 2px solid rgba(251, 191, 36, 0.35);
-  border-radius: 14px;
+  background: linear-gradient(165deg, var(--teal-panel), var(--teal-deep));
+  border: 2px solid var(--teal-edge);
+  border-radius: 18px;
   padding: 12px;
   text-align: center;
   display: flex;
   flex-direction: column;
   gap: 8px;
   justify-content: center;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
 }
 
 #trick-info { font-size: 17px; font-weight: 800; }
@@ -147,11 +226,12 @@ body {
 #message { min-height: 20px; color: var(--gold); font-weight: 700; font-size: 14px; }
 
 #you-area {
-  background: var(--panel);
-  border: 3px solid rgba(251, 191, 36, 0.35);
-  border-radius: 16px;
-  padding: 10px 12px 14px;
+  background: linear-gradient(165deg, var(--teal-panel), var(--teal-deep));
+  border: 3px solid var(--teal-edge);
+  border-radius: 20px;
+  padding: 16px 12px 14px;
   text-align: center;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
 }
 
 #you-area.your-turn {
@@ -168,8 +248,11 @@ body {
   flex-wrap: wrap;
   gap: 6px;
   min-height: var(--card-h);
+  padding-top: 14px;
 }
 
+/* The fan: each card tilts a little more than its neighbour and sits
+   on a shallow arc; hover/selection straightens a card out of it. */
 .card {
   width: var(--card-w);
   height: var(--card-h);
@@ -184,43 +267,76 @@ body {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  transition: transform 0.08s ease;
+  transform-origin: 50% 130%;
+  transition: transform 0.12s ease;
+  margin-left: -12px;
 }
+.card:first-child { margin-left: 0; }
+#hand .card:nth-child(1) { transform: rotate(-10deg) translateY(11px); }
+#hand .card:nth-child(2) { transform: rotate(-8.3deg) translateY(7.5px); }
+#hand .card:nth-child(3) { transform: rotate(-6.7deg) translateY(4.8px); }
+#hand .card:nth-child(4) { transform: rotate(-5deg) translateY(2.8px); }
+#hand .card:nth-child(5) { transform: rotate(-3.3deg) translateY(1.4px); }
+#hand .card:nth-child(6) { transform: rotate(-1.7deg) translateY(0.5px); }
+#hand .card:nth-child(7) { transform: rotate(0deg) translateY(0); }
+#hand .card:nth-child(8) { transform: rotate(1.7deg) translateY(0.5px); }
+#hand .card:nth-child(9) { transform: rotate(3.3deg) translateY(1.4px); }
+#hand .card:nth-child(10) { transform: rotate(5deg) translateY(2.8px); }
+#hand .card:nth-child(11) { transform: rotate(6.7deg) translateY(4.8px); }
+#hand .card:nth-child(12) { transform: rotate(8.3deg) translateY(7.5px); }
+#hand .card:nth-child(13) { transform: rotate(10deg) translateY(11px); }
 
 .card .rank { font-size: 19px; line-height: 1; }
 .card .glyph { font-size: 24px; line-height: 1.1; }
 .card.red { color: var(--red); }
 .card.black { color: var(--ink); }
-.card:hover { transform: translateY(-4px); }
+.card:hover:not(:disabled) { transform: rotate(0deg) translateY(-8px); z-index: 2; }
 .card.selected {
-  transform: translateY(-12px);
+  transform: rotate(0deg) translateY(-14px);
   border-color: var(--gold);
   box-shadow: 0 0 0 3px var(--gold), 0 6px 0 rgba(0, 0, 0, 0.45);
+  z-index: 2;
 }
-.card:disabled { cursor: default; opacity: 0.85; }
-.card:disabled:hover { transform: none; }
-.card.selected:disabled { transform: translateY(-12px); }
+.card:disabled { cursor: default; opacity: 0.9; }
+.card.selected:disabled { transform: rotate(0deg) translateY(-14px); }
 
 #controls { margin-top: 14px; display: flex; justify-content: center; gap: 10px; }
 
+/* Chunky buttons: bright face, dark rim, and a thick bottom edge
+   that compresses when pressed. Blue by default; Play is green,
+   Pass is red. */
 button {
   font-family: inherit;
   font-weight: 800;
   font-size: 16px;
-  border-radius: 999px;
-  border: 2px solid var(--gold-deep);
-  background: var(--gold);
-  color: #451a03;
+  border-radius: 12px;
+  border: 2px solid #1e3a8a;
+  background: #3b82f6;
+  color: #fff;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
   padding: 9px 26px;
   cursor: pointer;
-  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.5);
+  box-shadow: 0 5px 0 #1e3a8a, 0 8px 14px rgba(0, 0, 0, 0.35);
 }
-button:hover:not(:disabled) { filter: brightness(1.07); }
-button:disabled { background: #6b7280; border-color: #4b5563; color: #e5e7eb; cursor: default; }
-#pass-btn { background: #e5e7eb; border-color: #6b7280; color: var(--ink); }
-#pass-btn:disabled { background: #6b7280; color: #e5e7eb; }
-#hint-btn { background: #93c5fd; border-color: #1d4ed8; color: #172554; }
-#hint-btn:disabled { background: #6b7280; border-color: #4b5563; color: #e5e7eb; }
+button:hover:not(:disabled) { filter: brightness(1.08); }
+button:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow: 0 2px 0 #1e3a8a, 0 4px 8px rgba(0, 0, 0, 0.35);
+}
+button:disabled {
+  background: #6b7280;
+  border-color: #4b5563;
+  color: #e5e7eb;
+  text-shadow: none;
+  cursor: default;
+  box-shadow: 0 5px 0 #4b5563, 0 8px 14px rgba(0, 0, 0, 0.35);
+}
+#play-btn { background: #22c55e; border-color: #14532d; box-shadow: 0 5px 0 #14532d, 0 8px 14px rgba(0, 0, 0, 0.35); }
+#play-btn:active:not(:disabled) { box-shadow: 0 2px 0 #14532d, 0 4px 8px rgba(0, 0, 0, 0.35); }
+#play-btn:disabled { background: #6b7280; border-color: #4b5563; box-shadow: 0 5px 0 #4b5563, 0 8px 14px rgba(0, 0, 0, 0.35); }
+#pass-btn { background: #ef4444; border-color: #7f1d1d; box-shadow: 0 5px 0 #7f1d1d, 0 8px 14px rgba(0, 0, 0, 0.35); }
+#pass-btn:active:not(:disabled) { box-shadow: 0 2px 0 #7f1d1d, 0 4px 8px rgba(0, 0, 0, 0.35); }
+#pass-btn:disabled { background: #6b7280; border-color: #4b5563; box-shadow: 0 5px 0 #4b5563, 0 8px 14px rgba(0, 0, 0, 0.35); }
 
 #log-wrap {
   max-width: 980px;
@@ -229,8 +345,9 @@ button:disabled { background: #6b7280; border-color: #4b5563; color: #e5e7eb; cu
 }
 #log-wrap h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: #d1d5db; }
 #log {
-  background: var(--panel);
-  border-radius: 12px;
+  background: linear-gradient(165deg, var(--teal-panel), var(--teal-deep));
+  border: 2px solid var(--teal-edge);
+  border-radius: 16px;
   padding: 10px 10px 10px 34px;
   margin: 0;
   max-height: 170px;
@@ -252,7 +369,7 @@ button:disabled { background: #6b7280; border-color: #4b5563; color: #e5e7eb; cu
 #banner[hidden] { display: none; }
 
 #banner-card {
-  background: #1f2937;
+  background: linear-gradient(165deg, var(--teal-panel), var(--teal-deep));
   border: 3px solid var(--gold);
   border-radius: 18px;
   padding: 22px 26px;
@@ -283,7 +400,7 @@ button:disabled { background: #6b7280; border-color: #4b5563; color: #e5e7eb; cu
 #start-screen[hidden] { display: none; }
 
 #start-card {
-  background: #1f2937;
+  background: linear-gradient(165deg, var(--teal-panel), var(--teal-deep));
   border: 3px solid var(--gold);
   border-radius: 18px;
   padding: 22px 26px;
@@ -306,5 +423,7 @@ button:disabled { background: #6b7280; border-color: #4b5563; color: #e5e7eb; cu
   .card .rank { font-size: 15px; }
   .card .glyph { font-size: 18px; }
   #hand { gap: 4px; }
+  .card { margin-left: -9px; }
+  .card:first-child { margin-left: 0; }
   button { padding: 8px 18px; font-size: 15px; }
 }
