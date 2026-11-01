@@ -1,6 +1,6 @@
 import { createController, type ControllerState } from "./ui/controller.js";
 import { enumerateBombs } from "./engine/ai.js";
-import { isComebackBomb, bombBeats } from "./engine/bombs.js";
+import { isComebackBomb, bombBeats, detectBomb, bombTarget } from "./engine/bombs.js";
 import { hasComebackTurn, type TrickPlay, type TrickState } from "./engine/trick.js";
 import type { Card } from "./engine/cards.js";
 import {
@@ -90,6 +90,340 @@ let lastPlay: PlayRecord | null = null;
 let prevPlay: PlayRecord | null = null;
 let lastPlayKey: string | null = null;
 
+// ---- Animation layer (TASK 014) ------------------------------------
+// Pure presentation over the render cycle: beginFx snapshots the
+// pre-render layout (from the element refs the last render left
+// behind) plus the adapter's scalar trackers; endFx compares and
+// fires WAAPI motion. Transform/opacity only, fire-and-forget —
+// animations never gate input or timers, in-flight ones are
+// cancelled at the next render, and the final DOM is identical with
+// motion on or off. prefers-reduced-motion disables everything.
+
+interface RectLike {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+interface FxBegin {
+  handRects: Map<string, RectLike>;
+  pileRects: Map<string, RectLike>;
+  pileMinis: Map<string, HTMLElement>;
+  scores: number[] | null;
+  trickRef: TrickState | null;
+  trickNumber: number;
+  passed: number[];
+  playKey: string | null;
+}
+
+let lastHandBtns = new Map<string, HTMLElement>();
+let lastPileMinis = new Map<string, HTMLElement>();
+let lastScoreBoxes: (HTMLElement | undefined)[] = [];
+let fxScores: number[] | null = null;
+let fxTrickRef: TrickState | null = null;
+let fxTrickNumber = 0;
+let fxPassed: number[] = [];
+let justDraggedId: string | null = null;
+const liveAnims = new Set<Animation>();
+
+function motionAllowed(): boolean {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    return true;
+  }
+  return !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function animate(
+  node: HTMLElement,
+  keyframes: Keyframe[],
+  options: KeyframeAnimationOptions,
+): void {
+  if (!motionAllowed()) return;
+  try {
+    const anim = node.animate(keyframes, options);
+    liveAnims.add(anim);
+    anim.onfinish = () => liveAnims.delete(anim);
+  } catch {
+    // No WAAPI (very old browser): the state simply lands.
+  }
+}
+
+function rectOf(node: HTMLElement): RectLike {
+  const r = node.getBoundingClientRect();
+  return { left: r.left, top: r.top, width: r.width, height: r.height };
+}
+
+function beginFx(): FxBegin {
+  // A new render supersedes any in-flight motion: cancel back to
+  // the elements' natural (final) state before measuring.
+  for (const anim of liveAnims) {
+    try {
+      anim.cancel();
+    } catch {
+      // Already finished — nothing to cancel.
+    }
+  }
+  liveAnims.clear();
+  const handRects = new Map<string, RectLike>();
+  for (const [id, btn] of lastHandBtns) handRects.set(id, rectOf(btn));
+  const pileRects = new Map<string, RectLike>();
+  for (const [id, mini] of lastPileMinis) pileRects.set(id, rectOf(mini));
+  return {
+    handRects,
+    pileRects,
+    pileMinis: lastPileMinis,
+    scores: fxScores,
+    trickRef: fxTrickRef,
+    trickNumber: fxTrickNumber,
+    passed: fxPassed,
+    playKey: lastPlayKey,
+  };
+}
+
+let fxLayer: HTMLElement | null = null;
+function getFxLayer(): HTMLElement | null {
+  if (fxLayer) return fxLayer;
+  if (!document.body) return null;
+  fxLayer = el("div", "fx-layer");
+  document.body.append(fxLayer);
+  return fxLayer;
+}
+
+// A floating "−N" that travels from the payer's score box to the
+// bomber's when a bomb penalty lands (TASK 014). Lives in the fx
+// layer; its own lifecycle, never tracked or cancelled by renders.
+function floatChop(payer: number, payee: number, points: number): void {
+  if (!motionAllowed()) return;
+  const layer = getFxLayer();
+  const fromBox = lastScoreBoxes[payer];
+  const toBox = lastScoreBoxes[payee];
+  if (!layer || !fromBox || !toBox) return;
+  const from = rectOf(fromBox);
+  const to = rectOf(toBox);
+  const node = el("div", "fx-float", `−${points}`);
+  node.style.left = `${from.left + from.width / 2}px`;
+  node.style.top = `${from.top + from.height / 2}px`;
+  layer.append(node);
+  const dx = to.left + to.width / 2 - (from.left + from.width / 2);
+  const dy = to.top + to.height / 2 - (from.top + from.height / 2);
+  try {
+    const anim = node.animate(
+      [
+        { transform: "translate(-50%, -50%) scale(1)", opacity: 1 },
+        {
+          transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(1.25)`,
+          opacity: 1,
+          offset: 0.78,
+        },
+        {
+          transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(1.25)`,
+          opacity: 0,
+        },
+      ],
+      { duration: 720, easing: "ease-in-out" },
+    );
+    anim.onfinish = () => node.remove();
+  } catch {
+    node.remove();
+    return;
+  }
+  setTimeout(() => node.remove(), 1400); // belt-and-braces cleanup
+}
+
+// When a trick clears, the pile's cards glide to the winner's seat
+// and fade (TASK 014): clones of the just-replaced minis, animated
+// from their last layout rects. Browser-only (needs cloneNode and a
+// body layer); the pile itself is already in its final state.
+function collectGhost(fx: FxBegin, winner: number): void {
+  if (!motionAllowed()) return;
+  const layer = getFxLayer();
+  if (!layer) return;
+  const target = winner === HUMAN ? els.youArea : els.seats[winner];
+  if (!target) return;
+  const t = rectOf(target);
+  const tcx = t.left + t.width / 2;
+  const tcy = t.top + t.height / 2;
+  for (const [id, mini] of fx.pileMinis) {
+    const r = fx.pileRects.get(id);
+    if (!r || typeof mini.cloneNode !== "function") continue;
+    const ghost = mini.cloneNode(true) as HTMLElement;
+    ghost.classList.add("fx-ghostcard");
+    ghost.style.left = `${r.left}px`;
+    ghost.style.top = `${r.top}px`;
+    ghost.style.width = `${r.width}px`;
+    ghost.style.height = `${r.height}px`;
+    ghost.style.margin = "0";
+    layer.append(ghost);
+    const dx = tcx - (r.left + r.width / 2);
+    const dy = tcy - (r.top + r.height / 2);
+    try {
+      const anim = ghost.animate(
+        [
+          { transform: "translate(0, 0) scale(1)", opacity: 1 },
+          { transform: `translate(${dx}px, ${dy}px) scale(.5)`, opacity: 0 },
+        ],
+        { duration: 460, easing: "cubic-bezier(.3,.7,.4,1)" },
+      );
+      anim.onfinish = () => ghost.remove();
+    } catch {
+      ghost.remove();
+      continue;
+    }
+    setTimeout(() => ghost.remove(), 1200);
+  }
+}
+
+const DEAL_FRAMES: Keyframe[] = [
+  { transform: "translateY(-18px) scale(.94)", opacity: 0 },
+  { transform: "translateY(0) scale(1)", opacity: 1 },
+];
+
+function endFx(fx: FxBegin, state: ControllerState): void {
+  const trick = state.trick;
+  try {
+    if (!motionAllowed()) return;
+
+    // Deal: a new trick state object is a new round. Seats settle
+    // in turn order from the leader — CPU stacks as units, the
+    // human hand card by card — all inside ~1s.
+    if (trick && fx.trickRef !== trick && state.phase === "playing") {
+      const leader = trick.leader ?? trick.currentPlayer;
+      for (let step = 0; step < 4; step++) {
+        const player = (leader + step) % 4;
+        if (player === HUMAN) {
+          Array.from(els.hand.children).forEach((btn, i) => {
+            animate(btn as HTMLElement, DEAL_FRAMES, {
+              duration: 280,
+              delay: step * 70 + i * 18,
+              easing: "cubic-bezier(.2,.9,.3,1.12)",
+              fill: "backwards",
+            });
+          });
+        } else {
+          animate(els.seats[player], DEAL_FRAMES, {
+            duration: 300,
+            delay: step * 70,
+            easing: "cubic-bezier(.2,.9,.3,1.12)",
+            fill: "backwards",
+          });
+        }
+      }
+    }
+
+    // A play landed: FLIP the pile's minis in from where the cards
+    // came from (the human hand, or the CPU seat), and pulse the
+    // pile when the play functioned as a bomb.
+    if (trick?.currentPlay && fx.playKey !== lastPlayKey) {
+      const cp = trick.currentPlay;
+      const seatRect = rectOf(els.seats[cp.player] ?? els.youArea);
+      for (const [id, mini] of lastPileMinis) {
+        const src =
+          fx.handRects.get(id) ?? (cp.player !== HUMAN ? seatRect : undefined);
+        if (!src) continue;
+        const dst = rectOf(mini);
+        animate(mini, [
+          {
+            transform: `translate(${src.left - dst.left}px, ${src.top - dst.top}px) scale(1.05)`,
+            opacity: 0.85,
+          },
+          { transform: "translate(0, 0) scale(1)", opacity: 1 },
+        ], { duration: 320, easing: "cubic-bezier(.25,.9,.3,1.18)" });
+      }
+      const wasBomb =
+        prevPlay !== null &&
+        bombTarget(prevPlay.cards) !== null &&
+        detectBomb(cp.cards) !== null;
+      if (wasBomb) {
+        animate(els.toBeat, [
+          { transform: "scale(1)" },
+          { transform: "scale(1.055)", offset: 0.4 },
+          { transform: "scale(1)" },
+        ], { duration: 380, easing: "ease-out" });
+      }
+    }
+
+    // Hand settle: cards whose layout slot moved (sort, drag
+    // settle, reflow after a play) glide to their new positions.
+    // The just-dragged card is excluded — it was pointer-glued.
+    for (const [id, btn] of lastHandBtns) {
+      if (id === justDraggedId) continue;
+      const pre = fx.handRects.get(id);
+      if (!pre) continue;
+      const post = rectOf(btn);
+      const dx = pre.left - post.left;
+      const dy = pre.top - post.top;
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) continue;
+      animate(btn, [
+        { transform: `translate(${dx}px, ${dy}px)` },
+        { transform: "translate(0, 0)" },
+      ], { duration: 260, easing: "cubic-bezier(.25,.9,.3,1.15)" });
+    }
+
+    // Pass flash: seats that newly locked out shake/flash once.
+    if (trick && fx.trickRef === trick) {
+      for (const player of trick.passed) {
+        if (fx.passed.includes(player)) continue;
+        const seatEl = player === HUMAN ? els.youArea : els.seats[player];
+        if (!seatEl) continue;
+        animate(seatEl, [
+          { transform: "translateX(0)", opacity: 1 },
+          { transform: "translateX(-4px)", opacity: 0.6, offset: 0.3 },
+          { transform: "translateX(4px)", opacity: 0.85, offset: 0.6 },
+          { transform: "translateX(0)", opacity: 1 },
+        ], { duration: 340, easing: "ease-in-out" });
+      }
+    }
+
+    // Trick cleared (or the round ended): collect the pile.
+    if (
+      fx.pileMinis.size > 0 &&
+      trick &&
+      fx.trickRef === trick &&
+      (fx.trickNumber !== trick.trickNumber || state.phase !== "playing")
+    ) {
+      const winner =
+        state.phase !== "playing" && trick.finishOrder.length > 0
+          ? trick.finishOrder[0]
+          : trick.lastPlayer;
+      if (winner !== null && winner !== undefined) collectGhost(fx, winner);
+    }
+
+    // Bomb penalty: exactly two score boxes moved mid-round, by
+    // opposite amounts — float the points and flash both boxes.
+    if (state.phase === "playing" && fx.scores && state.match) {
+      const now = state.match.scores;
+      const changed = [0, 1, 2, 3].filter((p) => now[p] !== fx.scores![p]);
+      if (changed.length === 2) {
+        const [a, b] = changed as [number, number];
+        const da = now[a] - fx.scores[a];
+        const db = now[b] - fx.scores[b];
+        if (da !== 0 && da === -db) {
+          const payer = da < 0 ? a : b;
+          const payee = da < 0 ? b : a;
+          floatChop(payer, payee, Math.abs(da));
+          for (const p of [payer, payee]) {
+            const box = lastScoreBoxes[p];
+            if (!box) continue;
+            animate(box, [
+              { filter: "brightness(1)" },
+              { filter: "brightness(1.9) saturate(1.5)", offset: 0.35 },
+              { filter: "brightness(1)" },
+            ], { duration: 600, easing: "ease-out" });
+          }
+        }
+      }
+    }
+  } finally {
+    // Trackers always advance, motion or not.
+    fxScores = state.match ? [...state.match.scores] : null;
+    fxTrickRef = state.trick;
+    fxTrickNumber = state.trick ? state.trick.trickNumber : 0;
+    fxPassed = state.trick ? [...state.trick.passed] : [];
+    justDraggedId = null;
+  }
+}
+
 const ORDINALS = ["1st", "2nd", "3rd", "4th"];
 
 const controller = createController({ onChange: render });
@@ -104,6 +438,7 @@ function el(tag: string, className?: string | null, text?: string): HTMLElement 
 function miniCard(card: Card): HTMLElement {
   const label = cardLabel(card);
   const node = el("div", `card mini ${label.color}`);
+  node.dataset.cardId = card.id;
   node.append(el("span", "r", label.rank), el("span", "s", label.glyph));
   return node;
 }
@@ -119,6 +454,13 @@ function renderSeat(player: number, state: ControllerState): void {
     state.phase === "playing" && trick && trick.currentPlayer === player;
   const finishIdx = trick ? trick.finishOrder.indexOf(player) : -1;
   const count = trick ? trick.hands[player].length : 0;
+  // Lockout (TASK 014): a seat that passed this trick is greyed
+  // with the LOCKED stamp until the trick clears or they come back
+  // in (a comeback play removes them from `passed` in the engine).
+  box.classList.toggle(
+    "lockedout",
+    state.phase === "playing" && trick !== null && trick.passed.includes(player),
+  );
   const opp = el("div", `opp${active ? " active" : ""}`);
   const who = el("div", "who");
   who.append(
@@ -158,11 +500,17 @@ function comebackHotIds(state: ControllerState): Set<string> {
 
 function renderBanner(state: ControllerState): void {
   const summary = state.roundSummary;
+  const modal = els.banner.children[0] as HTMLElement | undefined;
   if ((state.phase !== "roundEnd" && state.phase !== "matchEnd") || !summary) {
     els.banner.hidden = true;
+    modal?.classList.remove("instantwin");
     return;
   }
   els.banner.hidden = false;
+  // Instant win (TASK 014): the modal carries the burst; the
+  // winner's row pulses in. One-shot — the classes are re-applied
+  // only while this banner renders.
+  modal?.classList.toggle("instantwin", Boolean(summary.instantWin));
   const body = els.bannerBody;
   body.textContent = "";
   if (summary.instantWin) {
@@ -192,6 +540,9 @@ function renderBanner(state: ControllerState): void {
     : roundResultRows(summary.finishOrder, summary.deltas);
   for (const row of rows) {
     const tr = el("tr");
+    if (summary.instantWin && row.player === summary.instantWin.winner) {
+      tr.classList.add("winline");
+    }
     tr.append(
       el("td", null, row.place ? `${row.place} ${row.name}` : row.name),
       el("td", null, `score ${summary.scores[row.player]}`),
@@ -205,9 +556,17 @@ function renderBanner(state: ControllerState): void {
     table.append(tr);
   }
   body.append(table);
-  for (const penalty of summary.penalties) {
-    body.append(el("p", "note", penaltyLine(penalty)));
-  }
+  summary.penalties.forEach((penalty, i) => {
+    // Penalty rows (TASK 014): each slides in with a red flash,
+    // staggered, instead of appearing as plain text.
+    const p = el("p", "note penrow", penaltyLine(penalty));
+    p.style.animationDelay = `${i * 130}ms`;
+    // The ::before flash reads the same stagger from --d.
+    if (typeof p.style.setProperty === "function") {
+      p.style.setProperty("--d", `${i * 130}ms`);
+    }
+    body.append(p);
+  });
   els.continueBtn.hidden = state.phase === "matchEnd";
   els.newMatchBtn.hidden = state.phase !== "matchEnd";
 }
@@ -292,6 +651,9 @@ function attachDragHandlers(btn: HTMLButtonElement): void {
     btn.style.transform = "";
     if (wasActive) {
       suppressClickUntil = Date.now() + 250;
+      // The dropped card was pointer-glued to its slot: it gets no
+      // settle FLIP in the render that follows (TASK 014).
+      justDraggedId = btn.dataset.cardId ?? null;
       orderIds = Array.from(els.hand.children).map(
         (node) => (node as HTMLElement).dataset.cardId as string,
       );
@@ -334,10 +696,12 @@ function renderScoreboard(state: ControllerState): void {
     bar.append(fill);
     box.append(bar);
     els.scores.append(box);
+    lastScoreBoxes[player] = box;
   }
 }
 
 function render(state: ControllerState): void {
+  const fx = beginFx();
   // A new trick state object = a new round: the manual drag order and
   // the pile's previous-play tracking reset; the deal is ascending.
   if (state.trick !== orderTrick) {
@@ -376,7 +740,12 @@ function render(state: ControllerState): void {
       const by = el("b", null, SEAT_NAMES[cp.player]);
       line.append(document.createTextNode("To beat: "), desc, document.createTextNode(" · played by "), by);
       const cards = el("div", "minicards");
-      cp.cards.forEach((card) => cards.append(miniCard(card)));
+      lastPileMinis = new Map();
+      cp.cards.forEach((card) => {
+        const mini = miniCard(card);
+        lastPileMinis.set(card.id, mini);
+        cards.append(mini);
+      });
       els.toBeat.append(line, cards);
       if (prevPlay) {
         const before = el(
@@ -391,11 +760,13 @@ function render(state: ControllerState): void {
       lastPlay = null;
       prevPlay = null;
       lastPlayKey = null;
+      lastPileMinis = new Map();
       els.toBeat.append(el("div", "empty", "New trick — anything goes"));
     }
   } else {
     els.trickInfo.textContent = state.phase === "idle" ? "Waiting to start" : "Round complete";
     els.toBeat.textContent = "";
+    lastPileMinis = new Map();
     els.toBeat.append(
       el("div", "empty", state.phase === "idle" ? "Waiting to start" : "Round over"),
     );
@@ -406,6 +777,14 @@ function render(state: ControllerState): void {
   // this round, else in the current sort direction; comeback-bomb
   // cards carry the mockup's foil highlight.
   els.youArea.classList.toggle("myturn", Boolean(myTurn));
+  // Your own lockout (TASK 014): the hand greys while you're locked
+  // out of the trick, same rule as the CPU seats.
+  els.youArea.classList.toggle(
+    "lockedout",
+    state.phase === "playing" &&
+      state.trick !== null &&
+      state.trick.passed.includes(HUMAN),
+  );
   const sortedHand = state.trick ? sortHand(state.trick.hands[HUMAN]) : [];
   let myHand = sortedHand;
   if (orderIds) {
@@ -424,6 +803,7 @@ function render(state: ControllerState): void {
     : "You";
   const hot = comebackHotIds(state);
   els.hand.textContent = "";
+  lastHandBtns = new Map();
   for (const card of myHand) {
     const label = cardLabel(card);
     const btn = el(
@@ -446,6 +826,7 @@ function render(state: ControllerState): void {
     });
     attachDragHandlers(btn);
     els.hand.append(btn);
+    lastHandBtns.set(card.id, btn);
   }
 
   els.playBtn.disabled = !myTurn;
@@ -464,6 +845,8 @@ function render(state: ControllerState): void {
   updateSortButton();
 
   renderBanner(state);
+
+  endFx(fx, state);
 }
 
 // The Sort toggle's label, title, and arrow track the current

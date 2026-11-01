@@ -132,6 +132,18 @@ class FakeElement {
   click(): void {
     for (const fn of this.listeners.click ?? []) fn({ target: this });
   }
+  // WAAPI stub (TASK 014): records every animation call so tests
+  // can pin FLIP bookkeeping and the reduced-motion zero-call path.
+  animations: { keyframes: unknown; options: unknown }[] = [];
+  static totalAnimateCalls = 0;
+  animate(
+    keyframes: unknown,
+    options?: unknown,
+  ): { onfinish: (() => void) | null; finished: Promise<void>; cancel: () => void } {
+    FakeElement.totalAnimateCalls += 1;
+    this.animations.push({ keyframes, options });
+    return { onfinish: null, finished: Promise.resolve(), cancel: () => {} };
+  }
 }
 
 class FakeText extends FakeElement {
@@ -622,4 +634,124 @@ test("e2e: how-to-play overlay mid-game — header button, close leaves the game
   assert.equal($("trick-info").textContent, before.turn);
   assert.equal($("log").children.length, before.log);
   assert.equal($("play-btn").disabled, false); // still the human's turn
+});
+
+// ---------- TASK 014: animation layer ----------
+
+function pileMinis(): FakeElement[] {
+  const wrap = $("to-beat").children.find((child) =>
+    (child.className ?? "").split(/\s+/).includes("minicards"),
+  );
+  return wrap ? wrap.children : [];
+}
+
+test("e2e: a played card FLIPs into the pile (TASK 014)", async () => {
+  await import("../src/main.js"); // already booted by the earlier tests
+  $("new-match-top").click();
+  // Reach a turn where you lead (pile empty). Your hinted lead play
+  // is then the latest render — CPU timers have not run yet — so the
+  // pile's minis are exactly the cards you just played.
+  let led = false;
+  for (let steps = 0; steps < 2000 && !led; steps++) {
+    settleToYourTurn();
+    if (pileMinis().length === 0) led = true;
+    else humanMove();
+  }
+  assert.ok(led, "never reached a lead turn");
+  humanMove(); // the lead play
+  const minis = pileMinis();
+  assert.ok(minis.length > 0, "the lead play should be in the pile");
+  assert.ok(
+    minis.every((mini) => mini.animations.length > 0),
+    `every played card should carry a FLIP animation, got counts ${minis.map((m) => m.animations.length)}`,
+  );
+});
+
+test("e2e: lockout grey — a CPU lockout pass greys the seat until the round ends (TASK 014)", async () => {
+  await import("../src/main.js");
+  $("new-match-top").click();
+  const seatIds: Record<string, string> = { Mina: "seat-1", Kenji: "seat-2", Rosa: "seat-3" };
+  let greySeat: string | null = null;
+  for (let steps = 0; steps < 20000 && greySeat === null; steps++) {
+    const phase = settle();
+    if (phase === "banner") {
+      assert.ok(
+        !/wins the match/.test($("banner-title").textContent),
+        "match ended before any CPU lockout pass",
+      );
+      $("continue-btn").click();
+      continue;
+    }
+    const lines = $("log").children.map((li) => li.textContent);
+    const m = /^(Mina|Kenji|Rosa) passes — locked out\.$/.exec(lines[lines.length - 1] ?? "");
+    if (m) {
+      greySeat = seatIds[m[1] as string];
+      assert.ok(
+        $(greySeat).className.includes("lockedout"),
+        `${m[1]} should be greyed while locked out; seat class is "${$(greySeat).className}"`,
+      );
+    } else {
+      humanMove();
+    }
+  }
+  assert.ok(greySeat !== null, "expected at least one CPU lockout pass in a match");
+  // The grey lifts when the trick is over: play to the round banner
+  // and confirm no seat remains locked out.
+  let bannered = false;
+  for (let steps = 0; steps < 20000 && !bannered; steps++) {
+    if (settle() === "banner") bannered = true;
+    else humanMove();
+  }
+  assert.ok(bannered, "the round should end");
+  for (const id of ["seat-1", "seat-2", "seat-3"]) {
+    assert.ok(
+      !$(id).className.includes("lockedout"),
+      `${id} should not stay greyed after the round`,
+    );
+  }
+});
+
+test("e2e: animations on vs reduced-motion — identical final state, zero calls when reduced (TASK 014)", async () => {
+  await import("../src/main.js");
+  const playOutMatch = (): { scores: number[]; title: string } => {
+    $("new-match-top").click();
+    for (let steps = 0; steps < 20000; steps++) {
+      const phase = settle();
+      if (phase === "banner") {
+        if (/wins the match/.test($("banner-title").textContent)) {
+          return { scores: scoreValues(), title: $("banner-title").textContent };
+        }
+        $("continue-btn").click();
+        continue;
+      }
+      humanMove();
+    }
+    throw new Error("match did not finish within the step budget");
+  };
+
+  // Reduced motion (a fake matchMedia that says "reduce"): the
+  // whole match must issue zero animation calls.
+  (globalThis as { window?: unknown }).window = {
+    matchMedia: () => ({ matches: true }),
+  };
+  Math.random = seededRng(7);
+  const callsBeforeReduced = FakeElement.totalAnimateCalls;
+  const reduced = playOutMatch();
+  assert.equal(
+    FakeElement.totalAnimateCalls - callsBeforeReduced,
+    0,
+    "reduced motion must issue zero animation calls",
+  );
+  delete (globalThis as { window?: unknown }).window;
+
+  // Motion on, same seed, same scripted play: the animation layer
+  // fires — and the match lands in exactly the same final state.
+  Math.random = seededRng(7);
+  const callsBeforeOn = FakeElement.totalAnimateCalls;
+  const animated = playOutMatch();
+  assert.ok(
+    FakeElement.totalAnimateCalls - callsBeforeOn > 0,
+    "expected animation calls with motion on",
+  );
+  assert.deepEqual(animated, reduced);
 });

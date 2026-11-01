@@ -51,6 +51,10 @@ body::after{
   body::before{animation:none;}
   .handzone.myturn{animation:none !important;}
   .hand .card, .hand .card.bombhot::after{animation:none !important;}
+  /* TASK 014: every CSS-side animation in the bundle is off too
+     (the WAAPI side is gated in the adapter). */
+  .penrow, .penrow::before, .seat.lockedout .opp::after,
+  .modal.instantwin::before, tr.winline{animation:none !important;}
 }
 .wrap{max-width:1080px;margin:0 auto;padding:16px 14px 48px;}
 
@@ -341,6 +345,58 @@ button.small{padding:9px 14px;font-size:12.5px;border-radius:10px;}
 .modal.help h3{font-size:13px;font-weight:900;letter-spacing:2px;color:var(--gold-bright);margin:16px 0 4px;}
 .modal.help p{font-size:15px;font-weight:600;line-height:1.5;color:var(--ink-dim);margin:0;}
 .modal.help .banner-actions{text-align:center;}
+
+/* ---- TASK 014 animation layer (additive; WAAPI lives in the
+   adapter — these are the class/keyframe halves) ---- */
+/* Floating bomb-penalty points + pile-collect ghosts. */
+.fx-layer{position:fixed;inset:0;pointer-events:none;z-index:70;}
+.fx-float{
+  position:fixed;transform:translate(-50%,-50%);font-size:22px;font-weight:900;
+  color:#ff9d94;text-shadow:0 2px 8px rgba(0,0,0,.55);will-change:transform,opacity;
+}
+.fx-ghostcard{position:fixed;pointer-events:none;will-change:transform,opacity;}
+/* Lockout: a passed seat's backs grey out under a LOCKED stamp
+   until the trick clears or the seat comes back in; the human
+   hand greys by the same rule. The stamp animates in once when
+   the class lands. */
+.seat.lockedout .back{filter:grayscale(1) brightness(.55);}
+.seat.lockedout .opp{position:relative;}
+.seat.lockedout .opp::after{
+  content:"LOCKED";position:absolute;top:50%;left:50%;
+  transform:translate(-50%,-50%) rotate(-10deg);
+  font-size:12px;font-weight:900;letter-spacing:1.5px;color:#ffd9d4;
+  background:rgba(120,20,10,.55);border:2px solid rgba(255,157,148,.8);
+  border-radius:6px;padding:2px 7px;pointer-events:none;
+  animation:stampIn .28s cubic-bezier(.2,1.4,.4,1) both;
+}
+@keyframes stampIn{
+  from{opacity:0;transform:translate(-50%,-50%) rotate(-10deg) scale(2.1);}
+  to{opacity:1;transform:translate(-50%,-50%) rotate(-10deg) scale(1);}
+}
+.handzone.lockedout .hand .card{filter:grayscale(.75) brightness(.7);}
+/* Round-end penalty rows: slide in with a red flash (the flash is
+   a ::before overlay whose opacity animates — transform/opacity
+   only), staggered by the adapter via animation-delay + --d. */
+.penrow{position:relative;animation:penSlide .5s cubic-bezier(.2,.9,.3,1.15) both;}
+.penrow::before{
+  content:"";position:absolute;inset:-2px -6px;border-radius:8px;
+  background:rgba(255,70,50,.5);opacity:0;pointer-events:none;
+  animation:penFlash .55s ease-out both;animation-delay:var(--d,0ms);
+}
+@keyframes penSlide{from{transform:translateX(-16px);opacity:0;}to{transform:translateX(0);opacity:1;}}
+@keyframes penFlash{0%{opacity:0;}25%{opacity:.5;}100%{opacity:0;}}
+/* Instant win: a one-shot gold burst behind the banner modal and
+   the winner's row pulsing in. */
+.modal.instantwin{position:relative;z-index:0;}
+.modal.instantwin::before{
+  content:"";position:absolute;inset:-34px;border-radius:50%;z-index:-1;pointer-events:none;
+  background:radial-gradient(circle,rgba(255,197,48,.55) 0%,rgba(255,197,48,.18) 42%,transparent 68%);
+  opacity:0;animation:burst .9s ease-out both;
+}
+@keyframes burst{0%{opacity:0;transform:scale(.55);}30%{opacity:1;}100%{opacity:0;transform:scale(1.12);}}
+tr.winline{animation:winPulse .8s ease-in-out 2 both;}
+tr.winline td:first-child{color:var(--gold-bright);}
+@keyframes winPulse{0%{transform:scale(1);opacity:.35;}35%{transform:scale(1.045);opacity:1;}100%{transform:scale(1);opacity:1;}}
 
 @media (max-width:640px){
   body{font-size:16px;}
