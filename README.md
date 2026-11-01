@@ -67,6 +67,7 @@ completion.
 | 016 | Table-talk log: lockouts + itemized penalties | #17 | ✅ Merged · Live |
 | 017 | How-to-play cheatsheet overlay | #18 | ✅ Merged · Live |
 | 014 | Animations — full bundle (FLIP, deal, collect, bomb juice, instant-win/lockout/penalty) | #19 | ✅ Merged · Live |
+| 018 | Cheatsheet bomb examples + playable-bomb flicker (Codex-cloud pilot) | #20 | ✅ Merged · Live |
 
 ## Play
 
