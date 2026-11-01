@@ -2,6 +2,7 @@ import { createController, type ControllerState } from "./ui/controller.js";
 import { enumerateBombs } from "./engine/ai.js";
 import { isComebackBomb, bombBeats, detectBomb, bombTarget } from "./engine/bombs.js";
 import { hasComebackTurn, type TrickPlay, type TrickState } from "./engine/trick.js";
+import type { Match } from "./engine/match.js";
 import type { Card } from "./engine/cards.js";
 import {
   SEAT_NAMES,
@@ -121,6 +122,7 @@ let lastHandBtns = new Map<string, HTMLElement>();
 let lastPileMinis = new Map<string, HTMLElement>();
 let lastScoreBoxes: (HTMLElement | undefined)[] = [];
 let fxScores: number[] | null = null;
+let fxMatchRef: Match | null = null;
 let fxTrickRef: TrickState | null = null;
 let fxTrickNumber = 0;
 let fxPassed: number[] = [];
@@ -346,18 +348,22 @@ function endFx(fx: FxBegin, state: ControllerState): void {
     // Hand settle: cards whose layout slot moved (sort, drag
     // settle, reflow after a play) glide to their new positions.
     // The just-dragged card is excluded — it was pointer-glued.
-    for (const [id, btn] of lastHandBtns) {
-      if (id === justDraggedId) continue;
-      const pre = fx.handRects.get(id);
-      if (!pre) continue;
-      const post = rectOf(btn);
-      const dx = pre.left - post.left;
-      const dy = pre.top - post.top;
-      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) continue;
-      animate(btn, [
-        { transform: `translate(${dx}px, ${dy}px)` },
-        { transform: "translate(0, 0)" },
-      ], { duration: 260, easing: "cubic-bezier(.25,.9,.3,1.15)" });
+    // Same-trick only: hand rects are per-round layout state, and
+    // on a trick change the deal stagger owns all card motion.
+    if (fx.trickRef === trick) {
+      for (const [id, btn] of lastHandBtns) {
+        if (id === justDraggedId) continue;
+        const pre = fx.handRects.get(id);
+        if (!pre) continue;
+        const post = rectOf(btn);
+        const dx = pre.left - post.left;
+        const dy = pre.top - post.top;
+        if (Math.abs(dx) < 1 && Math.abs(dy) < 1) continue;
+        animate(btn, [
+          { transform: `translate(${dx}px, ${dy}px)` },
+          { transform: "translate(0, 0)" },
+        ], { duration: 260, easing: "cubic-bezier(.25,.9,.3,1.15)" });
+      }
     }
 
     // Pass flash: seats that newly locked out shake/flash once.
@@ -391,7 +397,15 @@ function endFx(fx: FxBegin, state: ControllerState): void {
 
     // Bomb penalty: exactly two score boxes moved mid-round, by
     // opposite amounts — float the points and flash both boxes.
-    if (state.phase === "playing" && fx.scores && state.match) {
+    // The score tracker is keyed to the match object: a New match
+    // replaces it, and the reset render must not read the old
+    // match's final scores as a fresh transfer (TASK 014 fix).
+    if (
+      state.phase === "playing" &&
+      fx.scores &&
+      state.match &&
+      fxMatchRef === state.match
+    ) {
       const now = state.match.scores;
       const changed = [0, 1, 2, 3].filter((p) => now[p] !== fx.scores![p]);
       if (changed.length === 2) {
@@ -417,6 +431,7 @@ function endFx(fx: FxBegin, state: ControllerState): void {
   } finally {
     // Trackers always advance, motion or not.
     fxScores = state.match ? [...state.match.scores] : null;
+    fxMatchRef = state.match;
     fxTrickRef = state.trick;
     fxTrickNumber = state.trick ? state.trick.trickNumber : 0;
     fxPassed = state.trick ? [...state.trick.passed] : [];
