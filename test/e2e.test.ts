@@ -973,3 +973,26 @@ test("e2e: flicker leaves the same hand DOM and state under reduced motion", asy
   assert.ok(keyframes);
   assert.ok(!/transform|box-shadow/.test(keyframes), "flicker leaves lift and foil geometry alone");
 });
+
+test("hand motion: shared transition and selected pose wins hover", () => {
+  const css = readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8");
+  const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .map((m) => ({ selector: m[1].trim(), body: m[2] }));
+  const hand = rules.filter((r) => r.selector.startsWith(".hand "));
+  const transitions = hand.filter((r) => /transition:/.test(r.body));
+  assert.equal(transitions.length, 2);
+  assert.equal(transitions[0].selector, ".hand .card");
+  assert.match(transitions[0].body, /transition:transform \.13s ease, box-shadow \.13s ease;/);
+  assert.equal(transitions[1].selector, ".hand .card.dragging");
+  assert.match(transitions[1].body, /transition:none/);
+  const hover = hand.filter((r) => r.selector.includes(":hover"));
+  assert.equal(hover.length, 1);
+  assert.equal(hover[0].selector, ".hand .card:hover");
+  const selected = hand.find((r) => r.selector === ".hand .card.sel")!;
+  assert.ok(hand.indexOf(selected) > hand.indexOf(hover[0]));
+  assert.match(selected.body, /transform:translateY\(-15px\) rotate\(0deg\);/);
+  assert.match(selected.body, /background:#e8f5ff/);
+  assert.match(selected.body, /0 0 0 3px var\(--blue\)/);
+  assert.match(transitions[0].body, /filter:none/);
+  assert.ok(!hand.some((r) => r.selector.includes(":active")));
+});
