@@ -1,1 +1,15 @@
-{"description":"Thirteen / Tien Len — local web app (scaffold + core card engine)","name":"13-tien-len","private":true,"scripts":{"build":"node build.mjs","test":"node --test"},"type":"module","version":"0.1.0"}
+{
+  "description": "Thirteen / Tien Len \u2014 local web app (scaffold + core card engine)",
+  "name": "13-tien-len",
+  "private": true,
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "tsc -p tsconfig.test.json && node --test \".test-out/test/**/*.test.js\""
+  },
+  "type": "module",
+  "version": "0.1.0",
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2"
+  }
+}

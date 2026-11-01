@@ -1,0 +1,265 @@
+import { newDeal } from "../engine/deal.js";
+import {
+  createMatch, startRound, applyInstantWin, finishRound, applyChop,
+  type Match, type Chop,
+} from "../engine/match.js";
+import { playCards, passTurn, type TrickState } from "../engine/trick.js";
+import { chooseAction, type Action } from "../engine/ai.js";
+import { detectBomb, bombTarget } from "../engine/bombs.js";
+import type { Card } from "../engine/cards.js";
+import type { Penalty } from "../engine/scoring.js";
+import type { InstantWinKind } from "../engine/instantWin.js";
+import {
+  SEAT_NAMES,
+  HUMAN,
+  emptyTrickView,
+  applyToTrickView,
+  describePlay,
+  bombPenaltyLogLine,
+  validateSelection,
+  type TrickView,
+} from "./model.js";
+
+// DOM-free game controller: owns the match flow and drives the real
+// engine (match / trick / ai). The page (main.js) is a thin adapter
+// that renders this state and forwards button clicks. No rule logic
+// lives here — every play goes through the engine, and engine errors
+// are surfaced as the message line instead of being hidden.
+//
+// Options:
+// - onChange(state): called after every state change.
+// - schedule(fn, ms): timer for CPU turns (setTimeout in the browser,
+//   synchronous in tests).
+// - cpuDelayMs: pause before each CPU move so play is watchable.
+// - dealHands(): returns a fresh 4x13 deal (injectable for tests).
+
+export type Phase = "idle" | "playing" | "roundEnd" | "matchEnd";
+
+export interface RoundSummary {
+  instantWin: { winner: number; kind: InstantWinKind } | null;
+  finishOrder: number[];
+  deltas: number[];
+  penalties: Penalty[];
+  /** This round's bomb-penalty transfers (TASK 012), in order. */
+  chops: Chop[];
+  scores: number[];
+  matchWinner: number | null;
+}
+
+export interface ControllerState {
+  phase: Phase;
+  match: Match | null;
+  trick: TrickState | null;
+  message: string;
+  log: string[];
+  trickView: TrickView;
+  roundSummary: RoundSummary | null;
+}
+
+export interface ControllerOptions {
+  onChange?: (state: ControllerState) => void;
+  schedule?: (fn: () => void, ms: number) => unknown;
+  cpuDelayMs?: number;
+  dealHands?: () => Card[][];
+}
+
+export interface Controller {
+  state: ControllerState;
+  newMatch(): void;
+  continueRound(): void;
+  humanPlay(cards: Card[]): boolean;
+  humanPass(): boolean;
+  hint(): Action | null;
+  setMessage(text: string): void;
+}
+
+const INSTANT_WIN_NAMES: Record<InstantWinKind, string> = {
+  "four-2s": "four 2s",
+  "six-pairs": "six pairs",
+  "five-consecutive-pairs": "five consecutive pairs",
+  "dragon-straight": "a dragon straight",
+  "three-consecutive-triples": "three consecutive triples",
+};
+
+export function createController(options: ControllerOptions = {}): Controller {
+  const onChange = options.onChange ?? (() => {});
+  const schedule = options.schedule ?? ((fn: () => void, ms: number) => setTimeout(fn, ms));
+  const cpuDelayMs = options.cpuDelayMs ?? 650;
+  const dealHands = options.dealHands ?? (() => newDeal(Math.random));
+
+  const state: ControllerState = {
+    phase: "idle", // idle | playing | roundEnd | matchEnd
+    match: null,
+    trick: null,
+    message: "",
+    log: [],
+    trickView: emptyTrickView(),
+    roundSummary: null,
+  };
+
+  let cpuPending = false;
+  let roundChops: Chop[] = []; // this round's chop transfers, for the summary
+
+  const emit = () => onChange(state);
+  const name = (player: number): string => SEAT_NAMES[player];
+
+  function log(line: string): void {
+    state.log = [...state.log, line].slice(-60);
+  }
+
+  function startRoundInternal(): void {
+    state.trickView = emptyTrickView();
+    state.roundSummary = null;
+    state.message = "";
+    roundChops = [];
+    const match = state.match as Match;
+    const roundNo = match.roundNumber;
+    const start = startRound(match, dealHands());
+    if (start.type === "instant-win") {
+      const { deltas } = applyInstantWin(match, start.winner);
+      state.trick = null;
+      state.roundSummary = {
+        instantWin: { winner: start.winner, kind: start.kind },
+        finishOrder: [start.winner],
+        deltas,
+        penalties: [],
+        chops: [],
+        scores: [...match.scores],
+        matchWinner: match.winner,
+      };
+      state.phase = match.winner !== null ? "matchEnd" : "roundEnd";
+      log(
+        `${name(start.winner)} wins round ${roundNo} instantly with ${INSTANT_WIN_NAMES[start.kind] ?? start.kind}!`,
+      );
+      emit();
+      return;
+    }
+    state.trick = start.state;
+    state.phase = "playing";
+    log(`Round ${roundNo}: ${name(state.trick.currentPlayer)} leads.`);
+    emit();
+    maybeCpu();
+  }
+
+  function applyAction(player: number, action: Action): boolean {
+    const trick = state.trick as TrickState;
+    const match = state.match as Match;
+    const trickNumberBefore = trick.trickNumber;
+    const prevPlay = trick.currentPlay;
+    try {
+      if (action.type === "play") playCards(trick, player, action.cards);
+      else passTurn(trick, player);
+    } catch (error) {
+      state.message = (error as Error).message;
+      emit();
+      return false;
+    }
+    state.message = "";
+    // Log first: an action that clears the trick is logged like any
+    // other action, even though the trick view then resets.
+    if (action.type === "play") {
+      // The play functioned as a bomb when it answered a single 2 /
+      // pair of 2s with a bomb — that context decides the phrasing.
+      const wasBomb =
+        prevPlay !== null &&
+        bombTarget(prevPlay.cards) !== null &&
+        detectBomb(action.cards) !== null;
+      log(`${name(player)} plays ${describePlay(action.cards, wasBomb)}.`);
+      // Chop: bombing a played 2 / pair of 2s transfers 1 point per
+      // 2 from its owner to the bomber, instantly (TASK 012). The
+      // engine decides what counts (applyChop via bombBeats); the
+      // transfer lands on the match scores before this emit, so the
+      // score display moves on the same render.
+      const chop = applyChop(match, prevPlay, action.cards, player);
+      if (chop) {
+        roundChops.push(chop);
+        log(bombPenaltyLogLine(chop));
+      }
+    } else {
+      log(`${name(player)} passes.`);
+    }
+    if (trick.trickNumber !== trickNumberBefore) {
+      // The action cleared the trick; the new trick starts blank.
+      state.trickView = emptyTrickView();
+    } else if (action.type === "play") {
+      state.trickView = applyToTrickView(state.trickView, {
+        type: "play",
+        player,
+        cards: action.cards,
+      });
+    } else {
+      state.trickView = applyToTrickView(state.trickView, { type: "pass", player });
+    }
+    if (trick.roundOver) {
+      const result = finishRound(match, trick);
+      state.roundSummary = {
+        instantWin: null,
+        finishOrder: [...trick.finishOrder],
+        deltas: result.deltas,
+        penalties: result.penalties,
+        chops: [...roundChops],
+        scores: [...match.scores],
+        matchWinner: result.matchWinner,
+      };
+      state.phase = result.matchWinner !== null ? "matchEnd" : "roundEnd";
+      log(`Round over. ${name(trick.finishOrder[0])} takes it.`);
+      emit();
+      return true;
+    }
+    emit();
+    maybeCpu();
+    return true;
+  }
+
+  function maybeCpu(): void {
+    if (state.phase !== "playing" || !state.trick || state.trick.roundOver) return;
+    const player = state.trick.currentPlayer;
+    if (player === HUMAN || cpuPending) return;
+    cpuPending = true;
+    schedule(() => {
+      cpuPending = false;
+      if (state.phase !== "playing" || !state.trick) return;
+      const current = state.trick.currentPlayer;
+      if (current === HUMAN) return;
+      applyAction(current, chooseAction(state.trick, current));
+    }, cpuDelayMs);
+  }
+
+  return {
+    state,
+    newMatch() {
+      state.match = createMatch();
+      state.log = [];
+      log("New match — first to 13.");
+      startRoundInternal();
+    },
+    continueRound() {
+      if (state.phase !== "roundEnd") return;
+      startRoundInternal();
+    },
+    humanPlay(cards: Card[]) {
+      if (state.phase !== "playing" || !state.trick) return false;
+      const check = validateSelection(state.trick, HUMAN, cards);
+      if (!check.ok) {
+        state.message = check.error;
+        emit();
+        return false;
+      }
+      return applyAction(HUMAN, { type: "play", cards });
+    },
+    humanPass() {
+      if (state.phase !== "playing" || !state.trick) return false;
+      return applyAction(HUMAN, { type: "pass" });
+    },
+    // The AI policy's suggestion for the human seat (the Hint button).
+    hint() {
+      if (state.phase !== "playing" || !state.trick) return null;
+      if (state.trick.currentPlayer !== HUMAN) return null;
+      return chooseAction(state.trick, HUMAN);
+    },
+    setMessage(text: string) {
+      state.message = text;
+      emit();
+    },
+  };
+}
