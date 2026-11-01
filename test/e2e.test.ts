@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { createDeck, makeCard, type Card } from "../src/engine/cards.js";
+import { createTrickState, playCards, passTurn } from "../src/engine/trick.js";
+import { createMatch } from "../src/engine/match.js";
+import { emptyTrickView } from "../src/ui/model.js";
+import type { ControllerState } from "../src/ui/controller.js";
 import { seededRng } from "../src/engine/runner.js";
 
 // Functional end-to-end tests for the playable UI.
@@ -296,6 +301,11 @@ test("e2e: how-to-play overlay on the start screen — content, open/close, noth
   assert.ok(html.includes('id="help-btn-top"'), "header needs its How to play button");
   assert.ok(html.includes('id="help-btn-start"'), "start screen needs its How to play button");
   assert.ok(html.includes("Bomb a 2 and its owner pays you 1 point per 2 — instantly."));
+  for (const example of [
+    "Example: 4♠4♣ 5♠5♣ 6♠6♣ — a 3-pair double run — bombs a single 2.",
+    "Example: 4♠4♣ 5♠5♣ 6♠6♣ 7♠7♣ — a 4-pair double run — bombs a pair of 2s.",
+    "Example: 9♠9♣9♦9♥ — four of a kind — bombs a single 2 or a pair of 2s.",
+  ]) assert.ok(html.includes(`<p>${example}</p>`), `missing bomb example: ${example}`);
   assert.ok(html.includes("Passing locks you out of the trick."));
   assert.ok(html.includes("2♥ is the biggest card in the game"));
   assert.ok(!html.toLowerCase().includes("chop"), "no chop vocabulary in the page");
@@ -859,4 +869,107 @@ test("e2e: bomb-penalty float — none on a New match reset, exactly one per gen
     }
   }
   assert.ok(verified, "no genuine chop occurred to verify the float against");
+});
+
+
+// Feed engine-produced trick states through the real DOM adapter. The
+// exported render entry point avoids exposing or mutating its live controller.
+const pairRun = (ranks: Card["rank"][]): Card[] => ranks.flatMap((rank) =>
+  [makeCard(rank, "spades"), makeCard(rank, "clubs")]);
+const nines = createDeck().filter((card) => card.rank === "9");
+const threePairs = pairRun(["4", "5", "6"]);
+const fourPairs = pairRun(["4", "5", "6", "7"]);
+
+function bombFixture(hand: Card[], target: Card[], leader = 3): ControllerState {
+  const hands = [hand, [makeCard("J", "hearts")], [makeCard("Q", "hearts")],
+    [makeCard("K", "hearts")]];
+  hands[leader] = [...hands[leader], ...target];
+  const trick = createTrickState(hands, { leader, openingLead: false });
+  if (target.length) playCards(trick, leader, target);
+  return { phase: "playing", match: createMatch(), trick, message: "", log: [],
+    trickView: emptyTrickView(), roundSummary: null };
+}
+
+async function assertFlicker(state: ControllerState, expected: Card[]): Promise<void> {
+  const { render } = await import("../src/main.js");
+  const before = structuredClone(state);
+  render(state);
+  const marked = $("hand").children.filter((btn) => btn.className.split(/\s+/).includes("bombplayable"));
+  assert.deepEqual(marked.map((btn) => btn.dataset.cardId).sort(), expected.map((card) => card.id).sort());
+  assert.deepEqual(state, before, "presentation must not mutate game state");
+  for (const id of ["seat-1", "seat-2", "seat-3"]) {
+    assert.ok(!$(id).className.includes("bombplayable"), "CPU seats never flicker");
+  }
+}
+
+test("e2e: playable bomb flicker vs single 2 — both bombs and every overlapping card", async () => {
+  // Three 4s: every choice of pair belongs to a playable double run.
+  const hand = [...threePairs, makeCard("4", "diamonds"), ...nines, makeCard("A", "hearts")];
+  const state = bombFixture(hand, [makeCard("2", "spades")]);
+  await assertFlicker(state, hand.filter((card) => card.rank !== "A"));
+  const btn = $("hand").children.find((card) => card.dataset.cardId === nines[0].id)!;
+  btn.click();
+  const selected = $("hand").children.find((card) => card.dataset.cardId === nines[0].id)!;
+  assert.ok(selected.className.split(/\s+/).includes("sel") && selected.className.split(/\s+/).includes("bombplayable"));
+});
+
+test("e2e: playable bomb flicker vs pair of 2s — four pairs and quads only", async () => {
+  await assertFlicker(bombFixture([...fourPairs, ...nines], pairRun(["2"])), [...fourPairs, ...nines]);
+  await assertFlicker(bombFixture([...threePairs, ...nines], pairRun(["2"])), nines);
+});
+
+test("e2e: comeback flicker uses engine eligibility and keeps the foil", async () => {
+  const cases: [Card[], Card[]][] = [
+    [[...threePairs, ...nines], nines],
+    [[...fourPairs, ...nines], [...fourPairs, ...nines]],
+  ];
+  for (const [hand, expected] of cases) {
+    const low = makeCard("3", "spades"), two = makeCard("2", "spades");
+    const state = bombFixture(hand, [low]);
+    const trick = state.trick!;
+    trick.hands[1].push(two);
+    passTurn(trick, 0);
+    playCards(trick, 1, [two]);
+    passTurn(trick, 2);
+    passTurn(trick, 3);
+    assert.equal(trick.currentPlayer, 0);
+    await assertFlicker(state, expected);
+    for (const btn of $("hand").children.filter((card) => card.className.split(/\s+/).includes("bombplayable"))) {
+      assert.ok(btn.className.split(/\s+/).includes("bombhot"), "comeback foil remains");
+    }
+    passTurn(trick, 0);
+    await assertFlicker(state, []);
+  }
+});
+
+test("e2e: no bomb flicker without a beatable target or outside the human turn", async () => {
+  const hand = [...threePairs, ...nines];
+  await assertFlicker(bombFixture(hand, [], 0), []); // leading a quad is not bombing
+  await assertFlicker(bombFixture(hand, [makeCard("A", "spades")]), []);
+  await assertFlicker(bombFixture(hand, createDeck().filter((c) => c.rank === "2").slice(0, 3)), []);
+  await assertFlicker(bombFixture(hand, [makeCard("2", "spades")], 2), []);
+  const ended = bombFixture(hand, [makeCard("2", "spades")]);
+  ended.phase = "roundEnd";
+  await assertFlicker(ended, []);
+});
+
+test("e2e: flicker leaves the same hand DOM and state under reduced motion", async () => {
+  const state = bombFixture([...threePairs, ...nines], [makeCard("2", "spades")]);
+  await assertFlicker(state, [...threePairs, ...nines]);
+  const handSnapshot = () => $("hand").children.map((btn) => ({
+    id: btn.dataset.cardId, classes: btn.className, disabled: btn.disabled, text: btn.textContent,
+  }));
+  const normal = handSnapshot();
+  (globalThis as { window?: unknown }).window = { matchMedia: () => ({ matches: true }) };
+  try {
+    await assertFlicker(state, [...threePairs, ...nines]);
+    assert.deepEqual(handSnapshot(), normal);
+  } finally {
+    delete (globalThis as { window?: unknown }).window;
+  }
+  const css = readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8");
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.hand \.card[^{}]*\{animation:none !important;/);
+  const keyframes = css.match(/@keyframes bombflicker\{([\s\S]*?)\n\}/)?.[1];
+  assert.ok(keyframes);
+  assert.ok(!/transform|box-shadow/.test(keyframes), "flicker leaves lift and foil geometry alone");
 });

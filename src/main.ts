@@ -513,6 +513,23 @@ function comebackHotIds(state: ControllerState): Set<string> {
   return hot;
 }
 
+// Flicker means a bomb can beat the table on this turn, not merely
+// that the hand contains a bomb. Keep eligibility in the engine.
+function playableBombIds(state: ControllerState): Set<string> {
+  const trick = state.trick;
+  const ids = new Set<string>();
+  if (state.phase !== "playing" || !trick ||
+      trick.currentPlayer !== HUMAN || !trick.currentPlay) return ids;
+  const passed = trick.passed.includes(HUMAN);
+  if (passed && !hasComebackTurn(trick, HUMAN)) return ids;
+  for (const bomb of enumerateBombs(trick.hands[HUMAN])) {
+    if (bombBeats(bomb, trick.currentPlay.cards) && (!passed || isComebackBomb(bomb))) {
+      bomb.forEach((card) => ids.add(card.id));
+    }
+  }
+  return ids;
+}
+
 function renderBanner(state: ControllerState): void {
   const summary = state.roundSummary;
   const modal = els.banner.children[0] as HTMLElement | undefined;
@@ -715,7 +732,7 @@ function renderScoreboard(state: ControllerState): void {
   }
 }
 
-function render(state: ControllerState): void {
+export function render(state: ControllerState): void {
   const fx = beginFx();
   // A new trick state object = a new round: the manual drag order and
   // the pile's previous-play tracking reset; the deal is ascending.
@@ -817,13 +834,14 @@ function render(state: ControllerState): void {
     ? `You — ${myHand.length} cards${myTurn ? " · ● your turn" : ""}`
     : "You";
   const hot = comebackHotIds(state);
+  const playableBombs = playableBombIds(state);
   els.hand.textContent = "";
   lastHandBtns = new Map();
   for (const card of myHand) {
     const label = cardLabel(card);
     const btn = el(
       "button",
-      `card ${label.color}${selected.has(card.id) ? " sel" : ""}${hot.has(card.id) ? " bombhot" : ""}`,
+      `card ${label.color}${selected.has(card.id) ? " sel" : ""}${hot.has(card.id) ? " bombhot" : ""}${playableBombs.has(card.id) ? " bombplayable" : ""}`,
     ) as HTMLButtonElement;
     btn.type = "button";
     btn.dataset.cardId = card.id;
