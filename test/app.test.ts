@@ -427,6 +427,15 @@ test("model: penaltyLine itemizes held 2s and unused bombs with per-cause points
     }),
     "Penalty: Mina pays 1 to You: a 4-pair double run (3s–6s) unused (1 pt).",
   );
+  // The exact-four-pairs holding (4s–7s) renders as the 4-pair bomb
+  // it is (TASK 016 tie-break refinement).
+  assert.equal(
+    penaltyLine({
+      player: 3, points: 1, paidTo: 0, twos: [],
+      bombs: [{ kind: "pair-sequence-4", from: "4", to: "7" }],
+    }),
+    "Penalty: Rosa pays 1 to You: a 4-pair double run (4s–7s) unused (1 pt).",
+  );
 });
 
 test("model: comebackLogLine speaks for the human and CPU seats (TASK 016)", () => {

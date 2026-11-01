@@ -117,14 +117,18 @@ function sequencesIn(runRanks: Rank[]): UnusedBomb[] {
   let i = 0;
   let r = runRanks.length;
   while (r > 0) {
-    if (r >= 3 && dp[r] === dp[r - 3] + 1) {
-      out.push({ kind: "pair-sequence-3", from: runRanks[i], to: runRanks[i + 2] });
-      i += 3;
-      r -= 3;
-    } else if (r >= 4 && dp[r] === dp[r - 4] + 1) {
+    // On a DP tie, prefer the 4-pair sequence: when one is present
+    // it names itself (power tracks rarity). The branch only fires
+    // when taking 4 still achieves the DP optimum, so the count —
+    // and every locked decomposition total — is unchanged.
+    if (r >= 4 && dp[r] === dp[r - 4] + 1) {
       out.push({ kind: "pair-sequence-4", from: runRanks[i], to: runRanks[i + 3] });
       i += 4;
       r -= 4;
+    } else if (r >= 3 && dp[r] === dp[r - 3] + 1) {
+      out.push({ kind: "pair-sequence-3", from: runRanks[i], to: runRanks[i + 2] });
+      i += 3;
+      r -= 3;
     } else {
       i += 1;
       r -= 1;

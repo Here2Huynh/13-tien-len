@@ -526,9 +526,16 @@ test("scoring: unusedBombs enumerates exactly what countUnusedBombs counts (TASK
       ],
     },
     {
-      // Five pairs: exactly one sequence (the DP's count is 1).
+      // Five pairs: exactly one sequence (the DP's count is 1) —
+      // and the 4-pair sequence present in the run names itself.
       hand: ["3", "4", "5", "6", "7"].flatMap(pair),
-      want: [{ kind: "pair-sequence-3", from: "3", to: "5" }],
+      want: [{ kind: "pair-sequence-4", from: "3", to: "6" }],
+    },
+    {
+      // Exactly four consecutive pairs: on the DP tie the 4-pair
+      // sequence names itself — not a 3-pair plus a spare pair.
+      hand: ["4", "5", "6", "7"].flatMap(pair),
+      want: [{ kind: "pair-sequence-4", from: "4", to: "7" }],
     },
     {
       // Quad closes the run it interrupts: quad 3s + pairs 4-5-6.
