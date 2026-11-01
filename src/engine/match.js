@@ -1,6 +1,7 @@
 import { detectInstantWin } from "./instantWin.js";
 import { scoreRound, scoreInstantWin } from "./scoring.js";
 import { createTrickState, findOpeningLeader } from "./trick.js";
+import { bombBeats } from "./bombs.js";
 
 // Match state for Thirteen / Tien Len.
 // Scores accumulate across rounds. First player to reach 13 points at
@@ -78,6 +79,29 @@ export function applyInstantWin(match, winner) {
   const finishOrder = [winner, ...[0, 1, 2, 3].filter((p) => p !== winner)];
   applyDeltas(match, deltas, winner, finishOrder);
   return { deltas, scores: [...match.scores], matchWinner: match.winner };
+}
+
+// CHOP (John's ruling, TASK 012): when a play bombs a played 2 or
+// pair of 2s, the owner of the 2s pays the bomber 1 point per 2 —
+// instantly, mid-round, as a zero-sum transfer on the match scores.
+// Comeback bombs chop too: any bomb-over-2s event counts, and the
+// engine's bombBeats is the only definition of one (a higher 2 over
+// a 2, a higher four of a kind over a four of a kind, and a bomb led
+// on an empty trick are not chops). The transfer lands on
+// match.scores immediately; the match winner is still decided only
+// at round end (applyDeltas), so a chop never ends a match
+// mid-round. A chopped 2 was played, so it is out of its owner's
+// hand and can never also be charged as a round-end leftover.
+// prevPlay is the trick's current play before this play ({ player,
+// cards }) or null on a lead. Returns { payer, payee, points } when
+// a chop happened, else null.
+export function applyChop(match, prevPlay, cards, bomber) {
+  if (!prevPlay || !bombBeats(cards, prevPlay.cards)) return null;
+  const points = prevPlay.cards.filter((card) => card.rank === "2").length;
+  if (points === 0) return null; // unreachable through bombBeats; guard anyway
+  match.scores[prevPlay.player] -= points;
+  match.scores[bomber] += points;
+  return { payer: prevPlay.player, payee: bomber, points };
 }
 
 // Score and apply a finished round from its trick state.

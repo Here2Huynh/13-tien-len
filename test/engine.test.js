@@ -10,7 +10,7 @@ import { createTrickState, playCards, passTurn } from "../src/engine/trick.js";
 import { detectBomb, bombBeats, isComebackBomb } from "../src/engine/bombs.js";
 import { detectInstantWin } from "../src/engine/instantWin.js";
 import { scoreRound, scoreInstantWin, leftoverPenalty, countUnusedBombs } from "../src/engine/scoring.js";
-import { createMatch, startRound, applyInstantWin, finishRound } from "../src/engine/match.js";
+import { createMatch, startRound, applyInstantWin, finishRound, applyChop } from "../src/engine/match.js";
 import { seededRng } from "../src/engine/runner.js";
 
 // Consolidated engine suite: cards, deal, combinations, plays, trick
@@ -398,4 +398,113 @@ test("match: scores accumulate across rounds; first to 13 wins; the winner leads
   applyInstantWin(match, 2);
   assert.equal(match.scores[2], 18);
   assert.equal(match.winner, 2);
+});
+
+// ---------- chop (TASK 012) ----------
+
+const quad = (rank) => ["spades", "clubs", "diamonds", "hearts"].map((s) => c(rank, s));
+
+test("chop: a single 2 is chopped by every bomb tier, 1 point, instantly", () => {
+  for (const bomb of [seq3(), seq4(), quad("9")]) {
+    const match = createMatch();
+    const chop = applyChop(match, { player: 1, cards: [c("2", "hearts")] }, bomb, 2);
+    assert.deepEqual(chop, { payer: 1, payee: 2, points: 1 });
+    // The scores moved immediately — no round end involved.
+    assert.deepEqual(match.scores, [0, -1, 1, 0]);
+  }
+});
+
+test("chop: a pair of 2s pays 2 to the 4-pair run and to four of a kind; the 3-pair run cannot chop it", () => {
+  const pair2 = { player: 0, cards: [c("2", "clubs"), c("2", "diamonds")] };
+  for (const bomb of [seq4(), quad("9")]) {
+    const match = createMatch();
+    assert.deepEqual(applyChop(match, pair2, bomb, 3), { payer: 0, payee: 3, points: 2 });
+    assert.deepEqual(match.scores, [-2, 0, 0, 2]);
+  }
+  const match = createMatch();
+  assert.equal(applyChop(match, pair2, seq3(), 3), null);
+  assert.deepEqual(match.scores, [0, 0, 0, 0]);
+});
+
+test("chop: no bombed 2, no chop — higher 2 over 2, higher quad over quad, a bomb led, a bomb over a non-2, triple 2s", () => {
+  const cases = [
+    [{ player: 0, cards: [c("2", "clubs")] }, [c("2", "hearts")]],
+    [{ player: 0, cards: quad("5") }, quad("9")],
+    [null, seq3()],
+    [{ player: 0, cards: [c("K", "clubs"), c("K", "diamonds")] }, quad("9")],
+    [{ player: 0, cards: [c("2", "clubs"), c("2", "diamonds"), c("2", "hearts")] }, quad("9")],
+  ];
+  for (const [prevPlay, cards] of cases) {
+    const match = createMatch();
+    assert.equal(applyChop(match, prevPlay, cards, 1), null);
+    assert.deepEqual(match.scores, [0, 0, 0, 0]);
+  }
+});
+
+test("chop: a comeback bomb chops too", () => {
+  const match = createMatch();
+  const quad9 = quad("9");
+  const state = createTrickState(
+    [
+      [c("3", "spades"), c("4", "clubs"), c("Q", "diamonds")],
+      [...seq3(), ...quad9],
+      [c("2", "hearts"), c("K", "spades")],
+      [c("6", "diamonds"), c("J", "spades")],
+    ],
+    { leader: 0, openingLead: false },
+  );
+  // Play the way the controller and runner do: capture the current
+  // play, apply the play, then settle any chop.
+  const play = (player, cards) => {
+    const prevPlay = state.currentPlay;
+    playCards(state, player, cards);
+    return applyChop(match, prevPlay, cards, player);
+  };
+  assert.equal(play(0, [c("3", "spades")]), null);
+  passTurn(state, 1); // player 1 passes, holding the quad
+  assert.equal(play(2, [c("2", "hearts")]), null);
+  passTurn(state, 3);
+  passTurn(state, 0);
+  // The comeback bomb lands on the 2: player 2 pays player 1, now.
+  assert.deepEqual(play(1, quad9), { payer: 2, payee: 1, points: 1 });
+  assert.deepEqual(match.scores, [0, 1, -1, 0]);
+  assert.equal(state.roundOver, false); // mid-round, exactly as ruled
+});
+
+test("chop: the chopped 2 is never charged again as a round-end leftover", () => {
+  const match = createMatch();
+  const state = createTrickState(
+    [
+      [c("3", "spades"), c("Q", "diamonds")],
+      [c("2", "hearts"), c("K", "spades")],
+      [...seq3(), c("9", "clubs")],
+      [c("6", "diamonds"), c("J", "spades")],
+    ],
+    { leader: 0, openingLead: false },
+  );
+  const play = (player, cards) => {
+    const prevPlay = state.currentPlay;
+    playCards(state, player, cards);
+    return applyChop(match, prevPlay, cards, player);
+  };
+  assert.equal(play(0, [c("3", "spades")]), null);
+  assert.equal(play(1, [c("2", "hearts")]), null);
+  assert.deepEqual(play(2, seq3()), { payer: 1, payee: 2, points: 1 });
+  assert.deepEqual(match.scores, [0, -1, 1, 0]); // instant, mid-round
+  passTurn(state, 3);
+  passTurn(state, 0);
+  passTurn(state, 1); // the bomb stands; the trick clears to player 2
+  assert.equal(play(2, [c("9", "clubs")]), null); // player 2 goes out leading
+  passTurn(state, 3);
+  assert.equal(play(0, [c("Q", "diamonds")]), null); // player 0 out
+  assert.equal(play(1, [c("K", "spades")]), null); // player 1 out; round over
+  assert.equal(state.roundOver, true);
+  assert.deepEqual(state.finishOrder, [2, 0, 1, 3]);
+  const result = finishRound(match, state);
+  // Player 1's 2 was played and chopped — it is in no hand at round
+  // end, so no leftover penalty exists anywhere in this round.
+  assert.deepEqual(result.penalties, []);
+  // Final = post-chop scores + round deltas (+2/+1/-1/-2 by place).
+  assert.deepEqual(match.scores, [1, -2, 3, -2]);
+  assert.equal(match.scores.reduce((a, b) => a + b, 0), 0);
 });

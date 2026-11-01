@@ -8,7 +8,7 @@ import { playMatch, seededRng } from "../src/engine/runner.js";
 import { newDeal, shuffle } from "../src/engine/deal.js";
 import {
   cardLabel, sortHand, validateSelection,
-  emptyTrickView, applyToTrickView, describePlay,
+  emptyTrickView, applyToTrickView, describePlay, bombPenaltyLogLine,
   roundResultRows, scoreRows,
 } from "../src/ui/model.js";
 import { createController } from "../src/ui/controller.js";
@@ -130,6 +130,7 @@ test("ai: on a comeback turn with only a 3-pair run it passes", () => {
 // ---------- runner ----------
 
 test("runner: full AI matches terminate, zero-sum, winner at 13+", () => {
+  let chopPoints = 0;
   for (const seed of [1, 42, 2026]) {
     const result = playMatch(seed);
     assert.notEqual(result.winner, null);
@@ -141,8 +142,17 @@ test("runner: full AI matches terminate, zero-sum, winner at 13+", () => {
         totals[p] += d;
       });
     }
+    // Chops move scores mid-round (TASK 012): final scores are the
+    // round deltas plus each player's net chops, still zero-sum.
+    for (const chop of result.chops) {
+      totals[chop.payer] -= chop.points;
+      totals[chop.payee] += chop.points;
+      chopPoints += chop.points;
+    }
     assert.deepEqual(result.scores, totals);
+    assert.equal(result.scores.reduce((a, b) => a + b, 0), 0);
   }
+  assert.ok(chopPoints > 0, "chops should occur across the seeded matches");
 });
 
 test("runner: same seed, same match (deterministic)", () => {
@@ -244,6 +254,12 @@ test("controller: a full match runs headlessly to a winner at 13+", () => {
     summary.deltas.forEach((d, p) => {
       totals[p] += d;
     });
+    // Chops moved scores mid-round (TASK 012); they are part of the
+    // final accounting alongside the round deltas.
+    for (const chop of summary.chops) {
+      totals[chop.payer] -= chop.points;
+      totals[chop.payee] += chop.points;
+    }
   }
   assert.deepEqual(match.scores, totals);
 });
@@ -297,6 +313,50 @@ test("controller: log — a four of a kind played against a single 2 is logged a
     `expected a bomb log line, got: ${s.log.join(" | ")}`,
   );
   assert.ok(s.log.some((line) => line === "Mina plays single 2♣."));
+});
+
+test("model: the bomb penalty log line names payer, points, and payee", () => {
+  assert.equal(
+    bombPenaltyLogLine({ payer: 1, payee: 2, points: 1 }),
+    "Bomb penalty: Mina pays 1 to Kenji — her 2 was bombed.",
+  );
+  assert.equal(
+    bombPenaltyLogLine({ payer: 1, payee: 2, points: 2 }),
+    "Bomb penalty: Mina pays 2 to Kenji — her pair of 2s was bombed.",
+  );
+  assert.equal(
+    bombPenaltyLogLine({ payer: 2, payee: 0, points: 1 }),
+    "Bomb penalty: Kenji pays 1 to You — his 2 was bombed.",
+  );
+  assert.equal(
+    bombPenaltyLogLine({ payer: 0, payee: 2, points: 1 }),
+    "Bomb penalty: You pay 1 to Kenji — your 2 was bombed.",
+  );
+  assert.equal(
+    bombPenaltyLogLine({ payer: 0, payee: 3, points: 2 }),
+    "Bomb penalty: You pay 2 to Rosa — your pair of 2s was bombed.",
+  );
+});
+
+test("controller: a bombed 2 is chopped instantly — log line and scores move mid-round", () => {
+  const hands = [
+    [c("3", "spades"), c("5", "clubs"), c("8", "diamonds")],
+    [c("2", "clubs"), c("2", "diamonds")],
+    [c("9", "spades"), c("9", "clubs"), c("9", "diamonds"), c("9", "hearts"), c("7", "clubs")],
+    [c("10", "spades"), c("J", "diamonds")],
+  ];
+  const controller = createController({ schedule: sync, dealHands: () => hands });
+  controller.newMatch();
+  const s = controller.state;
+  // You open with the 3 of spades; Mina answers with a single 2 and
+  // Kenji bombs it — the chop lands on the same CPU chain.
+  assert.equal(controller.humanPlay([c("3", "spades")]), true);
+  assert.ok(
+    s.log.some((line) => line === "Bomb penalty: Mina pays 1 to Kenji — her 2 was bombed."),
+    `expected a bomb penalty log line, got: ${s.log.join(" | ")}`,
+  );
+  assert.deepEqual(s.match.scores, [0, -1, 1, 0]);
+  assert.equal(s.phase, "playing"); // mid-round: the round did not end
 });
 
 test("controller: log — a play that clears the trick is logged like any other play", () => {

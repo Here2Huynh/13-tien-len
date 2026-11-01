@@ -1,5 +1,5 @@
 import { newDeal } from "./deal.js";
-import { createMatch, startRound, applyInstantWin, finishRound } from "./match.js";
+import { createMatch, startRound, applyInstantWin, finishRound, applyChop } from "./match.js";
 import { playCards, passTurn } from "./trick.js";
 import { chooseAction } from "./ai.js";
 
@@ -21,12 +21,16 @@ export function seededRng(seed) {
 
 // Play one full match with all four seats on the CPU policy.
 // Any illegal play throws out of the engine, so a completed match is
-// proof the policy only made legal plays.
-// Returns { winner, scores, rounds: [{ deltas, winner, instantWin }] }.
+// proof the policy only made legal plays. Chops are applied the
+// moment a bomb lands on a 2 (see match.applyChop), so final scores
+// = sum of round deltas + net chops per player.
+// Returns { winner, scores, rounds: [{ deltas, winner, instantWin }],
+//           chops: [{ payer, payee, points }] }.
 export function playMatch(seed, { maxRounds = 500, maxActionsPerRound = 10000 } = {}) {
   const rng = seededRng(seed);
   const match = createMatch();
   const rounds = [];
+  const chops = [];
 
   while (match.winner === null) {
     if (rounds.length >= maxRounds) {
@@ -46,12 +50,16 @@ export function playMatch(seed, { maxRounds = 500, maxActionsPerRound = 10000 } 
       }
       const player = state.currentPlayer;
       const action = chooseAction(state, player);
-      if (action.type === "play") playCards(state, player, action.cards);
-      else passTurn(state, player);
+      if (action.type === "play") {
+        const prevPlay = state.currentPlay;
+        playCards(state, player, action.cards);
+        const chop = applyChop(match, prevPlay, action.cards, player);
+        if (chop) chops.push(chop);
+      } else passTurn(state, player);
     }
     const { deltas } = finishRound(match, state);
     rounds.push({ deltas, winner: state.finishOrder[0], instantWin: null });
   }
 
-  return { winner: match.winner, scores: [...match.scores], rounds };
+  return { winner: match.winner, scores: [...match.scores], rounds, chops };
 }
