@@ -132,6 +132,22 @@ class FakeElement {
   click(): void {
     for (const fn of this.listeners.click ?? []) fn({ target: this });
   }
+  remove(): void {
+    // The fake has no parent tracking; removal is a no-op so fx
+    // nodes stay countable in their layer after spawning.
+  }
+  // WAAPI stub (TASK 014): records every animation call so tests
+  // can pin FLIP bookkeeping and the reduced-motion zero-call path.
+  animations: { keyframes: unknown; options: unknown }[] = [];
+  static totalAnimateCalls = 0;
+  animate(
+    keyframes: unknown,
+    options?: unknown,
+  ): { onfinish: (() => void) | null; finished: Promise<void>; cancel: () => void } {
+    FakeElement.totalAnimateCalls += 1;
+    this.animations.push({ keyframes, options });
+    return { onfinish: null, finished: Promise.resolve(), cancel: () => {} };
+  }
 }
 
 class FakeText extends FakeElement {
@@ -164,6 +180,9 @@ const fakeDocument = {
   },
   createElement: (tag: string): FakeElement => new FakeElement(tag),
   createTextNode: (text: string): FakeText => new FakeText(text),
+  // A body so the adapter's fx layer (bomb-penalty floats) has
+  // somewhere to live and tests can count what it spawns.
+  body: new FakeElement("body"),
 };
 (globalThis as { document: unknown }).document = fakeDocument;
 
@@ -226,12 +245,19 @@ function sortArrow(): FakeElement {
   return $("sort-btn").children.find((child) => child.className === "sort-arrow")!;
 }
 
+// A match can end on a normal round ("… wins the match!") or on
+// an instant-win round ("Match over!") — both are match ends.
+function isMatchEndBanner(): boolean {
+  const title = $("banner-title").textContent;
+  return /wins the match/.test(title) || title === "Match over!";
+}
+
 // Click through any round banners until it is the human's move.
 function settleToYourTurn(): string | undefined {
   for (let i = 0; i < 1000; i++) {
     if (settle() === "your-turn") return;
     assert.ok(
-      !/wins the match/.test($("banner-title").textContent),
+      !isMatchEndBanner(),
       "unexpected match end while looking for a human turn",
     );
     $("continue-btn").click();
@@ -622,4 +648,215 @@ test("e2e: how-to-play overlay mid-game — header button, close leaves the game
   assert.equal($("trick-info").textContent, before.turn);
   assert.equal($("log").children.length, before.log);
   assert.equal($("play-btn").disabled, false); // still the human's turn
+});
+
+// ---------- TASK 014: animation layer ----------
+
+function pileMinis(): FakeElement[] {
+  const wrap = $("to-beat").children.find((child) =>
+    (child.className ?? "").split(/\s+/).includes("minicards"),
+  );
+  return wrap ? wrap.children : [];
+}
+
+test("e2e: a played card FLIPs into the pile (TASK 014)", async () => {
+  await import("../src/main.js"); // already booted by the earlier tests
+  $("new-match-top").click();
+  // Reach a turn where you lead (pile empty). Your hinted lead play
+  // is then the latest render — CPU timers have not run yet — so the
+  // pile's minis are exactly the cards you just played.
+  let led = false;
+  for (let steps = 0; steps < 2000 && !led; steps++) {
+    settleToYourTurn();
+    if (pileMinis().length === 0) led = true;
+    else humanMove();
+  }
+  assert.ok(led, "never reached a lead turn");
+  humanMove(); // the lead play
+  const minis = pileMinis();
+  assert.ok(minis.length > 0, "the lead play should be in the pile");
+  assert.ok(
+    minis.every((mini) => mini.animations.length > 0),
+    `every played card should carry a FLIP animation, got counts ${minis.map((m) => m.animations.length)}`,
+  );
+});
+
+test("e2e: lockout grey — a CPU lockout pass greys the seat until the round ends (TASK 014)", async () => {
+  await import("../src/main.js");
+  $("new-match-top").click();
+  const seatIds: Record<string, string> = { Mina: "seat-1", Kenji: "seat-2", Rosa: "seat-3" };
+  let greySeat: string | null = null;
+  for (let steps = 0; steps < 20000 && greySeat === null; steps++) {
+    const phase = settle();
+    if (phase === "banner") {
+      assert.ok(
+        !isMatchEndBanner(),
+        "match ended before any CPU lockout pass",
+      );
+      $("continue-btn").click();
+      continue;
+    }
+    const lines = $("log").children.map((li) => li.textContent);
+    const m = /^(Mina|Kenji|Rosa) passes — locked out\.$/.exec(lines[lines.length - 1] ?? "");
+    if (m) {
+      greySeat = seatIds[m[1] as string];
+      assert.ok(
+        $(greySeat).className.includes("lockedout"),
+        `${m[1]} should be greyed while locked out; seat class is "${$(greySeat).className}"`,
+      );
+    } else {
+      humanMove();
+    }
+  }
+  assert.ok(greySeat !== null, "expected at least one CPU lockout pass in a match");
+  // The grey lifts when the trick is over: play to the round banner
+  // and confirm no seat remains locked out.
+  let bannered = false;
+  for (let steps = 0; steps < 20000 && !bannered; steps++) {
+    if (settle() === "banner") bannered = true;
+    else humanMove();
+  }
+  assert.ok(bannered, "the round should end");
+  for (const id of ["seat-1", "seat-2", "seat-3"]) {
+    assert.ok(
+      !$(id).className.includes("lockedout"),
+      `${id} should not stay greyed after the round`,
+    );
+  }
+});
+
+test("e2e: animations on vs reduced-motion — identical final state, zero calls when reduced (TASK 014)", async () => {
+  await import("../src/main.js");
+  const playOutMatch = (): { scores: number[]; title: string } => {
+    $("new-match-top").click();
+    for (let steps = 0; steps < 20000; steps++) {
+      const phase = settle();
+      if (phase === "banner") {
+        if (isMatchEndBanner()) {
+          return { scores: scoreValues(), title: $("banner-title").textContent };
+        }
+        $("continue-btn").click();
+        continue;
+      }
+      humanMove();
+    }
+    throw new Error("match did not finish within the step budget");
+  };
+
+  // Reduced motion (a fake matchMedia that says "reduce"): the
+  // whole match must issue zero animation calls.
+  (globalThis as { window?: unknown }).window = {
+    matchMedia: () => ({ matches: true }),
+  };
+  Math.random = seededRng(7);
+  const callsBeforeReduced = FakeElement.totalAnimateCalls;
+  const reduced = playOutMatch();
+  assert.equal(
+    FakeElement.totalAnimateCalls - callsBeforeReduced,
+    0,
+    "reduced motion must issue zero animation calls",
+  );
+  delete (globalThis as { window?: unknown }).window;
+
+  // Motion on, same seed, same scripted play: the animation layer
+  // fires — and the match lands in exactly the same final state.
+  Math.random = seededRng(7);
+  const callsBeforeOn = FakeElement.totalAnimateCalls;
+  const animated = playOutMatch();
+  assert.ok(
+    FakeElement.totalAnimateCalls - callsBeforeOn > 0,
+    "expected animation calls with motion on",
+  );
+  assert.deepEqual(animated, reduced);
+});
+
+test("e2e: bomb-penalty float — none on a New match reset, exactly one per genuine chop (TASK 014 fix)", async () => {
+  await import("../src/main.js");
+  const floatCount = (): number => {
+    const layer = fakeDocument.body.children.find((ch) => ch.className === "fx-layer");
+    return layer ? layer.children.filter((ch) => ch.className === "fx-float").length : 0;
+  };
+  // A chop is the only mid-round score change, and it always moves
+  // exactly two boxes by opposite amounts — the same signature the
+  // adapter keys on.
+  const isChopDelta = (before: number[], after: number[]): boolean => {
+    const changed = [0, 1, 2, 3].filter((p) => before[p] !== after[p]);
+    return (
+      changed.length === 2 &&
+      after[changed[0]] - before[changed[0]] ===
+        -(after[changed[1]] - before[changed[1]])
+    );
+  };
+
+  // The verifier's repro, made deterministic: drive a match to the
+  // armed state (round 1, mid-round, scores are exactly two
+  // non-zero boxes with opposite values — a shape only a bomb
+  // penalty can produce at that point, [0, 1, 0, -1] and
+  // rotations), then click New match ONCE and assert on that
+  // render. If the reset happens to deal an instant win, its
+  // render is at roundEnd — where the signature is phase-gated
+  // even in the buggy code — AND it launders the score tracker to
+  // a four-box shape, so the attempt proves nothing: re-arm and
+  // retry instead of clicking through.
+  let resetChecked = false;
+  for (let attempt = 0; attempt < 8 && !resetChecked; attempt++) {
+    $("new-match-top").click();
+    let armed = false;
+    for (let steps = 0; steps < 20000 && !armed; steps++) {
+      const phase = settle();
+      if (phase === "banner") {
+        if (isMatchEndBanner()) $("new-match-btn").click();
+        else $("continue-btn").click();
+        continue;
+      }
+      const nz = scoreValues().filter((s) => s !== 0);
+      if ($("round-num").textContent === "1" && nz.length === 2 && nz[0] + nz[1] === 0) {
+        armed = true;
+      } else {
+        humanMove();
+      }
+    }
+    assert.ok(armed, "never reached a chopped two-box score state");
+
+    const floatsBeforeReset = floatCount();
+    $("new-match-top").click();
+    if (!$("banner").hidden || !scoreValues().every((s) => s === 0)) {
+      continue; // instant-win open: tracker laundered — re-arm
+    }
+    // A clean playing reset render, carrying the armed match's
+    // scores in the tracker: it must not float or flash anything.
+    assert.equal(
+      floatCount(),
+      floatsBeforeReset,
+      "New match reset floated a spurious bomb penalty",
+    );
+    for (const box of $("scores").children) {
+      assert.equal(box.animations.length, 0, "New match reset flashed a score box");
+    }
+    resetChecked = true;
+  }
+  assert.ok(resetChecked, "never got an armed state followed by a clean reset");
+
+  // And a genuine mid-round chop still floats exactly one −N.
+  let verified = false;
+  for (let steps = 0; steps < 20000 && !verified; steps++) {
+    if (settle() === "banner") {
+      if (isMatchEndBanner()) $("new-match-btn").click();
+      else $("continue-btn").click();
+      continue;
+    }
+    const scoresBefore = scoreValues();
+    const floatsBefore = floatCount();
+    humanMove();
+    if (settle() === "banner") continue; // round ended — not a mid-round span
+    if (isChopDelta(scoresBefore, scoreValues())) {
+      assert.equal(
+        floatCount() - floatsBefore,
+        1,
+        "a genuine chop must float exactly one −N",
+      );
+      verified = true;
+    }
+  }
+  assert.ok(verified, "no genuine chop occurred to verify the float against");
 });
