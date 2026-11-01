@@ -1,4 +1,4 @@
-import { RANKS } from "./cards.js";
+import { RANKS, type Card } from "./cards.js";
 
 // Scoring for Thirteen / Tien Len. All transfers are zero-sum.
 //
@@ -16,12 +16,29 @@ import { RANKS } from "./cards.js";
 // Instant win: each other player pays the winner 2 points, the round
 // ends immediately, and no leftover penalties apply to anyone.
 
+export interface Penalty {
+  player: number;
+  points: number;
+  paidTo: number;
+}
+
+export interface ScoreResult {
+  deltas: number[];
+  penalties: Penalty[];
+}
+
+export interface LeftoverPenalty {
+  twos: number;
+  bombs: number;
+  points: number;
+}
+
 // How many complete bombs (3 or 4 consecutive pairs) fit disjointly in
 // a run of `length` consecutive pairs.
-function sequencesInRun(length) {
+function sequencesInRun(length: number): number {
   if (length < 3) return 0;
   let best = 0;
-  const dp = [0];
+  const dp: number[] = [0];
   for (let n = 1; n <= length; n++) {
     dp[n] = Math.max(
       n >= 3 ? dp[n - 3] + 1 : 0,
@@ -37,8 +54,8 @@ function sequencesInRun(length) {
 // Application (flagged in the TASK 004 PR): bombs are counted as
 // disjoint sets of cards — a four of a kind counts once and its rank
 // is then not reused as pairs in a pair sequence.
-export function countUnusedBombs(hand) {
-  const counts = new Map();
+export function countUnusedBombs(hand: Card[]): number {
+  const counts = new Map<string, number>();
   for (const card of hand) counts.set(card.rank, (counts.get(card.rank) ?? 0) + 1);
 
   let bombs = 0;
@@ -66,7 +83,7 @@ export function countUnusedBombs(hand) {
 }
 
 // Penalty points a leftover hand owes: 1 per 2, 1 per unused bomb.
-export function leftoverPenalty(hand) {
+export function leftoverPenalty(hand: Card[]): LeftoverPenalty {
   const twos = hand.filter((card) => card.rank === "2").length;
   const bombs = countUnusedBombs(hand);
   return { twos, bombs, points: twos + bombs };
@@ -80,7 +97,7 @@ const BASELINE = [2, 1, -1, -2]; // by place: 1st, 2nd, 3rd, last
 // cards in a completed round).
 // Returns { deltas, penalties } — deltas indexed by player, zero-sum;
 // penalties lists { player, points, paidTo } for every non-zero charge.
-export function scoreRound(finishOrder, handsAtEnd) {
+export function scoreRound(finishOrder: number[], handsAtEnd: Card[][]): ScoreResult {
   if (
     !Array.isArray(finishOrder) ||
     finishOrder.length !== 4 ||
@@ -93,7 +110,7 @@ export function scoreRound(finishOrder, handsAtEnd) {
     deltas[player] += BASELINE[place];
   });
 
-  const penalties = [];
+  const penalties: Penalty[] = [];
   finishOrder.forEach((player, place) => {
     if (place === 0) return; // 1st shed everything; no leftover possible
     const { points } = leftoverPenalty(handsAtEnd[player] ?? []);
@@ -109,7 +126,7 @@ export function scoreRound(finishOrder, handsAtEnd) {
 }
 
 // Instant-win payout: winner +6, each other player -2. No penalties.
-export function scoreInstantWin(winner) {
+export function scoreInstantWin(winner: number): ScoreResult {
   const deltas = [0, 1, 2, 3].map((p) => (p === winner ? 6 : -2));
   return { deltas, penalties: [] };
 }

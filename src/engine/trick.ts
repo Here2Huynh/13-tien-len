@@ -1,6 +1,7 @@
-import { detectCombination } from "./combinations.js";
+import { detectCombination, type CombinationType } from "./combinations.js";
 import { beats } from "./plays.js";
 import { detectBomb, bombBeats, bombTarget, isComebackBomb } from "./bombs.js";
+import type { Card } from "./cards.js";
 
 // Trick / turn state machine for Thirteen / Tien Len. Engine only.
 //
@@ -22,11 +23,38 @@ import { detectBomb, bombBeats, bombTarget, isComebackBomb } from "./bombs.js";
 //   each player sheds their last card, and the round ends when only
 //   one player still holds cards (that player is last).
 
-export function findOpeningLeader(hands) {
+/** The play currently on the table. Pair-sequence bombs store type "bomb". */
+export interface TrickPlay {
+  player: number;
+  cards: Card[];
+  type: CombinationType | "bomb";
+}
+
+export interface TrickState {
+  hands: Card[][];
+  currentPlayer: number;
+  leader: number;
+  currentPlay: TrickPlay | null;
+  lastPlayer: number | null;
+  passed: number[];
+  openingLead: boolean;
+  trickNumber: number;
+  finishOrder: number[];
+  roundOver: boolean;
+  comebackCandidates: number[];
+  bombDecisionMade: number[];
+}
+
+export interface TrickOptions {
+  leader?: number;
+  openingLead?: boolean;
+}
+
+export function findOpeningLeader(hands: Card[][]): number {
   return hands.findIndex((hand) => hand.some((card) => card.id === "3-spades"));
 }
 
-export function createTrickState(hands, options = {}) {
+export function createTrickState(hands: Card[][], options: TrickOptions = {}): TrickState {
   if (!Array.isArray(hands) || hands.length !== 4) {
     throw new Error("Trick state needs exactly 4 hands");
   }
@@ -34,7 +62,7 @@ export function createTrickState(hands, options = {}) {
   // leads and the opening-lead rule applies. Later rounds pass an
   // explicit leader (the previous round's winner) and no opening rule.
   const hasExplicitLeader = typeof options.leader === "number";
-  const leader = hasExplicitLeader ? options.leader : findOpeningLeader(hands);
+  const leader = hasExplicitLeader ? (options.leader as number) : findOpeningLeader(hands);
   const opening = options.openingLead ?? (!hasExplicitLeader && leader !== -1);
   return {
     hands: hands.map((hand) => [...hand]),
@@ -58,18 +86,18 @@ export function createTrickState(hands, options = {}) {
   };
 }
 
-function hasCards(state, player) {
+function hasCards(state: TrickState, player: number): boolean {
   return state.hands[player].length > 0;
 }
 
-function isLockedOut(state, player) {
+function isLockedOut(state: TrickState, player: number): boolean {
   return state.passed.includes(player);
 }
 
 // A passed player is waiting on a comeback decision when the current
 // play is a bombable 2 / pair of 2s, they passed before it was played,
 // and they have not declined it yet.
-export function hasComebackTurn(state, player) {
+export function hasComebackTurn(state: TrickState, player: number): boolean {
   return (
     isLockedOut(state, player) &&
     state.currentPlay !== null &&
@@ -79,14 +107,14 @@ export function hasComebackTurn(state, player) {
   );
 }
 
-function canAct(state, player) {
+function canAct(state: TrickState, player: number): boolean {
   if (!hasCards(state, player)) return false;
   return !isLockedOut(state, player) || hasComebackTurn(state, player);
 }
 
 // Next player clockwise from `from` (exclusive) who can still act in
 // this trick. Returns -1 if there is none.
-export function nextEligiblePlayer(state, from) {
+export function nextEligiblePlayer(state: TrickState, from: number): number {
   for (let step = 1; step <= 4; step++) {
     const candidate = (from + step) % 4;
     if (candidate === from) break;
@@ -95,13 +123,13 @@ export function nextEligiblePlayer(state, from) {
   return -1;
 }
 
-function clearTrick(state) {
+function clearTrick(state: TrickState): void {
   const winner = state.lastPlayer;
   state.currentPlay = null;
   state.passed = [];
   state.comebackCandidates = [];
   state.bombDecisionMade = [];
-  state.leader = winner;
+  state.leader = winner as number;
   state.trickNumber += 1;
   // Winner leads next. If the winner holds no cards, the lead moves
   // clockwise to the next player who still holds cards.
@@ -112,7 +140,7 @@ function clearTrick(state) {
   state.lastPlayer = null;
 }
 
-export function playCards(state, player, cards) {
+export function playCards(state: TrickState, player: number, cards: Card[]): TrickState {
   if (state.roundOver) throw new Error("The round is over");
   if (player !== state.currentPlayer) {
     throw new Error(`Not player ${player}'s turn`);
@@ -191,7 +219,7 @@ export function playCards(state, player, cards) {
   return state;
 }
 
-export function passTurn(state, player) {
+export function passTurn(state: TrickState, player: number): TrickState {
   if (state.roundOver) throw new Error("The round is over");
   if (player !== state.currentPlayer) {
     throw new Error(`Not player ${player}'s turn`);

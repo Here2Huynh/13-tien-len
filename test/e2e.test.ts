@@ -16,28 +16,48 @@ import { seededRng } from "../src/engine/runner.js";
 
 // ---------- fake DOM ----------
 
-class FakeText {
-  constructor(text) {
-    this._text = text;
-  }
-  get textContent() {
-    return this._text;
-  }
+interface FakeRect {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
 }
 
+interface FakeEvent {
+  button?: number;
+  pointerId?: number;
+  clientX?: number;
+  clientY?: number;
+}
+
+type FakeListener = (ev: FakeEvent) => void;
+
 class FakeElement {
-  constructor(tag) {
+  tagName: string;
+  children: FakeElement[] = [];
+  disabled = false;
+  hidden = false;
+  scrollTop = 0;
+  scrollHeight = 0;
+  title = "";
+  style: Record<string, string> = {};
+  attrs: Record<string, string> = {};
+  dataset: Record<string, string> = {};
+  listeners: Record<string, FakeListener[]> = {};
+  _rect?: FakeRect;
+  _text = "";
+  _classes = new Set<string>();
+  _className?: string;
+  classList: {
+    toggle: (name: string, force?: boolean) => void;
+    add: (name: string) => void;
+    remove: (name: string) => void;
+  };
+
+  constructor(tag: string) {
     this.tagName = tag.toUpperCase();
-    this.children = [];
-    this._text = "";
-    this._classes = new Set();
-    this.listeners = {};
-    this.disabled = false;
-    this.hidden = false;
-    this.scrollTop = 0;
-    this.scrollHeight = 0;
-    this.style = {};
-    this.attrs = {};
     this.classList = {
       toggle: (name, force) => {
         if (force === undefined) force = !this._classes.has(name);
@@ -55,13 +75,13 @@ class FakeElement {
       },
     };
   }
-  appendChild(node) {
+  appendChild(node: FakeElement): FakeElement {
     const i = this.children.indexOf(node);
     if (i >= 0) this.children.splice(i, 1);
     this.children.push(node);
     return node;
   }
-  insertBefore(node, ref) {
+  insertBefore(node: FakeElement, ref: FakeElement | null): FakeElement {
     const i = this.children.indexOf(node);
     if (i >= 0) this.children.splice(i, 1);
     const at = ref ? this.children.indexOf(ref) : -1;
@@ -69,43 +89,59 @@ class FakeElement {
     else this.children.splice(at, 0, node);
     return node;
   }
-  getBoundingClientRect() {
+  getBoundingClientRect(): FakeRect {
     return this._rect ?? { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
   }
-  _syncClass() {
+  _syncClass(): void {
     this._className = [...this._classes].join(" ");
   }
-  set className(value) {
+  set className(value: string) {
     this._classes = new Set(String(value).split(/\s+/).filter(Boolean));
     this._syncClass();
   }
-  get className() {
+  get className(): string {
     return this._className ?? "";
   }
-  set textContent(value) {
+  set textContent(value: string) {
     this.children = [];
     this._text = value ?? "";
   }
-  get textContent() {
+  get textContent(): string {
     return this._text + this.children.map((child) => child.textContent).join("");
   }
-  append(...nodes) {
+  append(...nodes: (FakeElement | string)[]): void {
     for (let node of nodes) {
       if (typeof node === "string") node = new FakeText(node);
       this.children.push(node);
     }
   }
-  setAttribute(name, value) {
+  setAttribute(name: string, value: string): void {
     this.attrs[name] = String(value);
   }
-  getAttribute(name) {
+  getAttribute(name: string): string | null {
     return this.attrs[name] ?? null;
   }
-  addEventListener(type, fn) {
+  addEventListener(type: string, fn: FakeListener): void {
     (this.listeners[type] ??= []).push(fn);
   }
-  click() {
+  setPointerCapture(_pointerId: number): void {
+    // No capture in the fake; drag handlers tolerate its absence.
+  }
+  click(): void {
     for (const fn of this.listeners.click ?? []) fn({});
+  }
+}
+
+class FakeText extends FakeElement {
+  constructor(text: string) {
+    super("#text");
+    this._text = text;
+  }
+  override get textContent(): string {
+    return this._text;
+  }
+  override set textContent(value: string) {
+    this._text = value;
   }
 }
 
@@ -117,33 +153,37 @@ const ELEMENT_IDS = [
   "round-num", "new-match-top", "sort-btn", "clear-btn",
 ];
 
-const registry = new Map();
-globalThis.document = {
-  getElementById: (id) => {
+const registry = new Map<string, FakeElement>();
+const fakeDocument = {
+  getElementById: (id: string): FakeElement => {
     if (!registry.has(id)) registry.set(id, new FakeElement("div"));
-    return registry.get(id);
+    return registry.get(id) as FakeElement;
   },
-  createElement: (tag) => new FakeElement(tag),
-  createTextNode: (text) => new FakeText(text),
+  createElement: (tag: string): FakeElement => new FakeElement(tag),
+  createTextNode: (text: string): FakeText => new FakeText(text),
 };
+(globalThis as { document: unknown }).document = fakeDocument;
 
 // ---------- fake timers + seeded deals ----------
 
-const timerQueue = [];
+const timerQueue: (() => void)[] = [];
 const realSetTimeout = globalThis.setTimeout;
-globalThis.setTimeout = (fn) => {
-  timerQueue.push(fn);
-  return timerQueue.length;
+const installFakeTimers = (): void => {
+  (globalThis as { setTimeout: unknown }).setTimeout = (fn: () => void) => {
+    timerQueue.push(fn);
+    return timerQueue.length;
+  };
 };
+installFakeTimers();
 Math.random = seededRng(2026);
 
-const $ = (id) => globalThis.document.getElementById(id);
+const $ = (id: string): FakeElement => fakeDocument.getElementById(id);
 
 function pumpTimers() {
   let guard = 0;
   while (timerQueue.length > 0) {
     if (++guard > 100000) throw new Error("timer queue did not drain");
-    timerQueue.shift()();
+    timerQueue.shift()!();
   }
 }
 
@@ -179,12 +219,12 @@ function handOrder() {
   );
 }
 
-function sortArrow() {
-  return $("sort-btn").children.find((child) => child.className === "sort-arrow");
+function sortArrow(): FakeElement {
+  return $("sort-btn").children.find((child) => child.className === "sort-arrow")!;
 }
 
 // Click through any round banners until it is the human's move.
-function settleToYourTurn() {
+function settleToYourTurn(): string | undefined {
   for (let i = 0; i < 1000; i++) {
     if (settle() === "your-turn") return;
     assert.ok(
@@ -216,7 +256,7 @@ function humanMove() {
 test("e2e: start gate — nothing is dealt or running until Start Game is clicked", async () => {
   // The real page's Sort button contains an arrow span; mirror it in
   // the fake DOM before the page module grabs its elements.
-  const arrow = document.createElement("span");
+  const arrow = fakeDocument.createElement("span");
   arrow.className = "sort-arrow";
   arrow.textContent = "↑";
   $("sort-btn").append(arrow);
@@ -251,14 +291,14 @@ test("e2e: Sort toggles the rendered hand asc -> desc -> asc; Clear empties the 
   // Dealt ascending; arrow, title, and aria-label say so.
   assert.equal(sortArrow().textContent, "↑");
   assert.match($("sort-btn").title, /Sorted low to high \(ascending\)/);
-  assert.match($("sort-btn").getAttribute("aria-label"), /low to high ascending/);
+  assert.match($("sort-btn").getAttribute("aria-label")!, /low to high ascending/);
 
   // First tap: descending — the rendered order is the exact reverse.
   $("sort-btn").click();
   assert.deepEqual(handOrder(), [...ascending].reverse());
   assert.equal(sortArrow().textContent, "↓");
   assert.match($("sort-btn").title, /Sorted high to low \(descending\)/);
-  assert.match($("sort-btn").getAttribute("aria-label"), /high to low descending/);
+  assert.match($("sort-btn").getAttribute("aria-label")!, /high to low descending/);
 
   // Second tap: back to ascending, strings restored.
   $("sort-btn").click();
@@ -337,16 +377,13 @@ test("e2e: illegal clicks show a message and change nothing; New Match resets", 
   assert.equal(handCount(), before);
   assert.equal($("play-btn").disabled, false);
 
-  globalThis.setTimeout = realSetTimeout;
+  (globalThis as { setTimeout: unknown }).setTimeout = realSetTimeout;
 });
 
 test("e2e: the pile shows a muted 'Before that' line for the play the current one beat", async () => {
   await import("../src/main.js"); // already booted; a match is in progress
   // The previous test restored real timers; reinstall the manual queue.
-  globalThis.setTimeout = (fn) => {
-    timerQueue.push(fn);
-    return timerQueue.length;
-  };
+  installFakeTimers();
   let seen = null;
   for (let turn = 0; turn < 80 && !seen; turn++) {
     if (settleToYourTurn() === "matchEnd") {
@@ -371,7 +408,7 @@ test("e2e: the pile shows a muted 'Before that' line for the play the current on
 // stubbed rect: two wrapped rows of 54x76 cards. The pointer events
 // are dispatched through the listeners main.js registered, exercising
 // its real insertion math against those rects.
-function fire(el, type, ev = {}) {
+function fire(el: FakeElement, type: string, ev: FakeEvent = {}) {
   for (const fn of el.listeners[type] ?? []) fn({ button: 0, pointerId: 1, ...ev });
 }
 
@@ -389,14 +426,14 @@ function layoutHand() {
 
 const RANK_SEQ = ["3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A", "2"];
 const SUIT_SEQ = ["♠", "♣", "♦", "♥"];
-function byValue(a, b) {
+function byValue(a: string, b: string): number {
   const rankDiff =
     RANK_SEQ.indexOf(a.slice(0, -1)) - RANK_SEQ.indexOf(b.slice(0, -1));
   if (rankDiff !== 0) return rankDiff;
-  return SUIT_SEQ.indexOf(a.at(-1)) - SUIT_SEQ.indexOf(b.at(-1));
+  return SUIT_SEQ.indexOf(a[a.length - 1]) - SUIT_SEQ.indexOf(b[b.length - 1]);
 }
 
-function waitReal(ms) {
+function waitReal(ms: number): void {
   const end = Date.now() + ms;
   while (Date.now() < end) {
     // Spin: the post-drag click suppression is wall-clock based.

@@ -1,17 +1,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createDeck, makeCard } from "../src/engine/cards.js";
-import { createTrickState, playCards, passTurn } from "../src/engine/trick.js";
+import { createDeck, makeCard, type Card } from "../src/engine/cards.js";
+import { createTrickState, playCards, passTurn, type TrickPlay } from "../src/engine/trick.js";
 import { detectBomb } from "../src/engine/bombs.js";
-import { chooseAction } from "../src/engine/ai.js";
+import { chooseAction, type Action } from "../src/engine/ai.js";
 import { playMatch, seededRng } from "../src/engine/runner.js";
 import { newDeal, shuffle } from "../src/engine/deal.js";
 import {
   cardLabel, sortHand, validateSelection,
   emptyTrickView, applyToTrickView, describePlay, bombPenaltyLogLine,
   roundResultRows, scoreRows,
+  type SelectionCheck,
 } from "../src/ui/model.js";
-import { createController } from "../src/ui/controller.js";
+import { createController, type RoundSummary } from "../src/ui/controller.js";
 
 // Consolidated app suite: CPU policy, match runner, UI view-model,
 // and the DOM-free controller. One file by design — the per-module
@@ -19,13 +20,25 @@ import { createController } from "../src/ui/controller.js";
 // e2e.test.js; rules coverage in engine.test.js.)
 
 const c = makeCard;
-const ids = (cards) => cards.map((card) => card.id).sort();
-const sync = (fn) => fn();
+const ids = (cards: Card[]) => cards.map((card) => card.id).sort();
+const sync = (fn: () => void) => fn();
+
+// Cards of a play action (fails the test on a pass).
+const cardsOf = (action: Action): Card[] => {
+  if (action.type !== "play") assert.fail("expected a play action");
+  return action.cards;
+};
+
+// The error of a failed selection check (fails the test on ok).
+const errOf = (check: SelectionCheck): string => {
+  if (check.ok) assert.fail("expected a failed selection check");
+  return check.error;
+};
 
 // ---------- CPU policy ----------
 
-function actingState(hand, currentPlay = null, player = 0) {
-  const hands = [[], [], [], []];
+function actingState(hand: Card[], currentPlay: TrickPlay | null = null, player = 0) {
+  const hands: Card[][] = [[], [], [], []];
   hands[player] = hand;
   hands[(player + 1) % 4] = [c("9", "hearts"), c("10", "hearts")];
   hands[(player + 2) % 4] = [c("J", "hearts"), c("Q", "hearts")];
@@ -39,7 +52,7 @@ test("ai: on lead it plays the lowest legal combination", () => {
   const state = actingState([c("9", "spades"), c("5", "clubs"), c("5", "diamonds"), c("K", "spades")]);
   const action = chooseAction(state, 0);
   assert.equal(action.type, "play");
-  assert.deepEqual(ids(action.cards), ["5-clubs"]);
+  assert.deepEqual(ids(cardsOf(action)), ["5-clubs"]);
 });
 
 test("ai: the round-1 opening lead includes the 3 of spades, at its lowest", () => {
@@ -50,7 +63,7 @@ test("ai: the round-1 opening lead includes the 3 of spades, at its lowest", () 
     [c("J", "spades")],
   ]);
   const action = chooseAction(state, 0);
-  assert.deepEqual(ids(action.cards), ["3-spades"]);
+  assert.deepEqual(ids(cardsOf(action)), ["3-spades"]);
 });
 
 test("ai: on follow it plays the lowest play that beats the current play", () => {
@@ -58,7 +71,7 @@ test("ai: on follow it plays the lowest play that beats the current play", () =>
     [c("8", "clubs"), c("9", "spades"), c("7", "hearts"), c("4", "spades")],
     { player: 3, cards: [c("7", "spades")], type: "single" },
   );
-  assert.deepEqual(ids(chooseAction(state, 0).cards), ["7-hearts"]);
+  assert.deepEqual(ids(cardsOf(chooseAction(state, 0))), ["7-hearts"]);
 });
 
 test("ai: it passes when nothing beats the current play", () => {
@@ -87,7 +100,7 @@ test("ai: against a single 2 it bombs with the weakest sufficient bomb", () => {
   );
   const action = chooseAction(state, 0);
   assert.equal(action.type, "play");
-  assert.equal(detectBomb(action.cards)?.kind, "pair-sequence-3");
+  assert.equal(detectBomb(cardsOf(action))?.kind, "pair-sequence-3");
 });
 
 test("ai: against a pair of 2s the 4-pair run is chosen over four of a kind", () => {
@@ -96,10 +109,10 @@ test("ai: against a pair of 2s the 4-pair run is chosen over four of a kind", ()
     { player: 3, cards: [c("2", "spades"), c("2", "hearts")], type: "pair" },
   );
   const action = chooseAction(state, 0);
-  assert.equal(detectBomb(action.cards)?.kind, "pair-sequence-4");
+  assert.equal(detectBomb(cardsOf(action))?.kind, "pair-sequence-4");
 });
 
-function comebackState(p1Hand) {
+function comebackState(p1Hand: Card[]) {
   const state = createTrickState([
     [c("3", "spades"), c("4", "clubs"), c("Q", "diamonds")],
     p1Hand,
@@ -119,7 +132,7 @@ test("ai: on a comeback turn it uses a comeback-legal bomb, not the 3-pair run",
   const four9s = [c("9", "spades"), c("9", "clubs"), c("9", "diamonds"), c("9", "hearts")];
   const action = chooseAction(comebackState([...run3(), ...four9s]), 1);
   assert.equal(action.type, "play");
-  assert.equal(detectBomb(action.cards)?.kind, "four-of-a-kind");
+  assert.equal(detectBomb(cardsOf(action))?.kind, "four-of-a-kind");
 });
 
 test("ai: on a comeback turn with only a 3-pair run it passes", () => {
@@ -182,9 +195,9 @@ test("model: selection validation covers turn, emptiness, and membership", () =>
     [c("6", "spades")],
   ]);
   assert.equal(validateSelection(state, 0, [c("3", "spades")]).ok, true);
-  assert.match(validateSelection(state, 0, []).error, /at least one card/);
-  assert.match(validateSelection(state, 1, [c("4", "spades")]).error, /not your turn/);
-  assert.match(validateSelection(state, 0, [c("A", "hearts")]).error, /not in your hand/);
+  assert.match(errOf(validateSelection(state, 0, [])), /at least one card/);
+  assert.match(errOf(validateSelection(state, 1, [c("4", "spades")])), /not your turn/);
+  assert.match(errOf(validateSelection(state, 0, [c("A", "hearts")])), /not in your hand/);
 });
 
 test("model: trick view records plays and passes; a comeback play overwrites a pass", () => {
@@ -218,7 +231,7 @@ test("model: a four of a kind is a bomb only when it functioned as one", () => {
 // ---------- controller ----------
 
 test("controller: a full match runs headlessly to a winner at 13+", () => {
-  const summaries = [];
+  const summaries: RoundSummary[] = [];
   const rng = seededRng(42);
   const controller = createController({
     schedule: sync,
@@ -240,14 +253,17 @@ test("controller: a full match runs headlessly to a winner at 13+", () => {
       controller.continueRound();
       continue;
     }
-    assert.equal(s.trick.currentPlayer, 0, "CPU turns should auto-advance");
-    const action = chooseAction(s.trick, 0);
+    assert.equal(s.trick!.currentPlayer, 0, "CPU turns should auto-advance");
+    const action = chooseAction(s.trick!, 0);
     const ok = action.type === "play" ? controller.humanPlay(action.cards) : controller.humanPass();
     assert.equal(ok, true);
   }
   const { match } = controller.state;
   assert.equal(controller.state.phase, "matchEnd");
-  assert.ok(match.scores[match.winner] >= 13);
+  assert.ok(match);
+  const winner = match.winner;
+  assert.ok(winner !== null);
+  assert.ok(match.scores[winner] >= 13);
   const totals = [0, 0, 0, 0];
   for (const summary of summaries) {
     assert.equal(summary.deltas.reduce((a, b) => a + b, 0), 0);
@@ -273,26 +289,27 @@ test("controller: illegal selections surface the engine error and change nothing
   ];
   const mineIds = new Set(mine.map((card) => card.id));
   const rest = shuffle(createDeck().filter((card) => !mineIds.has(card.id)), seededRng(7));
-  const hands = [mine, [], [], []];
+  const hands: Card[][] = [mine, [], [], []];
   rest.forEach((card, i) => hands[1 + (i % 3)].push(card));
   const controller = createController({ schedule: sync, dealHands: () => hands });
   controller.newMatch();
   const s = controller.state;
   assert.equal(s.phase, "playing");
-  assert.equal(s.trick.currentPlayer, 0);
+  assert.equal(s.trick!.currentPlayer, 0);
   assert.equal(controller.humanPlay([]), false);
   assert.match(s.message, /at least one card/);
   assert.equal(controller.humanPlay([c("A", "hearts")]), false);
   assert.match(s.message, /not in your hand/);
   assert.equal(controller.humanPlay([c("K", "spades")]), false);
   assert.match(s.message, /3 of spades/);
-  assert.equal(s.trick.hands[0].length, 13);
+  assert.equal(s.trick!.hands[0].length, 13);
   assert.equal(controller.humanPass(), false);
   assert.match(s.message, /must play, not pass/);
   const hint = controller.hint();
-  assert.ok(hint.cards.some((card) => card.id === "3-spades"));
+  assert.ok(hint);
+  assert.ok(cardsOf(hint).some((card) => card.id === "3-spades"));
   assert.equal(controller.humanPlay([c("3", "spades")]), true);
-  assert.equal(s.trick.hands[0].length, 12);
+  assert.equal(s.trick!.hands[0].length, 12);
 });
 
 test("controller: log — a four of a kind played against a single 2 is logged as a bomb", () => {
@@ -355,7 +372,7 @@ test("controller: a bombed 2 is chopped instantly — log line and scores move m
     s.log.some((line) => line === "Bomb penalty: Mina pays 1 to Kenji — her 2 was bombed."),
     `expected a bomb penalty log line, got: ${s.log.join(" | ")}`,
   );
-  assert.deepEqual(s.match.scores, [0, -1, 1, 0]);
+  assert.deepEqual(s.match!.scores, [0, -1, 1, 0]);
   assert.equal(s.phase, "playing"); // mid-round: the round did not end
 });
 
@@ -379,5 +396,5 @@ test("controller: log — a play that clears the trick is logged like any other 
     s.log.some((line) => line === "You plays a pair, high card K♦."),
     `expected the clearing play in the log, got: ${s.log.join(" | ")}`,
   );
-  assert.ok(s.trick.trickNumber >= 2, "the trick should have cleared");
+  assert.ok(s.trick!.trickNumber >= 2, "the trick should have cleared");
 });

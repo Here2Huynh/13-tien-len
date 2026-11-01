@@ -1,8 +1,14 @@
 import { newDeal } from "../engine/deal.js";
-import { createMatch, startRound, applyInstantWin, finishRound, applyChop } from "../engine/match.js";
-import { playCards, passTurn } from "../engine/trick.js";
-import { chooseAction } from "../engine/ai.js";
+import {
+  createMatch, startRound, applyInstantWin, finishRound, applyChop,
+  type Match, type Chop,
+} from "../engine/match.js";
+import { playCards, passTurn, type TrickState } from "../engine/trick.js";
+import { chooseAction, type Action } from "../engine/ai.js";
 import { detectBomb, bombTarget } from "../engine/bombs.js";
+import type { Card } from "../engine/cards.js";
+import type { Penalty } from "../engine/scoring.js";
+import type { InstantWinKind } from "../engine/instantWin.js";
 import {
   SEAT_NAMES,
   HUMAN,
@@ -11,6 +17,7 @@ import {
   describePlay,
   bombPenaltyLogLine,
   validateSelection,
+  type TrickView,
 } from "./model.js";
 
 // DOM-free game controller: owns the match flow and drives the real
@@ -26,7 +33,47 @@ import {
 // - cpuDelayMs: pause before each CPU move so play is watchable.
 // - dealHands(): returns a fresh 4x13 deal (injectable for tests).
 
-const INSTANT_WIN_NAMES = {
+export type Phase = "idle" | "playing" | "roundEnd" | "matchEnd";
+
+export interface RoundSummary {
+  instantWin: { winner: number; kind: InstantWinKind } | null;
+  finishOrder: number[];
+  deltas: number[];
+  penalties: Penalty[];
+  /** This round's bomb-penalty transfers (TASK 012), in order. */
+  chops: Chop[];
+  scores: number[];
+  matchWinner: number | null;
+}
+
+export interface ControllerState {
+  phase: Phase;
+  match: Match | null;
+  trick: TrickState | null;
+  message: string;
+  log: string[];
+  trickView: TrickView;
+  roundSummary: RoundSummary | null;
+}
+
+export interface ControllerOptions {
+  onChange?: (state: ControllerState) => void;
+  schedule?: (fn: () => void, ms: number) => unknown;
+  cpuDelayMs?: number;
+  dealHands?: () => Card[][];
+}
+
+export interface Controller {
+  state: ControllerState;
+  newMatch(): void;
+  continueRound(): void;
+  humanPlay(cards: Card[]): boolean;
+  humanPass(): boolean;
+  hint(): Action | null;
+  setMessage(text: string): void;
+}
+
+const INSTANT_WIN_NAMES: Record<InstantWinKind, string> = {
   "four-2s": "four 2s",
   "six-pairs": "six pairs",
   "five-consecutive-pairs": "five consecutive pairs",
@@ -34,13 +81,13 @@ const INSTANT_WIN_NAMES = {
   "three-consecutive-triples": "three consecutive triples",
 };
 
-export function createController(options = {}) {
+export function createController(options: ControllerOptions = {}): Controller {
   const onChange = options.onChange ?? (() => {});
-  const schedule = options.schedule ?? ((fn, ms) => setTimeout(fn, ms));
+  const schedule = options.schedule ?? ((fn: () => void, ms: number) => setTimeout(fn, ms));
   const cpuDelayMs = options.cpuDelayMs ?? 650;
   const dealHands = options.dealHands ?? (() => newDeal(Math.random));
 
-  const state = {
+  const state: ControllerState = {
     phase: "idle", // idle | playing | roundEnd | matchEnd
     match: null,
     trick: null,
@@ -51,24 +98,25 @@ export function createController(options = {}) {
   };
 
   let cpuPending = false;
-  let roundChops = []; // this round's chop transfers, for the summary
+  let roundChops: Chop[] = []; // this round's chop transfers, for the summary
 
   const emit = () => onChange(state);
-  const name = (player) => SEAT_NAMES[player];
+  const name = (player: number): string => SEAT_NAMES[player];
 
-  function log(line) {
+  function log(line: string): void {
     state.log = [...state.log, line].slice(-60);
   }
 
-  function startRoundInternal() {
+  function startRoundInternal(): void {
     state.trickView = emptyTrickView();
     state.roundSummary = null;
     state.message = "";
     roundChops = [];
-    const roundNo = state.match.roundNumber;
-    const start = startRound(state.match, dealHands());
+    const match = state.match as Match;
+    const roundNo = match.roundNumber;
+    const start = startRound(match, dealHands());
     if (start.type === "instant-win") {
-      const { deltas } = applyInstantWin(state.match, start.winner);
+      const { deltas } = applyInstantWin(match, start.winner);
       state.trick = null;
       state.roundSummary = {
         instantWin: { winner: start.winner, kind: start.kind },
@@ -76,10 +124,10 @@ export function createController(options = {}) {
         deltas,
         penalties: [],
         chops: [],
-        scores: [...state.match.scores],
-        matchWinner: state.match.winner,
+        scores: [...match.scores],
+        matchWinner: match.winner,
       };
-      state.phase = state.match.winner !== null ? "matchEnd" : "roundEnd";
+      state.phase = match.winner !== null ? "matchEnd" : "roundEnd";
       log(
         `${name(start.winner)} wins round ${roundNo} instantly with ${INSTANT_WIN_NAMES[start.kind] ?? start.kind}!`,
       );
@@ -93,15 +141,16 @@ export function createController(options = {}) {
     maybeCpu();
   }
 
-  function applyAction(player, action) {
-    const trick = state.trick;
+  function applyAction(player: number, action: Action): boolean {
+    const trick = state.trick as TrickState;
+    const match = state.match as Match;
     const trickNumberBefore = trick.trickNumber;
     const prevPlay = trick.currentPlay;
     try {
       if (action.type === "play") playCards(trick, player, action.cards);
       else passTurn(trick, player);
     } catch (error) {
-      state.message = error.message;
+      state.message = (error as Error).message;
       emit();
       return false;
     }
@@ -121,7 +170,7 @@ export function createController(options = {}) {
       // engine decides what counts (applyChop via bombBeats); the
       // transfer lands on the match scores before this emit, so the
       // score display moves on the same render.
-      const chop = applyChop(state.match, prevPlay, action.cards, player);
+      const chop = applyChop(match, prevPlay, action.cards, player);
       if (chop) {
         roundChops.push(chop);
         log(bombPenaltyLogLine(chop));
@@ -142,14 +191,14 @@ export function createController(options = {}) {
       state.trickView = applyToTrickView(state.trickView, { type: "pass", player });
     }
     if (trick.roundOver) {
-      const result = finishRound(state.match, trick);
+      const result = finishRound(match, trick);
       state.roundSummary = {
         instantWin: null,
         finishOrder: [...trick.finishOrder],
         deltas: result.deltas,
         penalties: result.penalties,
         chops: [...roundChops],
-        scores: [...state.match.scores],
+        scores: [...match.scores],
         matchWinner: result.matchWinner,
       };
       state.phase = result.matchWinner !== null ? "matchEnd" : "roundEnd";
@@ -162,7 +211,7 @@ export function createController(options = {}) {
     return true;
   }
 
-  function maybeCpu() {
+  function maybeCpu(): void {
     if (state.phase !== "playing" || !state.trick || state.trick.roundOver) return;
     const player = state.trick.currentPlayer;
     if (player === HUMAN || cpuPending) return;
@@ -188,7 +237,7 @@ export function createController(options = {}) {
       if (state.phase !== "roundEnd") return;
       startRoundInternal();
     },
-    humanPlay(cards) {
+    humanPlay(cards: Card[]) {
       if (state.phase !== "playing" || !state.trick) return false;
       const check = validateSelection(state.trick, HUMAN, cards);
       if (!check.ok) {
@@ -208,7 +257,7 @@ export function createController(options = {}) {
       if (state.trick.currentPlayer !== HUMAN) return null;
       return chooseAction(state.trick, HUMAN);
     },
-    setMessage(text) {
+    setMessage(text: string) {
       state.message = text;
       emit();
     },

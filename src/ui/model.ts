@@ -1,6 +1,8 @@
-import { sortCards } from "../engine/cards.js";
+import { sortCards, type Card, type Rank, type Suit } from "../engine/cards.js";
 import { detectCombination } from "../engine/combinations.js";
 import { detectBomb } from "../engine/bombs.js";
+import type { TrickState } from "../engine/trick.js";
+import type { Chop } from "../engine/match.js";
 
 // Pure view-model helpers for the UI. No DOM, no rule logic: display
 // mapping and shallow selection checks only. Anything about whether a
@@ -10,10 +12,18 @@ import { detectBomb } from "../engine/bombs.js";
 export const SEAT_NAMES = ["You", "Mina", "Kenji", "Rosa"];
 export const HUMAN = 0;
 
-const SUIT_GLYPHS = { spades: "♠", clubs: "♣", diamonds: "♦", hearts: "♥" };
-const RED_SUITS = new Set(["diamonds", "hearts"]);
+const SUIT_GLYPHS: Record<Suit, string> = { spades: "♠", clubs: "♣", diamonds: "♦", hearts: "♥" };
+const RED_SUITS: ReadonlySet<Suit> = new Set(["diamonds", "hearts"]);
 
-export function cardLabel(card) {
+export interface CardLabel {
+  rank: Rank;
+  suit: Suit;
+  glyph: string;
+  text: string;
+  color: "red" | "black";
+}
+
+export function cardLabel(card: Card): CardLabel {
   return {
     rank: card.rank,
     suit: card.suit,
@@ -23,15 +33,21 @@ export function cardLabel(card) {
   };
 }
 
-export function sortHand(hand) {
+export function sortHand(hand: readonly Card[]): Card[] {
   return sortCards(hand);
 }
+
+export type SelectionCheck = { ok: true } | { ok: false; error: string };
 
 // Shallow selection checks the UI can make before asking the engine.
 // Returns { ok: true } or { ok: false, error }. A selection that
 // passes here can still be rejected by the engine (wrong type, does
 // not beat, bomb rules) — that error is shown to the player as-is.
-export function validateSelection(state, player, cards) {
+export function validateSelection(
+  state: TrickState | null | undefined,
+  player: number,
+  cards: Card[] | null | undefined,
+): SelectionCheck {
   if (!state || state.roundOver) return { ok: false, error: "The round is over." };
   if (state.currentPlayer !== player) return { ok: false, error: "It is not your turn." };
   if (!cards || cards.length === 0) {
@@ -47,11 +63,21 @@ export function validateSelection(state, player, cards) {
 // Per-trick presentation view: what each seat last did in the current
 // trick. The engine only keeps the latest play, so the UI records the
 // actions it drives. Reducer-style, pure.
-export function emptyTrickView() {
+export type TrickEntry = { type: "play"; cards: Card[] } | { type: "pass" };
+
+export type TrickEvent =
+  | { type: "play"; player: number; cards: Card[] }
+  | { type: "pass"; player: number };
+
+export interface TrickView {
+  entries: Record<number, TrickEntry>; // player -> last action this trick
+}
+
+export function emptyTrickView(): TrickView {
   return { entries: {} }; // player -> { type: "play", cards } | { type: "pass" }
 }
 
-export function applyToTrickView(view, event) {
+export function applyToTrickView(view: TrickView, event: TrickEvent): TrickView {
   const entries = { ...view.entries };
   if (event.type === "play") entries[event.player] = { type: "play", cards: event.cards };
   else if (event.type === "pass") entries[event.player] = { type: "pass" };
@@ -60,7 +86,7 @@ export function applyToTrickView(view, event) {
 
 // Human-readable name for a play, for the log and banners. Detection
 // is the engine's; this only phrases the result.
-export function describePlay(cards, wasBomb = false) {
+export function describePlay(cards: Card[], wasBomb = false): string {
   const bomb = detectBomb(cards);
   // Pair sequences can only ever be played as bombs, so they always
   // phrase as one. A four of a kind phrases as a bomb only when it
@@ -98,7 +124,7 @@ export function describePlay(cards, wasBomb = false) {
 // "Bomb penalty: Mina pays 1 to Kenji — her 2 was bombed."
 const POSSESSIVES = ["your", "her", "his", "her"]; // by seat: You, Mina, Kenji, Rosa
 
-export function bombPenaltyLogLine({ payer, payee, points }) {
+export function bombPenaltyLogLine({ payer, payee, points }: Chop): string {
   const what = points === 2 ? "pair of 2s" : "2";
   const pays = payer === HUMAN ? "pay" : "pays";
   return `Bomb penalty: ${SEAT_NAMES[payer]} ${pays} ${points} to ${SEAT_NAMES[payee]} — ${POSSESSIVES[payer]} ${what} was bombed.`;
@@ -106,8 +132,22 @@ export function bombPenaltyLogLine({ payer, payee, points }) {
 
 const PLACE_LABELS = ["1st", "2nd", "3rd", "4th"];
 
+export interface ResultRow {
+  player: number;
+  name: string;
+  place: string;
+  delta: number;
+}
+
+export interface ScoreRow {
+  player: number;
+  name: string;
+  score: number;
+  isLeader: boolean;
+}
+
 // Rows for the round-end banner: finish order + score deltas.
-export function roundResultRows(finishOrder, deltas, names = SEAT_NAMES) {
+export function roundResultRows(finishOrder: number[], deltas: number[], names: string[] = SEAT_NAMES): ResultRow[] {
   return finishOrder.map((player, index) => ({
     player,
     name: names[player],
@@ -116,7 +156,7 @@ export function roundResultRows(finishOrder, deltas, names = SEAT_NAMES) {
   }));
 }
 
-export function scoreRows(scores, names = SEAT_NAMES) {
+export function scoreRows(scores: number[], names: string[] = SEAT_NAMES): ScoreRow[] {
   const best = Math.max(...scores);
   return scores.map((score, player) => ({
     player,

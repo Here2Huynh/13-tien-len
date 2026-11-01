@@ -1,4 +1,4 @@
-import { RANKS } from "./cards.js";
+import { RANKS, type Card, type Rank } from "./cards.js";
 
 // Instant-win hand detection for Thirteen / Tien Len.
 // Detection at deal only, on a whole 13-card hand. Payout/scoring is a
@@ -12,15 +12,27 @@ import { RANKS } from "./cards.js";
 // - dragon straight 3 through A
 // - three consecutive triples
 
-function rankCounts(hand) {
-  const counts = new Map();
+export type InstantWinKind =
+  | "four-2s"
+  | "six-pairs"
+  | "five-consecutive-pairs"
+  | "dragon-straight"
+  | "three-consecutive-triples";
+
+export interface InstantWin {
+  type: "instant-win";
+  kind: InstantWinKind;
+}
+
+function rankCounts(hand: Card[]): Map<Rank, number> {
+  const counts = new Map<Rank, number>();
   for (const card of hand) counts.set(card.rank, (counts.get(card.rank) ?? 0) + 1);
   return counts;
 }
 
 // Longest run of consecutive ranks (2s excluded) where every rank in the
 // run has at least `minCount` cards. Returns the run length.
-function longestRun(counts, minCount) {
+function longestRun(counts: Map<Rank, number>, minCount: number): number {
   let best = 0;
   let run = 0;
   for (const rank of RANKS) {
@@ -38,7 +50,7 @@ function longestRun(counts, minCount) {
 // Returns { type: "instant-win", kind } or null.
 // kind: "four-2s" | "six-pairs" | "five-consecutive-pairs" |
 //       "dragon-straight" | "three-consecutive-triples"
-export function detectInstantWin(hand) {
+export function detectInstantWin(hand: Card[]): InstantWin | null {
   if (!Array.isArray(hand) || hand.length !== 13) return null;
   if (new Set(hand.map((c) => c.id)).size !== hand.length) return null;
   const counts = rankCounts(hand);
@@ -71,6 +83,6 @@ export function detectInstantWin(hand) {
   return null;
 }
 
-export function isInstantWin(hand) {
+export function isInstantWin(hand: Card[]): boolean {
   return detectInstantWin(hand) !== null;
 }

@@ -1,8 +1,8 @@
-import { RANKS } from "./cards.js";
+import { RANKS, type Card, type Rank } from "./cards.js";
 import { detectCombination } from "./combinations.js";
 import { beats, highestCard } from "./plays.js";
-import { detectBomb, bombBeats, bombTarget, isComebackBomb } from "./bombs.js";
-import { hasComebackTurn } from "./trick.js";
+import { detectBomb, bombBeats, bombTarget, isComebackBomb, type BombKind } from "./bombs.js";
+import { hasComebackTurn, type TrickState } from "./trick.js";
 
 // Simple rule-based CPU policy for Thirteen / Tien Len.
 // Deterministic: no randomness anywhere in decisions. The exact policy:
@@ -27,10 +27,13 @@ import { hasComebackTurn } from "./trick.js";
 //   to comeback-legal bombs (four of a kind, pair-sequence-4) exactly
 //   as the engine allows; otherwise pass.
 
-function combosOf(cards, size) {
+/** A policy decision: play these cards, or pass. */
+export type Action = { type: "play"; cards: Card[] } | { type: "pass" };
+
+function combosOf(cards: Card[], size: number): Card[][] {
   if (size === 1) return cards.map((card) => [card]);
-  const out = [];
-  const pick = (start, chosen) => {
+  const out: Card[][] = [];
+  const pick = (start: number, chosen: Card[]): void => {
     if (chosen.length === size) {
       out.push([...chosen]);
       return;
@@ -47,31 +50,31 @@ function combosOf(cards, size) {
 
 // Each group's options are card segments: [card] for one card,
 // [card, card] for a pair. The product concatenates the segments.
-function cartesian(groups) {
-  return groups.reduce(
+function cartesian(groups: Card[][][]): Card[][] {
+  return groups.reduce<Card[][]>(
     (acc, group) =>
       acc.flatMap((prefix) => group.map((segment) => [...prefix, ...segment])),
     [[]],
   );
 }
 
-function rankGroups(hand) {
-  const groups = new Map();
+function rankGroups(hand: Card[]): Map<Rank, Card[]> {
+  const groups = new Map<Rank, Card[]>();
   for (const card of hand) {
     if (!groups.has(card.rank)) groups.set(card.rank, []);
-    groups.get(card.rank).push(card);
+    groups.get(card.rank)!.push(card);
   }
   return groups;
 }
 
-const STRAIGHT_RANKS = RANKS.filter((rank) => rank !== "2");
+const STRAIGHT_RANKS: Rank[] = RANKS.filter((rank) => rank !== "2");
 
 // Every combination play in the hand: singles, pairs, triples,
 // four of a kind, straights. (Pair sequences are bombs, not
 // combinations — see enumerateBombs.)
-export function enumeratePlays(hand) {
+export function enumeratePlays(hand: Card[]): Card[][] {
   const groups = rankGroups(hand);
-  const plays = [];
+  const plays: Card[][] = [];
   for (const card of hand) plays.push([card]);
   for (const cards of groups.values()) {
     if (cards.length >= 2) plays.push(...combosOf(cards, 2));
@@ -83,7 +86,7 @@ export function enumeratePlays(hand) {
     for (let end = start + 2; end < STRAIGHT_RANKS.length; end++) {
       const ranks = STRAIGHT_RANKS.slice(start, end + 1);
       if (ranks.some((rank) => !groups.has(rank))) break;
-      plays.push(...cartesian(ranks.map((rank) => groups.get(rank).map((card) => [card]))));
+      plays.push(...cartesian(ranks.map((rank) => groups.get(rank)!.map((card) => [card]))));
     }
   }
   return plays;
@@ -91,9 +94,9 @@ export function enumeratePlays(hand) {
 
 // Every bomb in the hand: four of a kinds, and pair sequences of
 // 3 or 4 consecutive pairs (every suit choice).
-export function enumerateBombs(hand) {
+export function enumerateBombs(hand: Card[]): Card[][] {
   const groups = rankGroups(hand);
-  const bombs = [];
+  const bombs: Card[][] = [];
   for (const cards of groups.values()) {
     if (cards.length === 4) bombs.push([...cards]);
   }
@@ -101,21 +104,23 @@ export function enumerateBombs(hand) {
     for (let start = 0; start + length <= STRAIGHT_RANKS.length; start++) {
       const ranks = STRAIGHT_RANKS.slice(start, start + length);
       if (ranks.some((rank) => (groups.get(rank)?.length ?? 0) < 2)) continue;
-      bombs.push(...cartesian(ranks.map((rank) => combosOf(groups.get(rank), 2))));
+      bombs.push(...cartesian(ranks.map((rank) => combosOf(groups.get(rank)!, 2))));
     }
   }
   return bombs;
 }
 
-function playKey(play) {
+type PlayKey = (number | string)[];
+
+function playKey(play: Card[]): PlayKey {
   return [
-    highestCard(play).value,
+    highestCard(play)!.value,
     play.length,
     play.map((card) => card.id).sort().join(","),
   ];
 }
 
-function compareKeys(a, b) {
+function compareKeys(a: PlayKey, b: PlayKey): number {
   for (let i = 0; i < a.length; i++) {
     if (a[i] < b[i]) return -1;
     if (a[i] > b[i]) return 1;
@@ -123,17 +128,17 @@ function compareKeys(a, b) {
   return 0;
 }
 
-const byPlayOrder = (a, b) => compareKeys(playKey(a), playKey(b));
+const byPlayOrder = (a: Card[], b: Card[]): number => compareKeys(playKey(a), playKey(b));
 
-const BOMB_TIER = { "pair-sequence-3": 0, "pair-sequence-4": 1, "four-of-a-kind": 2 };
+const BOMB_TIER: Record<BombKind, number> = { "pair-sequence-3": 0, "pair-sequence-4": 1, "four-of-a-kind": 2 };
 
-function bombKey(play) {
-  return [BOMB_TIER[detectBomb(play).kind], ...playKey(play)];
+function bombKey(play: Card[]): PlayKey {
+  return [BOMB_TIER[detectBomb(play)!.kind], ...playKey(play)];
 }
 
-const byBombOrder = (a, b) => compareKeys(bombKey(a), bombKey(b));
+const byBombOrder = (a: Card[], b: Card[]): number => compareKeys(bombKey(a), bombKey(b));
 
-function weakestBomb(hand, current, { comebackOnly = false } = {}) {
+function weakestBomb(hand: Card[], current: Card[], { comebackOnly = false } = {}): Card[] | null {
   const bombs = enumerateBombs(hand)
     .filter((bomb) => bombBeats(bomb, current))
     .filter((bomb) => !comebackOnly || isComebackBomb(bomb))
@@ -144,7 +149,7 @@ function weakestBomb(hand, current, { comebackOnly = false } = {}) {
 // Choose the CPU action for `player` in a trick state.
 // Returns { type: "play", cards } or { type: "pass" }.
 // Call only when it is the player's turn.
-export function chooseAction(state, player) {
+export function chooseAction(state: TrickState, player: number): Action {
   const hand = state.hands[player];
 
   if (state.currentPlay === null) {

@@ -1,15 +1,34 @@
 import { newDeal } from "./deal.js";
-import { createMatch, startRound, applyInstantWin, finishRound, applyChop } from "./match.js";
+import { createMatch, startRound, applyInstantWin, finishRound, applyChop, type Chop } from "./match.js";
 import { playCards, passTurn } from "./trick.js";
 import { chooseAction } from "./ai.js";
+import type { InstantWinKind } from "./instantWin.js";
 
 // Headless AI-vs-AI match runner. Plays full matches through the real
 // trick / scoring / match flow (no shortcuts), for tests and tooling.
 // Deterministic per seed: the only randomness is the shuffle, driven
 // by the seeded rng below.
 
+export interface RoundRecord {
+  deltas: number[];
+  winner: number;
+  instantWin: InstantWinKind | null;
+}
+
+export interface MatchResult {
+  winner: number;
+  scores: number[];
+  rounds: RoundRecord[];
+  chops: Chop[];
+}
+
+export interface PlayMatchOptions {
+  maxRounds?: number;
+  maxActionsPerRound?: number;
+}
+
 // mulberry32: small seeded rng, returns functions like Math.random.
-export function seededRng(seed) {
+export function seededRng(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
     a = (a + 0x6d2b79f5) | 0;
@@ -26,11 +45,11 @@ export function seededRng(seed) {
 // = sum of round deltas + net chops per player.
 // Returns { winner, scores, rounds: [{ deltas, winner, instantWin }],
 //           chops: [{ payer, payee, points }] }.
-export function playMatch(seed, { maxRounds = 500, maxActionsPerRound = 10000 } = {}) {
+export function playMatch(seed: number, { maxRounds = 500, maxActionsPerRound = 10000 }: PlayMatchOptions = {}): MatchResult {
   const rng = seededRng(seed);
   const match = createMatch();
-  const rounds = [];
-  const chops = [];
+  const rounds: RoundRecord[] = [];
+  const chops: Chop[] = [];
 
   while (match.winner === null) {
     if (rounds.length >= maxRounds) {
@@ -61,5 +80,5 @@ export function playMatch(seed, { maxRounds = 500, maxActionsPerRound = 10000 } 
     rounds.push({ deltas, winner: state.finishOrder[0], instantWin: null });
   }
 
-  return { winner: match.winner, scores: [...match.scores], rounds, chops };
+  return { winner: match.winner as number, scores: [...match.scores], rounds, chops };
 }

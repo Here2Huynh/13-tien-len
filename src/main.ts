@@ -1,7 +1,8 @@
-import { createController } from "./ui/controller.js";
+import { createController, type ControllerState } from "./ui/controller.js";
 import { enumerateBombs } from "./engine/ai.js";
 import { isComebackBomb, bombBeats } from "./engine/bombs.js";
-import { hasComebackTurn } from "./engine/trick.js";
+import { hasComebackTurn, type TrickPlay, type TrickState } from "./engine/trick.js";
+import type { Card } from "./engine/cards.js";
 import {
   SEAT_NAMES,
   HUMAN,
@@ -15,34 +16,35 @@ import {
 // in the controller/engine; this file only renders state and forwards
 // clicks.
 
-const $ = (id) => document.getElementById(id);
+const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement;
+const $btn = (id: string): HTMLButtonElement => document.getElementById(id) as HTMLButtonElement;
 const els = {
   scores: $("scores"),
-  seats: { 1: $("seat-1"), 2: $("seat-2"), 3: $("seat-3") },
+  seats: { 1: $("seat-1"), 2: $("seat-2"), 3: $("seat-3") } as Record<number, HTMLElement>,
   trickInfo: $("trick-info"),
   toBeat: $("to-beat"),
   message: $("message"),
   youArea: $("you-area"),
   youHeader: $("you-header"),
   hand: $("hand"),
-  playBtn: $("play-btn"),
-  passBtn: $("pass-btn"),
-  hintBtn: $("hint-btn"),
+  playBtn: $btn("play-btn"),
+  passBtn: $btn("pass-btn"),
+  hintBtn: $btn("hint-btn"),
   log: $("log"),
   banner: $("banner"),
   bannerTitle: $("banner-title"),
   bannerBody: $("banner-body"),
-  continueBtn: $("continue-btn"),
-  newMatchBtn: $("new-match-btn"),
+  continueBtn: $btn("continue-btn"),
+  newMatchBtn: $btn("new-match-btn"),
   startScreen: $("start-screen"),
-  startBtn: $("start-btn"),
+  startBtn: $btn("start-btn"),
   roundNum: $("round-num"),
-  newMatchTop: $("new-match-top"),
-  sortBtn: $("sort-btn"),
-  clearBtn: $("clear-btn"),
+  newMatchTop: $btn("new-match-top"),
+  sortBtn: $btn("sort-btn"),
+  clearBtn: $btn("clear-btn"),
 };
 
-const selected = new Set(); // card ids the player has tapped
+const selected = new Set<string>(); // card ids the player has tapped
 
 // Hand display order (adapter-only): dealt ascending; the Sort button
 // toggles the rendered order. The engine's hand never changes order —
@@ -53,37 +55,48 @@ let sortAsc = true;
 // order for the current round, or null while the hand follows the sort
 // direction. orderTrick pins it to one round — a new trick state
 // object means a new round, which deals ascending again.
-let orderIds = null;
-let orderTrick = null;
-let lastDisplayIds = [];
+let orderIds: string[] | null = null;
+let orderTrick: TrickState | null = null;
+let lastDisplayIds: string[] = [];
 
 // Drag state (the mockup's): the card element being dragged, the drag
 // origin (adjusted as the card changes slots), and whether the pointer
 // has moved past the tap threshold. A finished drag suppresses the
 // click that follows it for 250ms so a drop never toggles selection.
-let dragState = null;
+interface DragState {
+  el: HTMLButtonElement;
+  startX: number;
+  startY: number;
+  x: number;
+  y: number;
+  active: boolean;
+}
+
+let dragState: DragState | null = null;
 let suppressClickUntil = 0;
 
 // The pile's "Before that" line: the trick state exposes only the
 // current play, so the adapter remembers the play it replaced,
 // watching successive renders. Reset when the trick clears or turns
 // over to a new round.
-let lastPlay = null;
-let prevPlay = null;
-let lastPlayKey = null;
+type PlayRecord = { player: number; cards: Card[] };
+
+let lastPlay: PlayRecord | null = null;
+let prevPlay: PlayRecord | null = null;
+let lastPlayKey: string | null = null;
 
 const ORDINALS = ["1st", "2nd", "3rd", "4th"];
 
 const controller = createController({ onChange: render });
 
-function el(tag, className, text) {
+function el(tag: string, className?: string | null, text?: string): HTMLElement {
   const node = document.createElement(tag);
   if (className) node.className = className;
   if (text !== undefined) node.textContent = text;
   return node;
 }
 
-function miniCard(card) {
+function miniCard(card: Card): HTMLElement {
   const label = cardLabel(card);
   const node = el("div", `card mini ${label.color}`);
   node.append(el("span", "r", label.rank), el("span", "s", label.glyph));
@@ -93,7 +106,7 @@ function miniCard(card) {
 // Mockup seat presentation: name + cards-left count, a status line,
 // and one card back per card held (side seats stack them vertically
 // via CSS). Played cards live in the center pile, as in the mockup.
-function renderSeat(player, state) {
+function renderSeat(player: number, state: ControllerState): void {
   const box = els.seats[player];
   box.textContent = "";
   const trick = state.trick;
@@ -125,11 +138,11 @@ function renderSeat(player, state) {
 // bomb right now (passed this trick, a bombable 2 is on top, and a
 // comeback-legal bomb in hand beats it) — the mockup's foil set.
 // Pure engine reads; nothing here changes game state.
-function comebackHotIds(state) {
+function comebackHotIds(state: ControllerState): Set<string> {
   const trick = state.trick;
   if (!trick || state.phase !== "playing" || !trick.currentPlay) return new Set();
   if (!hasComebackTurn(trick, HUMAN)) return new Set();
-  const hot = new Set();
+  const hot = new Set<string>();
   for (const bomb of enumerateBombs(trick.hands[HUMAN])) {
     if (isComebackBomb(bomb) && bombBeats(bomb, trick.currentPlay.cards)) {
       bomb.forEach((card) => hot.add(card.id));
@@ -138,7 +151,7 @@ function comebackHotIds(state) {
   return hot;
 }
 
-function renderBanner(state) {
+function renderBanner(state: ControllerState): void {
   const summary = state.roundSummary;
   if ((state.phase !== "roundEnd" && state.phase !== "matchEnd") || !summary) {
     els.banner.hidden = true;
@@ -159,7 +172,7 @@ function renderBanner(state) {
       ),
     );
   } else if (state.phase === "matchEnd") {
-    els.bannerTitle.textContent = `🏆 ${SEAT_NAMES[summary.matchWinner]} wins the match!`;
+    els.bannerTitle.textContent = `🏆 ${SEAT_NAMES[summary.matchWinner as number]} wins the match!`;
   } else {
     els.bannerTitle.textContent = "Round over";
   }
@@ -168,7 +181,7 @@ function renderBanner(state) {
     ? [0, 1, 2, 3].map((player) => ({
         player,
         name: SEAT_NAMES[player],
-        place: player === summary.instantWin.winner ? "★" : "",
+        place: player === (summary.instantWin as { winner: number }).winner ? "★" : "",
         delta: summary.deltas[player],
       }))
     : roundResultRows(summary.finishOrder, summary.deltas);
@@ -205,7 +218,7 @@ function renderBanner(state) {
 // by row, left to right) — including across the wrap onto another row.
 // The dragged DOM node is moved, never recreated, so pointer capture
 // on it survives; on drop the manual order is synced from the DOM.
-function dragSwap(dragEl, clientX, clientY) {
+function dragSwap(dragEl: HTMLElement, clientX: number, clientY: number): void {
   if (!dragState) return;
   const cards = Array.from(els.hand.children);
   const from = cards.indexOf(dragEl);
@@ -240,7 +253,7 @@ function dragSwap(dragEl, clientX, clientY) {
   dragState.startY += after.top - before.top;
 }
 
-function attachDragHandlers(btn) {
+function attachDragHandlers(btn: HTMLButtonElement): void {
   btn.addEventListener("pointerdown", (ev) => {
     if (controller.state.phase !== "playing") return;
     if (ev.button !== undefined && ev.button !== 0) return;
@@ -280,7 +293,9 @@ function attachDragHandlers(btn) {
     btn.style.transform = "";
     if (wasActive) {
       suppressClickUntil = Date.now() + 250;
-      orderIds = Array.from(els.hand.children).map((node) => node.cardId);
+      orderIds = Array.from(els.hand.children).map(
+        (node) => (node as HTMLElement).dataset.cardId as string,
+      );
       render(controller.state);
     }
   };
@@ -288,7 +303,7 @@ function attachDragHandlers(btn) {
   btn.addEventListener("pointercancel", endDrag);
 }
 
-function renderScoreboard(state) {
+function renderScoreboard(state: ControllerState): void {
   els.roundNum.textContent = `${state.match ? state.match.roundNumber : 1}`;
   els.scores.textContent = "";
   const scores = state.match ? state.match.scores : [0, 0, 0, 0];
@@ -323,7 +338,7 @@ function renderScoreboard(state) {
   }
 }
 
-function render(state) {
+function render(state: ControllerState): void {
   // A new trick state object = a new round: the manual drag order and
   // the pile's previous-play tracking reset; the deal is ascending.
   if (state.trick !== orderTrick) {
@@ -350,7 +365,7 @@ function render(state) {
       : `Trick ${state.trick.trickNumber} — ${SEAT_NAMES[state.trick.currentPlayer]} to play`;
     els.toBeat.textContent = "";
     if (state.trick.currentPlay) {
-      const cp = state.trick.currentPlay;
+      const cp: TrickPlay = state.trick.currentPlay;
       const key = `${cp.player}:${cp.cards.map((c) => c.id).join(",")}`;
       if (key !== lastPlayKey) {
         prevPlay = lastPlay;
@@ -396,8 +411,8 @@ function render(state) {
   let myHand = sortedHand;
   if (orderIds) {
     const byId = new Map(sortedHand.map((card) => [card.id, card]));
-    const ordered = orderIds.filter((id) => byId.has(id)).map((id) => byId.get(id));
-    const rest = sortedHand.filter((card) => !orderIds.includes(card.id));
+    const ordered = orderIds.filter((id) => byId.has(id)).map((id) => byId.get(id) as Card);
+    const rest = sortedHand.filter((card) => !orderIds!.includes(card.id));
     myHand = [...ordered, ...rest];
   } else if (!sortAsc) {
     myHand = [...sortedHand].reverse();
@@ -415,9 +430,9 @@ function render(state) {
     const btn = el(
       "button",
       `card ${label.color}${selected.has(card.id) ? " sel" : ""}${hot.has(card.id) ? " bombhot" : ""}`,
-    );
+    ) as HTMLButtonElement;
     btn.type = "button";
-    btn.cardId = card.id;
+    btn.dataset.cardId = card.id;
     btn.disabled = !myTurn;
     btn.append(
       el("span", "r", label.rank),
@@ -454,12 +469,12 @@ function render(state) {
 
 // The Sort toggle's label, title, and arrow track the current
 // direction — the mockup's exact strings.
-function updateSortButton() {
+function updateSortButton(): void {
   els.sortBtn.setAttribute(
     "aria-label",
     sortAsc
       ? "Sort hand low to high ascending, tap to sort high to low descending"
-      : "Sort hand high to low descending, tap to sort low to high ascending",
+      : "Sort hand high to low descending, tap to sort high to low ascending",
   );
   els.sortBtn.title = sortAsc
     ? "Sorted low to high (ascending) — tap to sort high to low (descending)"

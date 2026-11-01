@@ -1,7 +1,8 @@
-import { detectInstantWin } from "./instantWin.js";
-import { scoreRound, scoreInstantWin } from "./scoring.js";
-import { createTrickState, findOpeningLeader } from "./trick.js";
+import { detectInstantWin, type InstantWinKind } from "./instantWin.js";
+import { scoreRound, scoreInstantWin, type Penalty } from "./scoring.js";
+import { createTrickState, findOpeningLeader, type TrickState } from "./trick.js";
 import { bombBeats } from "./bombs.js";
+import type { Card } from "./cards.js";
 
 // Match state for Thirteen / Tien Len.
 // Scores accumulate across rounds. First player to reach 13 points at
@@ -16,7 +17,45 @@ import { bombBeats } from "./bombs.js";
 
 export const MATCH_TARGET = 13;
 
-export function createMatch() {
+export interface RoundHistory {
+  round: number;
+  deltas: number[];
+  winner: number;
+}
+
+export interface Match {
+  scores: number[];
+  roundNumber: number;
+  /** Leader of the next round; null before round 1. */
+  leader: number | null;
+  /** Match winner once decided. */
+  winner: number | null;
+  history: RoundHistory[];
+}
+
+/** A bomb-penalty transfer (TASK 012), also the runner/controller ledger entry. */
+export interface Chop {
+  payer: number;
+  payee: number;
+  points: number;
+}
+
+export type StartRoundResult =
+  | { type: "instant-win"; winner: number; kind: InstantWinKind }
+  | { type: "play"; state: TrickState };
+
+export interface RoundResult {
+  deltas: number[];
+  scores: number[];
+  matchWinner: number | null;
+}
+
+export interface FinishRoundResult extends RoundResult {
+  penalties: Penalty[];
+  nextLeader: number | null;
+}
+
+export function createMatch(): Match {
   return {
     scores: [0, 0, 0, 0],
     roundNumber: 1,
@@ -26,7 +65,7 @@ export function createMatch() {
   };
 }
 
-function applyDeltas(match, deltas, roundWinner, finishOrder) {
+function applyDeltas(match: Match, deltas: number[], roundWinner: number, finishOrder: number[]): Match {
   match.scores = match.scores.map((score, p) => score + deltas[p]);
   match.history.push({ round: match.roundNumber, deltas: [...deltas], winner: roundWinner });
   match.leader = roundWinner;
@@ -53,7 +92,7 @@ function applyDeltas(match, deltas, roundWinner, finishOrder) {
 // leader, leader first, takes it — flagged in the TASK 004 PR.
 // Returns { type: "instant-win", winner, kind } or
 //         { type: "play", state } with a ready trick state.
-export function startRound(match, hands) {
+export function startRound(match: Match, hands: Card[][]): StartRoundResult {
   if (match.winner !== null) throw new Error("The match is over");
   const firstLeader =
     match.roundNumber === 1
@@ -67,13 +106,13 @@ export function startRound(match, hands) {
   const state =
     match.roundNumber === 1
       ? createTrickState(hands)
-      : createTrickState(hands, { leader: match.leader, openingLead: false });
+      : createTrickState(hands, { leader: match.leader as number, openingLead: false });
   return { type: "play", state };
 }
 
 // Apply an instant-win round (from startRound) to the match.
 // No leftover penalties for anyone.
-export function applyInstantWin(match, winner) {
+export function applyInstantWin(match: Match, winner: number): RoundResult {
   const { deltas } = scoreInstantWin(winner);
   // The instant winner counts as 1st for the tiebreak.
   const finishOrder = [winner, ...[0, 1, 2, 3].filter((p) => p !== winner)];
@@ -95,7 +134,12 @@ export function applyInstantWin(match, winner) {
 // prevPlay is the trick's current play before this play ({ player,
 // cards }) or null on a lead. Returns { payer, payee, points } when
 // a chop happened, else null.
-export function applyChop(match, prevPlay, cards, bomber) {
+export function applyChop(
+  match: Match,
+  prevPlay: { player: number; cards: Card[] } | null | undefined,
+  cards: Card[],
+  bomber: number,
+): Chop | null {
   if (!prevPlay || !bombBeats(cards, prevPlay.cards)) return null;
   const points = prevPlay.cards.filter((card) => card.rank === "2").length;
   if (points === 0) return null; // unreachable through bombBeats; guard anyway
@@ -106,7 +150,7 @@ export function applyChop(match, prevPlay, cards, bomber) {
 
 // Score and apply a finished round from its trick state.
 // The trick state must be roundOver (see trick.js).
-export function finishRound(match, state) {
+export function finishRound(match: Match, state: TrickState): FinishRoundResult {
   if (match.winner !== null) throw new Error("The match is over");
   if (!state.roundOver) throw new Error("The round is not finished");
   const { deltas, penalties } = scoreRound(state.finishOrder, state.hands);

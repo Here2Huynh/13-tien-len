@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  createDeck, makeCard, sortCards,
+  createDeck, makeCard, sortCards, type Card, type Rank, type Suit,
 } from "../src/engine/cards.js";
 import { shuffle, deal } from "../src/engine/deal.js";
 import { detectCombination } from "../src/engine/combinations.js";
@@ -224,12 +224,12 @@ test("trick bombs: a bomb answers a single 2 as a normal follow", () => {
   playCards(state, 0, [c("3", "spades")]);
   playCards(state, 1, [c("2", "hearts")]);
   playCards(state, 2, seq3());
-  assert.equal(state.currentPlay.type, "bomb");
+  assert.equal(state.currentPlay?.type, "bomb");
   assert.equal(state.lastPlayer, 2);
 });
 
 test("trick bombs: comeback — four of a kind works after passing, the 3-pair run does not", () => {
-  const build = (p1Hand) =>
+  const build = (p1Hand: Card[]) =>
     createTrickState(
       [
         [c("3", "spades"), c("4", "clubs"), c("Q", "diamonds")],
@@ -247,7 +247,7 @@ test("trick bombs: comeback — four of a kind works after passing, the 3-pair r
   passTurn(withQuad, 3);
   passTurn(withQuad, 0);
   playCards(withQuad, 1, quad9); // comeback bomb accepted
-  assert.equal(withQuad.currentPlay.type, "four-of-a-kind");
+  assert.equal(withQuad.currentPlay?.type, "four-of-a-kind");
 
   const runOnly = build([...seq3(), c("8", "clubs")]);
   playCards(runOnly, 0, [c("3", "spades")]);
@@ -348,18 +348,19 @@ test("match: instant win at the deal ends the round before any play", () => {
     createDeck().filter((card) => !sixIds.has(card.id)),
     seededRng(3),
   );
-  const hands = [[], [], sixPairs, []];
+  const hands: Card[][] = [[], [], sixPairs, []];
   rest.forEach((card, i) => hands[[0, 1, 3][i % 3]].push(card));
   assert.equal(detectInstantWin(hands[0]), null);
   assert.equal(detectInstantWin(hands[1]), null);
   assert.equal(detectInstantWin(hands[3]), null);
   const start = startRound(match, hands);
   assert.equal(start.type, "instant-win");
+  if (start.type !== "instant-win") assert.fail("expected an instant-win start");
   assert.equal(start.winner, 2);
   assert.equal(start.kind, "six-pairs");
 });
 
-function finishedState(finishOrder, lastHand = [c("9", "clubs")]) {
+function finishedState(finishOrder: number[], lastHand: Card[] = [c("9", "clubs")]) {
   const state = createTrickState([[], [], [], []], { leader: 0, openingLead: false });
   state.hands[finishOrder[3]] = lastHand; // last place still holds cards
   state.finishOrder = [...finishOrder];
@@ -402,7 +403,8 @@ test("match: scores accumulate across rounds; first to 13 wins; the winner leads
 
 // ---------- chop (TASK 012) ----------
 
-const quad = (rank) => ["spades", "clubs", "diamonds", "hearts"].map((s) => c(rank, s));
+const quad = (rank: Rank): Card[] =>
+  (["spades", "clubs", "diamonds", "hearts"] as Suit[]).map((s) => c(rank, s));
 
 test("chop: a single 2 is chopped by every bomb tier, 1 point, instantly", () => {
   for (const bomb of [seq3(), seq4(), quad("9")]) {
@@ -427,7 +429,7 @@ test("chop: a pair of 2s pays 2 to the 4-pair run and to four of a kind; the 3-p
 });
 
 test("chop: no bombed 2, no chop — higher 2 over 2, higher quad over quad, a bomb led, a bomb over a non-2, triple 2s", () => {
-  const cases = [
+  const cases: [{ player: number; cards: Card[] } | null, Card[]][] = [
     [{ player: 0, cards: [c("2", "clubs")] }, [c("2", "hearts")]],
     [{ player: 0, cards: quad("5") }, quad("9")],
     [null, seq3()],
@@ -455,7 +457,7 @@ test("chop: a comeback bomb chops too", () => {
   );
   // Play the way the controller and runner do: capture the current
   // play, apply the play, then settle any chop.
-  const play = (player, cards) => {
+  const play = (player: number, cards: Card[]) => {
     const prevPlay = state.currentPlay;
     playCards(state, player, cards);
     return applyChop(match, prevPlay, cards, player);
@@ -482,7 +484,7 @@ test("chop: the chopped 2 is never charged again as a round-end leftover", () =>
     ],
     { leader: 0, openingLead: false },
   );
-  const play = (player, cards) => {
+  const play = (player: number, cards: Card[]) => {
     const prevPlay = state.currentPlay;
     playCards(state, player, cards);
     return applyChop(match, prevPlay, cards, player);
