@@ -9,6 +9,7 @@ import {
   cardLabel,
   sortHand,
   describePlay,
+  penaltyLine,
   roundResultRows,
 } from "./ui/model.js";
 
@@ -201,13 +202,7 @@ function renderBanner(state: ControllerState): void {
   }
   body.append(table);
   for (const penalty of summary.penalties) {
-    body.append(
-      el(
-        "p",
-        "note",
-        `Penalty: ${SEAT_NAMES[penalty.player]} pays ${penalty.points} to ${SEAT_NAMES[penalty.paidTo]} (leftover 2s / unused bombs).`,
-      ),
-    );
+    body.append(el("p", "note", penaltyLine(penalty)));
   }
   els.continueBtn.hidden = state.phase === "matchEnd";
   els.newMatchBtn.hidden = state.phase !== "matchEnd";

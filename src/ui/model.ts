@@ -3,6 +3,7 @@ import { detectCombination } from "../engine/combinations.js";
 import { detectBomb } from "../engine/bombs.js";
 import type { TrickState } from "../engine/trick.js";
 import type { Chop } from "../engine/match.js";
+import type { Penalty, UnusedBomb } from "../engine/scoring.js";
 
 // Pure view-model helpers for the UI. No DOM, no rule logic: display
 // mapping and shallow selection checks only. Anything about whether a
@@ -128,6 +129,38 @@ export function bombPenaltyLogLine({ payer, payee, points }: Chop): string {
   const what = points === 2 ? "pair of 2s" : "2";
   const pays = payer === HUMAN ? "pay" : "pays";
   return `Bomb penalty: ${SEAT_NAMES[payer]} ${pays} ${points} to ${SEAT_NAMES[payee]} — ${POSSESSIVES[payer]} ${what} was bombed.`;
+}
+
+// The companion line when a player who passed earlier in the same
+// trick returns with a comeback bomb (TASK 016).
+export function comebackLogLine(player: number): string {
+  const verb = player === HUMAN ? "are" : "is";
+  return `${SEAT_NAMES[player]} ${verb} back in the trick.`;
+}
+
+function describeUnusedBomb(bomb: UnusedBomb): string {
+  if (bomb.kind === "four-of-a-kind") return `four ${bomb.rank}s`;
+  const pairs = bomb.kind === "pair-sequence-3" ? 3 : 4;
+  return `a ${pairs}-pair double run (${bomb.from}s–${bomb.to}s)`;
+}
+
+// The round-end penalty line (TASK 016), itemized: each held 2 named
+// by card, each unused bomb described, the points attributable to
+// each cause, and the total. Replaces the old generic parenthesis
+// "(leftover 2s / unused bombs)".
+// "Penalty: Rosa pays 3 to You: 2♠, 2♥ held (2 pts), four 9s unused (1 pt)."
+export function penaltyLine(penalty: Penalty): string {
+  const pays = penalty.player === HUMAN ? "pay" : "pays";
+  const causes: string[] = [];
+  if (penalty.twos.length > 0) {
+    const labels = penalty.twos.map((card) => cardLabel(card).text).join(", ");
+    const n = penalty.twos.length;
+    causes.push(`${labels} held (${n} ${n === 1 ? "pt" : "pts"})`);
+  }
+  for (const bomb of penalty.bombs) {
+    causes.push(`${describeUnusedBomb(bomb)} unused (1 pt)`);
+  }
+  return `Penalty: ${SEAT_NAMES[penalty.player]} ${pays} ${penalty.points} to ${SEAT_NAMES[penalty.paidTo]}: ${causes.join(", ")}.`;
 }
 
 const PLACE_LABELS = ["1st", "2nd", "3rd", "4th"];
