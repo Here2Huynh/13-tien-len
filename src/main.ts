@@ -43,6 +43,10 @@ const els = {
   newMatchTop: $btn("new-match-top"),
   sortBtn: $btn("sort-btn"),
   clearBtn: $btn("clear-btn"),
+  helpTop: $btn("help-btn-top"),
+  helpStart: $btn("help-btn-start"),
+  helpOverlay: $("help-overlay"),
+  helpClose: $btn("help-close"),
 };
 
 const selected = new Set<string>(); // card ids the player has tapped
@@ -505,6 +509,20 @@ els.continueBtn.addEventListener("click", () => controller.continueRound());
 els.newMatchBtn.addEventListener("click", () => controller.newMatch());
 els.newMatchTop.addEventListener("click", () => controller.newMatch());
 els.startBtn.addEventListener("click", () => controller.newMatch());
+
+// How-to-play overlay (TASK 017): pure presentation. It never calls
+// the controller and never renders, so a game in progress resumes
+// exactly as it was when the overlay closes.
+els.helpOverlay.hidden = true;
+const setHelp = (open: boolean): void => {
+  els.helpOverlay.hidden = !open;
+};
+els.helpTop.addEventListener("click", () => setHelp(true));
+els.helpStart.addEventListener("click", () => setHelp(true));
+els.helpClose.addEventListener("click", () => setHelp(false));
+els.helpOverlay.addEventListener("click", (event) => {
+  if (event.target === els.helpOverlay) setHelp(false);
+});
 
 els.sortBtn.addEventListener("click", () => {
   if (!controller.state.trick) return;
