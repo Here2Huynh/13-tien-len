@@ -331,6 +331,16 @@ button.small{padding:9px 14px;font-size:12.5px;border-radius:10px;}
 #banner-body table{margin:8px auto;}
 #banner-body td.delta{text-align:right;font-weight:800;}
 #start-btn{margin-top:10px;}
+/* How-to-play cheatsheet (TASK 017): the shared .overlay/.modal
+   shell — the modal already caps at 88vh and scrolls internally, so
+   the page behind never scrolls and phone widths stay free of
+   horizontal scroll. Sections read left-aligned under gold headers,
+   in the panel h2 language. */
+.modal.help{text-align:left;}
+.modal.help h2{text-align:center;}
+.modal.help h3{font-size:13px;font-weight:900;letter-spacing:2px;color:var(--gold-bright);margin:16px 0 4px;}
+.modal.help p{font-size:15px;font-weight:600;line-height:1.5;color:var(--ink-dim);margin:0;}
+.modal.help .banner-actions{text-align:center;}
 
 @media (max-width:640px){
   body{font-size:16px;}

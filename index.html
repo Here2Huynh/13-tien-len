@@ -17,6 +17,7 @@
         <div class="matchbar">
           <span class="chip">Round <b id="round-num">1</b></span>
           <span class="chip gold">First to <b>13</b> wins the match</span>
+          <button class="ghost small" id="help-btn-top" type="button">How to play</button>
           <button class="ghost small" id="new-match-top" type="button">New match</button>
         </div>
       </header>
@@ -66,7 +67,10 @@
         <h2>13 — Tiến Lên</h2>
         <div class="sub2">You vs Mina · Kenji · Rosa</div>
         <p class="note">First to 13 wins the match.</p>
-        <button id="start-btn" type="button">Start Game</button>
+        <div class="banner-actions">
+          <button id="start-btn" type="button">Start Game</button>
+          <button id="help-btn-start" class="ghost" type="button">How to play</button>
+        </div>
       </div>
     </div>
 
@@ -77,6 +81,31 @@
         <div class="banner-actions">
           <button id="continue-btn" type="button">Continue</button>
           <button id="new-match-btn" type="button" hidden>New Match</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="overlay" id="help-overlay" hidden>
+      <div class="modal help">
+        <h2>How to play</h2>
+        <h3>GOAL</h3>
+        <p>First to 13 points. Shed all your cards, finish high, and don't get caught holding the big stuff.</p>
+        <h3>START</h3>
+        <p>The 3♠ holder leads the first trick of the match, and the 3♠ must be in that play.</p>
+        <h3>YOUR TURN</h3>
+        <p>Beat the play on the table with the same kind of set, higher — or pass. Passing locks you out of the trick. The trick winner leads next.</p>
+        <h3>CARDS</h3>
+        <p>3 is low, 2 is high; suits run ♠ &lt; ♣ &lt; ♦ &lt; ♥, so 2♥ is the biggest card in the game. Sets: singles, pairs, triples, four of a kind, straights, and pair runs.</p>
+        <h3>BOMBS BEAT 2s</h3>
+        <p>A 3-pair run bombs a single 2; a 4-pair run bombs a pair of 2s; four of a kind bombs either. Already passed? Only four of a kind and the 4-pair run can bring you back in.</p>
+        <h3>BOMB PENALTY</h3>
+        <p>Bomb a 2 and its owner pays you 1 point per 2 — instantly.</p>
+        <h3>INSTANT WINS (dealt hands)</h3>
+        <p>Four 2s · six pairs · five straight pairs · dragon straight 3–A · three straight triples. Everyone pays you 2 and the round ends.</p>
+        <h3>SCORING</h3>
+        <p>1st +2, 2nd +1, 3rd pays 1 to 2nd, last pays 2 to 1st. Still holding 2s or unused bombs when the round ends: 1 point each, paid to the player above you.</p>
+        <div class="banner-actions">
+          <button id="help-close" type="button">Close</button>
         </div>
       </div>
     </div>

@@ -31,6 +31,7 @@ interface FakeEvent {
   pointerId?: number;
   clientX?: number;
   clientY?: number;
+  target?: unknown;
 }
 
 type FakeListener = (ev: FakeEvent) => void;
@@ -129,7 +130,7 @@ class FakeElement {
     // No capture in the fake; drag handlers tolerate its absence.
   }
   click(): void {
-    for (const fn of this.listeners.click ?? []) fn({});
+    for (const fn of this.listeners.click ?? []) fn({ target: this });
   }
 }
 
@@ -152,6 +153,7 @@ const ELEMENT_IDS = [
   "hint-btn", "log", "banner", "banner-title", "banner-body",
   "continue-btn", "new-match-btn", "start-screen", "start-btn",
   "round-num", "new-match-top", "sort-btn", "clear-btn",
+  "help-btn-top", "help-btn-start", "help-overlay", "help-close",
 ];
 
 const registry = new Map<string, FakeElement>();
@@ -253,6 +255,51 @@ function humanMove() {
 }
 
 // ---------- the tests ----------
+
+test("e2e: how-to-play overlay on the start screen — content, open/close, nothing starts (TASK 017)", async () => {
+  // The shipped page carries the whole cheatsheet, initially hidden,
+  // in John's vocabulary (bomb-penalty language, never "Chop").
+  const html = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
+  for (const header of [
+    "GOAL", "START", "YOUR TURN", "CARDS", "BOMBS BEAT 2s",
+    "BOMB PENALTY", "INSTANT WINS (dealt hands)", "SCORING",
+  ]) {
+    assert.ok(html.includes(`<h3>${header}</h3>`), `missing cheatsheet section: ${header}`);
+  }
+  assert.ok(html.includes('id="help-overlay" hidden'), "help overlay must ship hidden");
+  assert.ok(html.includes('id="help-btn-top"'), "header needs its How to play button");
+  assert.ok(html.includes('id="help-btn-start"'), "start screen needs its How to play button");
+  assert.ok(html.includes("Bomb a 2 and its owner pays you 1 point per 2 — instantly."));
+  assert.ok(html.includes("Passing locks you out of the trick."));
+  assert.ok(html.includes("2♥ is the biggest card in the game"));
+  assert.ok(!html.toLowerCase().includes("chop"), "no chop vocabulary in the page");
+
+  await import("../src/main.js"); // boots the page; must NOT start a match
+
+  // Hidden at rest; the start screen's button opens it and the start
+  // screen is still up behind it.
+  assert.equal($("help-overlay").hidden, true);
+  assert.equal($("start-screen").hidden, false);
+  $("help-btn-start").click();
+  assert.equal($("help-overlay").hidden, false);
+  assert.equal($("start-screen").hidden, false);
+
+  // Close button: back to the start screen, nothing dealt or started.
+  $("help-close").click();
+  assert.equal($("help-overlay").hidden, true);
+  assert.equal($("start-screen").hidden, false);
+  assert.equal(handCount(), 0);
+  assert.deepEqual(scoreValues(), [0, 0, 0, 0]);
+  assert.equal($("log").children.length, 0);
+  assert.equal(timerQueue.length, 0);
+
+  // Backdrop click closes it too.
+  $("help-btn-start").click();
+  assert.equal($("help-overlay").hidden, false);
+  $("help-overlay").click();
+  assert.equal($("help-overlay").hidden, true);
+  assert.equal($("start-screen").hidden, false);
+});
 
 test("e2e: start gate — nothing is dealt or running until Start Game is clicked", async () => {
   // The real page's Sort button contains an arrow span; mirror it in
@@ -544,4 +591,35 @@ test("css: the pile is one fixed size per breakpoint and the minicards row never
     blockOf(css, ".minicards{").includes("flex-wrap:nowrap"),
     ".minicards must not wrap",
   );
+});
+
+test("e2e: how-to-play overlay mid-game — header button, close leaves the game untouched (TASK 017)", async () => {
+  await import("../src/main.js"); // already booted by the earlier tests
+
+  // Fresh match from the header, then play to the human's turn
+  // (clicking through any round banner on the way).
+  $("new-match-top").click();
+  for (let i = 0; i < 50 && settle() === "banner"; i++) {
+    if (!$("new-match-btn").hidden) $("new-match-btn").click();
+    else $("continue-btn").click();
+  }
+  const before = {
+    hand: handCount(),
+    scores: scoreValues(),
+    turn: $("trick-info").textContent,
+    log: $("log").children.length,
+  };
+  assert.ok(before.hand > 0, "need a live game for the mid-game check");
+
+  $("help-btn-top").click();
+  assert.equal($("help-overlay").hidden, false);
+  $("help-close").click();
+  assert.equal($("help-overlay").hidden, true);
+
+  // Hands, scores, current turn and the log are exactly as they were.
+  assert.equal(handCount(), before.hand);
+  assert.deepEqual(scoreValues(), before.scores);
+  assert.equal($("trick-info").textContent, before.turn);
+  assert.equal($("log").children.length, before.log);
+  assert.equal($("play-btn").disabled, false); // still the human's turn
 });
