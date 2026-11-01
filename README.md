@@ -37,6 +37,37 @@ npm run build # type-checks, compiles, and assembles dist/
 - `src/ui/controller.ts` — DOM-free game controller driving the engine; the page is a thin adapter over it
 - `src/main.ts` + `src/styles.css` — the playable page: you vs Mina, Kenji, and Rosa, full match to 13
 
+## Progress
+
+Built task by task through a builder → verifier → merge pipeline:
+every PR is independently verified before it merges, and every merge
+is deployed to the live site. This table is updated on every PR
+completion.
+
+**Play it:** https://13-tien-len.pages.dev/
+
+| Task | What | PR | Status |
+| --- | --- | --- | --- |
+| 001 | Scaffold + core card engine | #1 | ✅ Merged · Live |
+| 002 | Legal play + trick flow | #2 | ✅ Merged · Live |
+| 003 | Bombs + instant-win detection | #3 | ✅ Merged · Live |
+| 004 | Scoring + round/match flow | #4 | ✅ Merged · Live |
+| 005 | CPU AI + seeded runner | #5 | ✅ Merged · Live |
+| 006 | Playable UI | #6 | ✅ Merged · Live |
+| — | Functional end-to-end tests | #7 | ✅ Merged · Live |
+| — | Test consolidation | #8 | ✅ Merged · Live |
+| 007 | Play-log polish | #9 | ✅ Merged · Live |
+| 008 | Start gate | #10 | ✅ Merged · Live |
+| 009 | Balatro restyle (superseded by 010) | #11 | ✅ Merged · Live |
+| 010 | True mockup match + Sort/Clear + drag-to-rearrange | #12 | ✅ Merged · Live |
+| 011 | Deselect card fix | #13 | ✅ Merged · Live |
+| 012 | Bomb penalty (1 pt per bombed 2, instant) | #14 | ✅ Merged · Live |
+| 013 | TypeScript migration (strict, zero behavior change) | #15 | ✅ Merged · Live |
+| 015 | Fixed-size center pile | #16 | ✅ Merged · Live |
+| 016 | Table-talk log: lockouts + itemized penalties | #17 | ✅ Merged · Live |
+| 017 | How-to-play cheatsheet overlay | #18 | ✅ Merged · Live |
+| 014 | Animations — full bundle (FLIP, deal, collect, bomb juice) | — | ⏳ Queued |
+
 ## Play
 
 Run `npm run build` and open `dist/index.html` in a browser (or serve
