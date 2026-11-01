@@ -9,6 +9,7 @@ import { newDeal, shuffle } from "../src/engine/deal.js";
 import {
   cardLabel, sortHand, validateSelection,
   emptyTrickView, applyToTrickView, describePlay, bombPenaltyLogLine,
+  comebackLogLine, penaltyLine,
   roundResultRows, scoreRows,
   type SelectionCheck,
 } from "../src/ui/model.js";
@@ -397,4 +398,110 @@ test("controller: log — a play that clears the trick is logged like any other 
     `expected the clearing play in the log, got: ${s.log.join(" | ")}`,
   );
   assert.ok(s.trick!.trickNumber >= 2, "the trick should have cleared");
+});
+
+test("model: penaltyLine itemizes held 2s and unused bombs with per-cause points (TASK 016)", () => {
+  assert.equal(
+    penaltyLine({
+      player: 3, points: 3, paidTo: 0,
+      twos: [c("2", "spades"), c("2", "hearts")],
+      bombs: [{ kind: "four-of-a-kind", rank: "9" }],
+    }),
+    "Penalty: Rosa pays 3 to You: 2♠, 2♥ held (2 pts), four 9s unused (1 pt).",
+  );
+  assert.equal(
+    penaltyLine({ player: 2, points: 1, paidTo: 1, twos: [c("2", "diamonds")], bombs: [] }),
+    "Penalty: Kenji pays 1 to Mina: 2♦ held (1 pt).",
+  );
+  assert.equal(
+    penaltyLine({
+      player: 0, points: 1, paidTo: 2, twos: [],
+      bombs: [{ kind: "pair-sequence-3", from: "4", to: "6" }],
+    }),
+    "Penalty: You pay 1 to Kenji: a 3-pair double run (4s–6s) unused (1 pt).",
+  );
+  assert.equal(
+    penaltyLine({
+      player: 1, points: 1, paidTo: 0, twos: [],
+      bombs: [{ kind: "pair-sequence-4", from: "3", to: "6" }],
+    }),
+    "Penalty: Mina pays 1 to You: a 4-pair double run (3s–6s) unused (1 pt).",
+  );
+  // The exact-four-pairs holding (4s–7s) renders as the 4-pair bomb
+  // it is (TASK 016 tie-break refinement).
+  assert.equal(
+    penaltyLine({
+      player: 3, points: 1, paidTo: 0, twos: [],
+      bombs: [{ kind: "pair-sequence-4", from: "4", to: "7" }],
+    }),
+    "Penalty: Rosa pays 1 to You: a 4-pair double run (4s–7s) unused (1 pt).",
+  );
+});
+
+test("model: comebackLogLine speaks for the human and CPU seats (TASK 016)", () => {
+  assert.equal(comebackLogLine(0), "You are back in the trick.");
+  assert.equal(comebackLogLine(1), "Mina is back in the trick.");
+});
+
+test("controller: log — a pass locks you out, and a comeback bomb logs the return (TASK 016)", () => {
+  const seq3 = [c("3", "clubs"), c("3", "diamonds"), c("4", "clubs"), c("4", "diamonds"), c("5", "clubs"), c("5", "diamonds")];
+  const quad9 = [c("9", "spades"), c("9", "clubs"), c("9", "diamonds"), c("9", "hearts")];
+  const hands = [
+    [...seq3, ...quad9],
+    [c("3", "spades"), c("2", "hearts")],
+    [c("6", "diamonds"), c("J", "spades")],
+    [c("8", "clubs"), c("10", "diamonds")],
+  ];
+  const controller = createController({ schedule: sync, dealHands: () => hands });
+  controller.newMatch();
+  const s = controller.state;
+  // Mina leads the 3 of spades; Kenji and Rosa answer up the ladder.
+  // Nothing you hold beats the 8 but the quad (no bomb target), so
+  // you pass while the trick is still live: locked out.
+  assert.equal(controller.humanPass(), true);
+  assert.ok(
+    s.log.some((line) => line === "You passes — locked out."),
+    `expected your lockout line, got: ${s.log.join(" | ")}`,
+  );
+  // The chain ran on: Mina's 2 landed, Kenji and Rosa passed (locked
+  // out too), and your comeback turn is up.
+  assert.ok(s.log.some((line) => line === "Kenji passes — locked out."));
+  assert.ok(s.log.some((line) => line === "Rosa passes — locked out."));
+  assert.equal(s.trick!.currentPlayer, 0);
+  // You return with the quad: play line, return line, then the bomb
+  // penalty for Mina's bombed 2 — in that order, exactly one return.
+  assert.equal(controller.humanPlay(quad9), true);
+  assert.deepEqual(
+    s.log.filter((line) => line.includes("back in the trick")),
+    ["You are back in the trick."],
+  );
+  const playAt = s.log.indexOf("You plays a BOMB — four of a kind.");
+  assert.ok(playAt >= 0, `expected the bomb play line, got: ${s.log.join(" | ")}`);
+  assert.equal(s.log[playAt + 1], "You are back in the trick.");
+  assert.equal(s.log[playAt + 2], "Bomb penalty: Mina pays 1 to You — her 2 was bombed.");
+});
+
+test("controller: log — a pass that closes the trick makes no lockout claim (TASK 016)", () => {
+  const hands = [
+    [c("4", "clubs"), c("7", "diamonds"), c("9", "spades")],
+    [c("3", "spades"), c("K", "diamonds")],
+    [c("2", "clubs"), c("6", "spades"), c("8", "spades")],
+    [c("5", "diamonds"), c("J", "clubs")],
+  ];
+  const controller = createController({ schedule: sync, dealHands: () => hands });
+  controller.newMatch();
+  const s = controller.state;
+  // Chain: Mina leads the 3 of spades, Kenji answers 6♠, Rosa J♣.
+  // You pass with Mina still live behind you (K♦): locked out.
+  assert.equal(controller.humanPass(), true);
+  assert.ok(
+    s.log.some((line) => line === "You passes — locked out."),
+    `expected your lockout line, got: ${s.log.join(" | ")}`,
+  );
+  // Mina plays K♦ (going out), Kenji answers with the 2♣, Rosa
+  // passes. Mina is finished and Kenji holds the play, so your
+  // comeback-decline pass closes the trick: plain line, no claim.
+  const before = s.log.length;
+  assert.equal(controller.humanPass(), true);
+  assert.equal(s.log[before], "You passes.");
 });

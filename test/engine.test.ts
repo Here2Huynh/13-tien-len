@@ -9,7 +9,7 @@ import { beats } from "../src/engine/plays.js";
 import { createTrickState, playCards, passTurn } from "../src/engine/trick.js";
 import { detectBomb, bombBeats, isComebackBomb } from "../src/engine/bombs.js";
 import { detectInstantWin } from "../src/engine/instantWin.js";
-import { scoreRound, scoreInstantWin, leftoverPenalty, countUnusedBombs } from "../src/engine/scoring.js";
+import { scoreRound, scoreInstantWin, leftoverPenalty, countUnusedBombs, unusedBombs } from "../src/engine/scoring.js";
 import { createMatch, startRound, applyInstantWin, finishRound, applyChop } from "../src/engine/match.js";
 import { seededRng } from "../src/engine/runner.js";
 
@@ -325,7 +325,9 @@ test("scoring: leftover 2s and unused bombs penalize, paid to the player above (
     [0, 1, 2, 3],
     [[], [], [], [c("2", "spades"), c("9", "clubs")]],
   );
-  assert.deepEqual(penalties, [{ player: 3, points: 1, paidTo: 0 }]);
+  assert.deepEqual(penalties, [
+    { player: 3, points: 1, paidTo: 0, twos: [c("2", "spades")], bombs: [] },
+  ]);
   assert.deepEqual(deltas, [3, 1, -1, -3]);
 });
 
@@ -509,4 +511,67 @@ test("chop: the chopped 2 is never charged again as a round-end leftover", () =>
   // Final = post-chop scores + round deltas (+2/+1/-1/-2 by place).
   assert.deepEqual(match.scores, [1, -2, 3, -2]);
   assert.equal(match.scores.reduce((a, b) => a + b, 0), 0);
+});
+
+test("scoring: unusedBombs enumerates exactly what countUnusedBombs counts (TASK 016)", () => {
+  const pair = (r: string) => [c(r as Rank, "clubs"), c(r as Rank, "diamonds")];
+  const cases: { hand: Card[]; want: unknown[] }[] = [
+    { hand: quad("9"), want: [{ kind: "four-of-a-kind", rank: "9" }] },
+    {
+      // Six pairs in a run: two disjoint 3-pair sequences.
+      hand: ["3", "4", "5", "6", "7", "8"].flatMap(pair),
+      want: [
+        { kind: "pair-sequence-3", from: "3", to: "5" },
+        { kind: "pair-sequence-3", from: "6", to: "8" },
+      ],
+    },
+    {
+      // Five pairs: exactly one sequence (the DP's count is 1) —
+      // and the 4-pair sequence present in the run names itself.
+      hand: ["3", "4", "5", "6", "7"].flatMap(pair),
+      want: [{ kind: "pair-sequence-4", from: "3", to: "6" }],
+    },
+    {
+      // Exactly four consecutive pairs: on the DP tie the 4-pair
+      // sequence names itself — not a 3-pair plus a spare pair.
+      hand: ["4", "5", "6", "7"].flatMap(pair),
+      want: [{ kind: "pair-sequence-4", from: "4", to: "7" }],
+    },
+    {
+      // Quad closes the run it interrupts: quad 3s + pairs 4-5-6.
+      hand: [...seq4(), c("3", "spades"), c("3", "hearts")],
+      want: [
+        { kind: "four-of-a-kind", rank: "3" },
+        { kind: "pair-sequence-3", from: "4", to: "6" },
+      ],
+    },
+    {
+      // Triples count as pairs inside a run.
+      hand: ["3", "4", "5"].flatMap((r) => [c(r as Rank, "clubs"), c(r as Rank, "diamonds"), c(r as Rank, "hearts")]),
+      want: [{ kind: "pair-sequence-3", from: "3", to: "5" }],
+    },
+    {
+      // Four 2s: a bomb, enumerated after everything else.
+      hand: [c("2", "spades"), c("2", "clubs"), c("2", "diamonds"), c("2", "hearts")],
+      want: [{ kind: "four-of-a-kind", rank: "2" }],
+    },
+    { hand: [c("7", "clubs"), c("9", "diamonds")], want: [] },
+  ];
+  for (const { hand, want } of cases) {
+    assert.deepEqual(unusedBombs(hand), want);
+    assert.equal(unusedBombs(hand).length, countUnusedBombs(hand));
+  }
+});
+
+test("scoring: penalty detail itemizes the held 2s and unused bombs behind the points (TASK 016)", () => {
+  const { penalties } = scoreRound(
+    [0, 1, 2, 3],
+    [[], [], [], [c("2", "hearts"), ...quad("9")]],
+  );
+  assert.equal(penalties.length, 1);
+  const [penalty] = penalties;
+  assert.equal(penalty?.points, 2); // 1 for the 2 + 1 for the quad
+  assert.deepEqual(penalty?.twos, [c("2", "hearts")]);
+  assert.deepEqual(penalty?.bombs, [{ kind: "four-of-a-kind", rank: "9" }]);
+  assert.equal(penalty!.points, penalty!.twos.length + penalty!.bombs.length);
 });

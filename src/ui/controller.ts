@@ -3,7 +3,7 @@ import {
   createMatch, startRound, applyInstantWin, finishRound, applyChop,
   type Match, type Chop,
 } from "../engine/match.js";
-import { playCards, passTurn, type TrickState } from "../engine/trick.js";
+import { playCards, passTurn, hasComebackTurn, type TrickState } from "../engine/trick.js";
 import { chooseAction, type Action } from "../engine/ai.js";
 import { detectBomb, bombTarget } from "../engine/bombs.js";
 import type { Card } from "../engine/cards.js";
@@ -16,6 +16,7 @@ import {
   applyToTrickView,
   describePlay,
   bombPenaltyLogLine,
+  comebackLogLine,
   validateSelection,
   type TrickView,
 } from "./model.js";
@@ -146,6 +147,10 @@ export function createController(options: ControllerOptions = {}): Controller {
     const match = state.match as Match;
     const trickNumberBefore = trick.trickNumber;
     const prevPlay = trick.currentPlay;
+    // A comeback return (TASK 016) is judged on the pre-action
+    // state: the player had passed earlier in this same trick, and
+    // the engine's comeback gate is open for them right now.
+    const wasComeback = action.type === "play" && hasComebackTurn(trick, player);
     try {
       if (action.type === "play") playCards(trick, player, action.cards);
       else passTurn(trick, player);
@@ -165,6 +170,7 @@ export function createController(options: ControllerOptions = {}): Controller {
         bombTarget(prevPlay.cards) !== null &&
         detectBomb(action.cards) !== null;
       log(`${name(player)} plays ${describePlay(action.cards, wasBomb)}.`);
+      if (wasComeback) log(comebackLogLine(player));
       // Chop: bombing a played 2 / pair of 2s transfers 1 point per
       // 2 from its owner to the bomber, instantly (TASK 012). The
       // engine decides what counts (applyChop via bombBeats); the
@@ -175,8 +181,14 @@ export function createController(options: ControllerOptions = {}): Controller {
         roundChops.push(chop);
         log(bombPenaltyLogLine(chop));
       }
-    } else {
+    } else if (trick.trickNumber !== trickNumberBefore) {
+      // This pass closed the trick: no lockout to call — the trick
+      // is over and the winner leads the next one.
       log(`${name(player)} passes.`);
+    } else {
+      // A pass locks the passer out for the rest of the trick
+      // (TASK 016, John's phrase).
+      log(`${name(player)} passes — locked out.`);
     }
     if (trick.trickNumber !== trickNumberBefore) {
       // The action cleared the trick; the new trick starts blank.
