@@ -168,15 +168,30 @@ button.small{padding:9px 14px;font-size:12.5px;border-radius:10px;}
 .opp.active .who{color:var(--gold-bright);}
 
 .center{ text-align:center;padding:2px 4px;}
+/* Fixed-size pile (TASK 015): ONE height per breakpoint, sized for
+   the worst case, so the box never resizes between plays and the
+   seats/banner around it never shift. Worst-case stack (flex column,
+   gap 9px): lead line + minicards row + "Before that:" line.
+   Base: 179px = padding 28 + border 4 + lead 2 lines (36.25) + 9 +
+   minis 56 + 9 + before 2 lines (36.25) = 178.5 of content room.
+   Phone (below): 207px holds 3 + 3 lines at narrow widths. */
 .pile{
-  min-height:122px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;
+  height:179px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;
   background:rgba(9,32,25,.42);border:2px solid rgba(255,255,255,.22);border-radius:18px;padding:14px 10px;
   box-shadow:inset 0 3px 10px rgba(0,0,0,.35);
 }
 .pile .empty{color:#eaf7ef;font-size:17px;font-weight:800;}
 .pile .leadline{font-size:14.5px;font-weight:700;color:#cfe6da;line-height:1.25;}
 .pile .leadline b{color:#fff;}
-.minicards{display:flex;justify-content:center;flex-wrap:wrap;gap:6px;}
+/* The minicards row never wraps (TASK 015): minis overlap in a fan
+   inside the pile only, so any play — up to the 12-card dragon
+   straight — is exactly one row tall and fits the pile's width
+   (base step 24px: 40 + 11 x 24 = 304px against ~352px of pile
+   content at a 700px viewport; at the very narrowest base widths
+   the last few px split into the pile's side padding). */
+.minicards{display:flex;justify-content:center;flex-wrap:nowrap;gap:6px;}
+.minicards .card.mini{margin-left:-22px;}
+.minicards .card.mini:first-child{margin-left:0;}
 .minicards .card:nth-child(odd){transform:rotate(-2.5deg);}
 .minicards .card:nth-child(even){transform:rotate(2deg);}
 .turnbanner{
@@ -334,7 +349,17 @@ button.small{padding:9px 14px;font-size:12.5px;border-radius:10px;}
   .card.mini{width:34px;height:48px;}
   .below{grid-template-columns:1fr;}
   .table{border-radius:22px;padding:11px 8px 13px;}
-  .pile{min-height:108px;}
+  /* Phone worst case (TASK 015): at <=390px wide the longest lead
+     line ("To beat: a 12-card straight, high card A♥ · played by
+     Kenji", 59 chars) wraps to 3 lines, and so can "Before that:" —
+     207px = padding 28 + border 4 + lead 3 lines (54.375) + 9 +
+     minis 48 + 9 + before 3 lines (54.375). The fan tightens to a
+     12px step (34 + 11 x 12 = 166px); at a 360px viewport the few
+     px of excess split into the pile's side padding, never past
+     its border. */
+  .pile{height:207px;}
+  .minicards .card.mini{margin-left:-28px;}
+  .minicards .card.mini:first-child{margin-left:0;}
   .turnbanner{font-size:14.5px;}
   button{padding:12px 15px;font-size:14px;}
   h1{text-shadow:2px 2px 0 var(--red), -1.5px -1.5px 0 var(--blue), 0 5px 10px rgba(0,0,0,.4);}

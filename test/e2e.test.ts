@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { seededRng } from "../src/engine/runner.js";
 
 // Functional end-to-end tests for the playable UI.
@@ -513,4 +514,34 @@ test("e2e: select then deselect — the second tap clears .sel and Play reports 
   );
   $("play-btn").click();
   assert.match($("message").textContent, /Select at least one card/);
+});
+
+test("css: the pile is one fixed size per breakpoint and the minicards row never wraps (TASK 015)", () => {
+  // The fake DOM has no layout engine, so the fixed-size guarantee is
+  // asserted at the CSS level: the exact height declarations the
+  // worst-case math in styles.css is built on. Tests run compiled
+  // (npm test -> .test-out/), so the stylesheet is two levels up.
+  const css = readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8");
+  const blockOf = (text: string, selector: string): string => {
+    const at = text.indexOf(selector);
+    assert.ok(at >= 0, `${selector} not found in styles.css`);
+    return text.slice(at, text.indexOf("}", at));
+  };
+  // Base breakpoint: a true fixed height (not a min-height that can
+  // still grow), sized for lead 2 lines + minis + before 2 lines.
+  const base = blockOf(css, ".pile{");
+  assert.ok(base.includes("height:179px"), `base .pile should fix height:179px, got: ${base}`);
+  assert.ok(!base.includes("min-height"), "base .pile must not keep a resizable min-height");
+  // Phone breakpoint: the fixed height covers 3 + 3 wrapped lines.
+  const media = css.slice(css.indexOf("@media (max-width:640px)"));
+  assert.ok(media.length > 0, "phone media query not found");
+  assert.ok(
+    blockOf(media, ".pile{").includes("height:207px"),
+    "phone .pile should fix height:207px",
+  );
+  // The card row is one row by construction: no wrapping, fanned minis.
+  assert.ok(
+    blockOf(css, ".minicards{").includes("flex-wrap:nowrap"),
+    ".minicards must not wrap",
+  );
 });
