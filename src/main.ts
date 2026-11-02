@@ -68,6 +68,11 @@ let sortAsc = true;
 let orderIds: string[] | null = null;
 let orderTrick: TrickState | null = null;
 let lastDisplayIds: string[] = [];
+// The state most recently painted. Reused hand buttons (TASK 023)
+// outlive the render that created them, so their click handler
+// re-renders THIS — in production it is always controller.state,
+// since every production render comes from the controller.
+let lastRenderedState: ControllerState | null = null;
 
 // Drag state (the mockup's): the card element being dragged, the drag
 // origin (adjusted as the card changes slots), and whether the pointer
@@ -113,6 +118,7 @@ interface RectLike {
 
 interface FxBegin {
   handRects: Map<string, RectLike>;
+  handPos: Map<string, { x: number; y: number }>;
   pileRects: Map<string, RectLike>;
   pileMinis: Map<string, HTMLElement>;
   scores: number[] | null;
@@ -172,11 +178,19 @@ function beginFx(): FxBegin {
   }
   liveAnims.clear();
   const handRects = new Map<string, RectLike>();
-  for (const [id, btn] of lastHandBtns) handRects.set(id, rectOf(btn));
+  const handPos = new Map<string, { x: number; y: number }>();
+  for (const [id, btn] of lastHandBtns) {
+    handRects.set(id, rectOf(btn));
+    // Layout position (TASK 023): offsetLeft/offsetTop ignore
+    // transforms, so a hover/selected pose change never reads as
+    // movement. Painted boxes above stay for the pile fly-out.
+    handPos.set(id, { x: btn.offsetLeft, y: btn.offsetTop });
+  }
   const pileRects = new Map<string, RectLike>();
   for (const [id, mini] of lastPileMinis) pileRects.set(id, rectOf(mini));
   return {
     handRects,
+    handPos,
     pileRects,
     pileMinis: lastPileMinis,
     scores: fxScores,
@@ -350,23 +364,30 @@ function endFx(fx: FxBegin, state: ControllerState): void {
       }
     }
 
-    // Hand settle: cards whose layout slot moved (sort, drag
+    // Hand settle: cards whose LAYOUT slot moved (sort, drag
     // settle, reflow after a play) glide to their new positions.
-    // The just-dragged card is excluded — it was pointer-glued.
-    // Same-trick only: hand rects are per-round layout state, and
-    // on a trick change the deal stagger owns all card motion.
+    // The comparison is layout positions, never painted boxes
+    // (TASK 023): a pose change (select / deselect / Hint / Clear)
+    // moves no slot, so it can never trigger this — with painted
+    // boxes it did, and the animation replaced the card's pose for
+    // 260ms, reading as a drop below rest before the snap back.
+    // Real moves animate the CSS `translate` property, which
+    // stacks on top of the pose transform, so a selected card
+    // keeps its lift while it slides. The just-dragged card is
+    // excluded — it was pointer-glued. Same-trick only: hand
+    // positions are per-round layout state, and on a trick change
+    // the deal stagger owns all card motion.
     if (fx.trickRef === trick) {
       for (const [id, btn] of lastHandBtns) {
         if (id === justDraggedId) continue;
-        const pre = fx.handRects.get(id);
+        const pre = fx.handPos.get(id);
         if (!pre) continue;
-        const post = rectOf(btn);
-        const dx = pre.left - post.left;
-        const dy = pre.top - post.top;
+        const dx = pre.x - btn.offsetLeft;
+        const dy = pre.y - btn.offsetTop;
         if (Math.abs(dx) < 1 && Math.abs(dy) < 1) continue;
         animate(btn, [
-          { transform: `translate(${dx}px, ${dy}px)` },
-          { transform: "translate(0, 0)" },
+          { translate: `${dx}px ${dy}px` },
+          { translate: "0px 0px" },
         ], { duration: 260, easing: "cubic-bezier(.25,.9,.3,1.15)" });
       }
     }
@@ -745,6 +766,7 @@ function renderScoreboard(state: ControllerState): void {
 }
 
 export function render(state: ControllerState): void {
+  lastRenderedState = state;
   const fx = beginFx();
   // A new trick state object = a new round: the manual drag order and
   // the pile's previous-play tracking reset; the deal is ascending.
@@ -847,32 +869,51 @@ export function render(state: ControllerState): void {
     : "You";
   const hot = comebackHotIds(state);
   const playableBombs = playableBombIds(state);
-  els.hand.textContent = "";
+  // Reuse card buttons across redraws, matched by card id
+  // (TASK 023): a selection change then toggles .sel on the SAME
+  // element, so the shared CSS transition glides hover<->selected
+  // instead of the pose popping on a fresh node. Buttons for cards
+  // that left the hand are removed; DOM order is reconciled by
+  // moving only out-of-place buttons. A reused button's click
+  // handler re-renders the last painted state — the render-time
+  // snapshot it was created under goes stale.
+  const prevBtns = lastHandBtns;
   lastHandBtns = new Map();
-  for (const card of myHand) {
-    const label = cardLabel(card);
-    const btn = el(
-      "button",
-      `card ${label.color}${selected.has(card.id) ? " sel" : ""}${hot.has(card.id) ? " bombhot" : ""}${playableBombs.has(card.id) ? " bombplayable" : ""}`,
-    ) as HTMLButtonElement;
-    btn.type = "button";
-    btn.dataset.cardId = card.id;
-    btn.disabled = !myTurn;
-    btn.append(
-      el("span", "r", label.rank),
-      el("span", "s", label.glyph),
-      el("span", "big", label.glyph),
-    );
-    btn.addEventListener("click", () => {
-      if (Date.now() < suppressClickUntil) return; // a drag just ended — not a tap
-      if (selected.has(card.id)) selected.delete(card.id);
-      else selected.add(card.id);
-      render(state);
-    });
-    attachDragHandlers(btn);
-    els.hand.append(btn);
-    lastHandBtns.set(card.id, btn);
+  const wantedIds = new Set(myHand.map((card) => card.id));
+  for (const [id, btn] of prevBtns) {
+    if (!wantedIds.has(id)) btn.remove();
   }
+  myHand.forEach((card, i) => {
+    const label = cardLabel(card);
+    const className = `card ${label.color}${selected.has(card.id) ? " sel" : ""}${hot.has(card.id) ? " bombhot" : ""}${playableBombs.has(card.id) ? " bombplayable" : ""}`;
+    let btn = prevBtns.get(card.id) as HTMLButtonElement | undefined;
+    if (!btn) {
+      btn = el("button", className) as HTMLButtonElement;
+      btn.type = "button";
+      btn.dataset.cardId = card.id;
+      btn.append(
+        el("span", "r", label.rank),
+        el("span", "s", label.glyph),
+        el("span", "big", label.glyph),
+      );
+      btn.addEventListener("click", () => {
+        if (Date.now() < suppressClickUntil) return; // a drag just ended — not a tap
+        if (selected.has(card.id)) selected.delete(card.id);
+        else selected.add(card.id);
+        render(lastRenderedState ?? controller.state);
+      });
+      attachDragHandlers(btn);
+    } else {
+      btn.className = className;
+    }
+    btn.disabled = !myTurn;
+    const at = els.hand.children[i];
+    if (at !== btn) {
+      if (at) els.hand.insertBefore(btn, at);
+      else els.hand.appendChild(btn);
+    }
+    lastHandBtns.set(card.id, btn);
+  });
 
   els.playBtn.disabled = !myTurn;
   els.passBtn.disabled = !myTurn;
