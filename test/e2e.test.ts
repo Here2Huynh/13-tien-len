@@ -1178,3 +1178,71 @@ test("hand motion: shared transition and selected pose wins hover", () => {
   assert.match(transitions[0].body, /filter:none/);
   assert.ok(!hand.some((r) => r.selector.includes(":active")));
 });
+
+test("modal shell: no horizontal scroll; the banner scrolls in an inner box (TASK 027)", () => {
+  const rawCss = readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8");
+  // Strip comments before parsing rules: a comment above a rule would
+  // otherwise be captured as part of its selector text.
+  const css = rawCss.replace(/\/\*[\s\S]*?\*\//g, "");
+  const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .map((m) => ({ selector: m[1].trim(), body: m[2] }));
+  // The shell scrolls vertically only past the 88vh cap, and never
+  // horizontally: overflow-x is pinned shut, not left to compute to
+  // auto off the vertical rule.
+  const shell = rules.find((r) => r.selector === ".modal")!;
+  assert.ok(shell, ".modal rule exists");
+  assert.match(shell.body, /max-height:88vh/);
+  assert.match(shell.body, /overflow-y:auto/);
+  assert.match(shell.body, /overflow-x:hidden/);
+  // The banner's modal is a non-scrolling shell: padding moves to
+  // the inner box, and the shell itself never scrolls.
+  const bannerShell = rules.find((r) => r.selector === ".modal.scrollshell")!;
+  assert.ok(bannerShell, ".modal.scrollshell rule exists");
+  assert.match(bannerShell.body, /padding:0/);
+  assert.match(bannerShell.body, /overflow:visible/);
+  // The inner box scrolls instead — same cap (minus the shell's
+  // border, so the banner's outer size is unchanged), same padding,
+  // and never horizontally.
+  const scrollbox = rules.find((r) => r.selector === ".scrollbox")!;
+  assert.ok(scrollbox, ".scrollbox rule exists");
+  assert.match(scrollbox.body, /max-height:calc\(88vh - 4px\)/);
+  assert.match(scrollbox.body, /overflow-y:auto/);
+  assert.match(scrollbox.body, /overflow-x:hidden/);
+  assert.match(scrollbox.body, /padding:26px 22px/);
+  // The burst itself is untouched, declaration for declaration: it
+  // stays the modal's ::before in its original layer. It no longer
+  // grows scrollbars because it is the scroller's SIBLING now, not
+  // its child — no part of it sits inside the .scrollbox subtree.
+  const modalOn = rules.find((r) => r.selector === ".modal.instantwin")!;
+  assert.ok(modalOn, ".modal.instantwin rule exists");
+  assert.match(modalOn.body, /position:relative/);
+  assert.match(modalOn.body, /z-index:0/);
+  const burst = rules.find((r) => r.selector === ".modal.instantwin::before")!;
+  assert.ok(burst, "burst rule exists on the modal");
+  assert.match(burst.body, /position:absolute/);
+  assert.match(burst.body, /inset:-34px/);
+  assert.match(burst.body, /border-radius:50%/);
+  assert.match(burst.body, /z-index:-1/);
+  assert.match(burst.body, /radial-gradient\(circle,rgba\(255,197,48,\.55\) 0%,rgba\(255,197,48,\.18\) 42%,transparent 68%\)/);
+  assert.match(burst.body, /animation:burst \.9s ease-out both/);
+  // Burst keyframes untouched: same scale/opacity arc.
+  const keyframes = css.match(/@keyframes burst\{([\s\S]*?)\n\}/)?.[1];
+  assert.ok(keyframes);
+  assert.ok(keyframes.includes("0%{opacity:0;transform:scale(.55);}"));
+  assert.ok(keyframes.includes("30%{opacity:1;}"));
+  assert.ok(keyframes.includes("100%{opacity:0;transform:scale(1.12);}"));
+  // Reduced motion still kills the burst.
+  assert.match(rawCss, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.modal\.instantwin::before[^{}]*\{animation:none !important;/);
+  // The banner's shipped markup: shell outside, scrollbox inside,
+  // content inside that. (This harness's fake DOM is a flat id
+  // registry, so the nesting is pinned here on the shipped HTML;
+  // the real hierarchy is exercised by the browser probes in the
+  // task's proof bar.)
+  const html = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
+  assert.ok(html.includes(
+    '<div class="overlay" id="banner" hidden>\n' +
+    '      <div class="modal scrollshell">\n' +
+    '        <div class="scrollbox">\n' +
+    '          <h2 id="banner-title"></h2>',
+  ), "banner modal is a shell around a scrollbox");
+});

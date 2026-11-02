@@ -318,7 +318,24 @@ button.small{padding:9px 14px;font-size:12.5px;border-radius:10px;}
 .modal{
   background:var(--teal-panel);border:2px solid var(--outline);border-radius:22px;
   max-width:500px;width:100%;padding:26px 22px;box-shadow:0 24px 50px rgba(0,0,0,.55), inset 0 2px 0 rgba(255,255,255,.14);text-align:center;
-  max-height:88vh;overflow-y:auto;
+  /* TASK 027: the shell never scrolls horizontally — overflow-x is
+     pinned shut instead of computing to auto off the vertical rule. */
+  max-height:88vh;overflow-y:auto;overflow-x:hidden;
+}
+/* Banner shell (TASK 027): the round/match banner's modal is a
+   non-scrolling shell; its .scrollbox child does the scrolling.
+   The instant-win burst stays the modal's own ::before, in its
+   original layer above the panel — as a child of the scroller it
+   WAS the scroll box, and its box (modal + 68px, scaled 1.12 at
+   rest) registered as scrollable overflow, growing scrollbars on
+   summaries that fit. As the scroller's sibling it contributes
+   nothing to the scroll box and paints exactly as before. The
+   scrollbox cap is the shell's old 88vh minus its 2x2px border,
+   so the banner's outer size is unchanged. */
+.modal.scrollshell{padding:0;overflow:visible;}
+.scrollbox{
+  max-height:calc(88vh - 4px);overflow-y:auto;overflow-x:hidden;
+  padding:26px 22px;
 }
 .modal h2{font-size:27px;font-weight:900;line-height:1.25;margin:0 0 8px;color:#fff;text-shadow:2px 2px 0 var(--red), 0 4px 10px rgba(0,0,0,.35);}
 .modal .sub2{color:var(--gold-bright);font-size:16.5px;font-weight:800;line-height:1.3;margin-bottom:12px;}
@@ -408,7 +425,9 @@ button.small{padding:9px 14px;font-size:12.5px;border-radius:10px;}
 @keyframes penSlide{from{transform:translateX(-16px);opacity:0;}to{transform:translateX(0);opacity:1;}}
 @keyframes penFlash{0%{opacity:0;}25%{opacity:.5;}100%{opacity:0;}}
 /* Instant win: a one-shot gold burst behind the banner modal and
-   the winner's row pulsing in. */
+   the winner's row pulsing in. (TASK 027: unchanged — the fix is
+   the banner's scroll shell above, which takes this layer out of
+   the scroll box without moving it.) */
 .modal.instantwin{position:relative;z-index:0;}
 .modal.instantwin::before{
   content:"";position:absolute;inset:-34px;border-radius:50%;z-index:-1;pointer-events:none;
