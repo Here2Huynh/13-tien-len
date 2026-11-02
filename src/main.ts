@@ -1,6 +1,6 @@
 import { createController, type ControllerState } from "./ui/controller.js";
 import { enumerateBombs } from "./engine/ai.js";
-import { isComebackBomb, bombBeats, detectBomb, bombTarget } from "./engine/bombs.js";
+import { isComebackBomb, bombBeats, bombOnBombBeats, detectBomb, bombTarget } from "./engine/bombs.js";
 import { hasComebackTurn, type TrickPlay, type TrickState } from "./engine/trick.js";
 import type { Match } from "./engine/match.js";
 import type { Card } from "./engine/cards.js";
@@ -334,8 +334,9 @@ function endFx(fx: FxBegin, state: ControllerState): void {
       }
       const wasBomb =
         prevPlay !== null &&
-        bombTarget(prevPlay.cards) !== null &&
-        detectBomb(cp.cards) !== null;
+        detectBomb(cp.cards) !== null &&
+        (bombTarget(prevPlay.cards) !== null ||
+          bombOnBombBeats(cp.cards, prevPlay.cards));
       if (wasBomb) {
         animate(els.toBeat, [
           { transform: "scale(1)" },
@@ -497,16 +498,20 @@ function renderSeat(player: number, state: ControllerState): void {
 }
 
 // Cards in the human's hand that could jump back in as a comeback
-// bomb right now (passed this trick, a bombable 2 is on top, and a
-// comeback-legal bomb in hand beats it) — the mockup's foil set.
-// Pure engine reads; nothing here changes game state.
+// bomb right now (passed this trick, a bombable 2 or a bomb is on
+// top, and a comeback-legal bomb in hand beats it) — the mockup's
+// foil set. Pure engine reads; nothing here changes game state.
 function comebackHotIds(state: ControllerState): Set<string> {
   const trick = state.trick;
   if (!trick || state.phase !== "playing" || !trick.currentPlay) return new Set();
   if (!hasComebackTurn(trick, HUMAN)) return new Set();
   const hot = new Set<string>();
   for (const bomb of enumerateBombs(trick.hands[HUMAN])) {
-    if (isComebackBomb(bomb) && bombBeats(bomb, trick.currentPlay.cards)) {
+    if (
+      isComebackBomb(bomb) &&
+      (bombBeats(bomb, trick.currentPlay.cards) ||
+        bombOnBombBeats(bomb, trick.currentPlay.cards))
+    ) {
       bomb.forEach((card) => hot.add(card.id));
     }
   }
@@ -523,7 +528,10 @@ function playableBombIds(state: ControllerState): Set<string> {
   const passed = trick.passed.includes(HUMAN);
   if (passed && !hasComebackTurn(trick, HUMAN)) return ids;
   for (const bomb of enumerateBombs(trick.hands[HUMAN])) {
-    if (bombBeats(bomb, trick.currentPlay.cards) && (!passed || isComebackBomb(bomb))) {
+    const canAnswer =
+      bombBeats(bomb, trick.currentPlay.cards) ||
+      bombOnBombBeats(bomb, trick.currentPlay.cards);
+    if (canAnswer && (!passed || isComebackBomb(bomb))) {
       bomb.forEach((card) => ids.add(card.id));
     }
   }

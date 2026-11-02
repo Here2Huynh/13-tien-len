@@ -7,10 +7,10 @@ import { shuffle, deal } from "../src/engine/deal.js";
 import { detectCombination } from "../src/engine/combinations.js";
 import { beats } from "../src/engine/plays.js";
 import { createTrickState, playCards, passTurn } from "../src/engine/trick.js";
-import { detectBomb, bombBeats, isComebackBomb } from "../src/engine/bombs.js";
+import { detectBomb, bombBeats, bombOnBombBeats, isComebackBomb } from "../src/engine/bombs.js";
 import { detectInstantWin } from "../src/engine/instantWin.js";
 import { scoreRound, scoreInstantWin, leftoverPenalty, countUnusedBombs, unusedBombs } from "../src/engine/scoring.js";
-import { createMatch, startRound, applyInstantWin, finishRound, applyChop } from "../src/engine/match.js";
+import { createMatch, startRound, applyInstantWin, finishRound, applyChop, applyBombedBombPenalty } from "../src/engine/match.js";
 import { seededRng } from "../src/engine/runner.js";
 
 // Consolidated engine suite: cards, deal, combinations, plays, trick
@@ -256,6 +256,150 @@ test("trick bombs: comeback — four of a kind works after passing, the 3-pair r
   passTurn(runOnly, 3);
   passTurn(runOnly, 0);
   assert.throws(() => playCards(runOnly, 1, seq3()), /comeback/i);
+});
+
+// ---------- bomb on a bomb (TASK 021) ----------
+
+const run3high = () => [
+  c("7", "clubs"), c("7", "diamonds"), c("8", "clubs"), c("8", "diamonds"),
+  c("9", "clubs"), c("9", "diamonds"),
+];
+const run4high = () => [
+  ...run3high(), c("10", "clubs"), c("10", "diamonds"),
+];
+
+test("bombs: bomb on a bomb — the ladder over bombs (TASK 021)", () => {
+  // Same kind, strictly higher.
+  assert.equal(bombOnBombBeats(run3high(), seq3()), true);
+  assert.equal(bombOnBombBeats(seq3(), run3high()), false);
+  assert.equal(bombOnBombBeats(seq3(), seq3()), false);
+  // Equal ranks: the top pair's suit breaks the tie (hearts over diamonds).
+  const run3heartsTop = [
+    c("3", "spades"), c("3", "hearts"), c("4", "spades"), c("4", "hearts"),
+    c("5", "spades"), c("5", "hearts"),
+  ];
+  assert.equal(bombOnBombBeats(run3heartsTop, seq3()), true);
+  assert.equal(bombOnBombBeats(seq3(), run3heartsTop), false);
+  // The 4-pair double run bombs ANY bomb, whatever its rank.
+  assert.equal(bombOnBombBeats(seq4(), run3high()), true); // lowest 4-run over a high 3-run
+  assert.equal(bombOnBombBeats(seq4(), quad("A")), true); // lowest 4-run over the top quad
+  // ...but over another 4-pair run it must still be higher.
+  assert.equal(bombOnBombBeats(run4high(), seq4()), true);
+  assert.equal(bombOnBombBeats(seq4(), run4high()), false);
+  // Four of a kind over four of a kind, by rank.
+  assert.equal(bombOnBombBeats(quad("9"), quad("5")), true);
+  assert.equal(bombOnBombBeats(quad("5"), quad("9")), false);
+  // A four of a kind never answers a pair-run bomb.
+  assert.equal(bombOnBombBeats(quad("A"), seq3()), false);
+  assert.equal(bombOnBombBeats(quad("A"), seq4()), false);
+  // A 3-pair run answers nothing but a lower 3-pair run.
+  assert.equal(bombOnBombBeats(run3high(), seq4()), false);
+  assert.equal(bombOnBombBeats(run3high(), quad("5")), false);
+  // Non-bombs are never targets or answers here (bombing a 2 is bombBeats).
+  assert.equal(bombOnBombBeats(seq3(), [c("2", "hearts")]), false);
+  assert.equal(bombOnBombBeats(seq3(), [c("K", "spades"), c("K", "hearts")]), false);
+  assert.equal(bombOnBombBeats([c("K", "spades"), c("K", "hearts")], seq3()), false);
+});
+
+test("trick bombs: a bomb on the table can be answered — higher same kind, or the 4-pair run", () => {
+  const build = (p3Hand: Card[]) =>
+    createTrickState(
+      [
+        [c("3", "spades"), c("Q", "diamonds")],
+        [c("2", "hearts"), c("K", "spades")],
+        [...seq3(), c("10", "clubs")],
+        p3Hand,
+      ],
+      { leader: 0, openingLead: false },
+    );
+  // A higher 3-pair run answers the 3-pair bomb.
+  const higher = build([...run3high(), c("J", "spades")]);
+  playCards(higher, 0, [c("3", "spades")]);
+  playCards(higher, 1, [c("2", "hearts")]);
+  playCards(higher, 2, seq3());
+  playCards(higher, 3, run3high());
+  assert.equal(higher.currentPlay?.player, 3);
+  assert.equal(higher.currentPlay?.type, "bomb");
+  // A four of a kind cannot answer a pair-run bomb.
+  const quadTry = build([...quad("9"), c("J", "spades")]);
+  playCards(quadTry, 0, [c("3", "spades")]);
+  playCards(quadTry, 1, [c("2", "hearts")]);
+  playCards(quadTry, 2, seq3());
+  assert.throws(() => playCards(quadTry, 3, quad("9")), /does not beat/);
+  // The lowest 4-pair run answers even a high 3-pair bomb.
+  const fourRun = createTrickState(
+    [
+      [c("3", "spades"), c("Q", "diamonds")],
+      [c("2", "hearts"), c("K", "spades")],
+      [...run3high(), c("10", "clubs")],
+      [...seq4(), c("J", "spades")],
+    ],
+    { leader: 0, openingLead: false },
+  );
+  playCards(fourRun, 0, [c("3", "spades")]);
+  playCards(fourRun, 1, [c("2", "hearts")]);
+  playCards(fourRun, 2, run3high());
+  playCards(fourRun, 3, seq4());
+  assert.equal(fourRun.currentPlay?.player, 3);
+});
+
+test("trick bombs: a led four of a kind can be answered — higher quad or the 4-pair run", () => {
+  const build = (p1Hand: Card[]) =>
+    createTrickState(
+      [quad("5").concat(c("Q", "diamonds")), p1Hand, [c("6", "diamonds"), c("J", "spades")], [c("7", "diamonds"), c("10", "spades")]],
+      { leader: 0, openingLead: false },
+    );
+  const higherQuad = build([...quad("9"), c("K", "spades")]);
+  playCards(higherQuad, 0, quad("5"));
+  playCards(higherQuad, 1, quad("9"));
+  assert.equal(higherQuad.currentPlay?.player, 1);
+  const fourRun = build([...seq4(), c("K", "spades")]);
+  playCards(fourRun, 0, quad("5"));
+  playCards(fourRun, 1, seq4()); // any rank — the 4-pair run bombs any bomb
+  assert.equal(fourRun.currentPlay?.player, 1);
+  const lowQuad = build([...quad("4"), c("K", "spades")]);
+  playCards(lowQuad, 0, quad("5"));
+  assert.throws(() => playCards(lowQuad, 1, quad("4")), /does not beat/);
+});
+
+test("trick bombs: comeback against a bomb — only the comeback kinds (TASK 021)", () => {
+  const build = (p1Hand: Card[]) =>
+    createTrickState(
+      [
+        [c("3", "spades"), c("Q", "diamonds")],
+        p1Hand,
+        [c("2", "hearts"), c("K", "spades")],
+        [...seq3(), c("J", "spades")],
+      ],
+      { leader: 0, openingLead: false },
+    );
+  // P1 passes, P2 plays a 2, P3 bombs it — P1's comeback turn now
+  // faces the bomb, not the 2.
+  const toBomb = (state: ReturnType<typeof build>) => {
+    playCards(state, 0, [c("3", "spades")]);
+    passTurn(state, 1);
+    playCards(state, 2, [c("2", "hearts")]);
+    playCards(state, 3, seq3());
+    passTurn(state, 0);
+  };
+  // A higher 3-pair run is NOT a comeback bomb, even though it would
+  // answer the bomb as a normal follow.
+  const runAnswer = build([...run3high(), c("K", "diamonds")]);
+  toBomb(runAnswer);
+  assert.throws(() => playCards(runAnswer, 1, run3high()), /comeback/i);
+  // The 4-pair double run answers the bomb as a comeback.
+  const run4sh = [
+    c("6", "spades"), c("6", "hearts"), c("7", "spades"), c("7", "hearts"),
+    c("8", "spades"), c("8", "hearts"), c("9", "spades"), c("9", "hearts"),
+  ];
+  const fourRun = build([...run4sh, c("K", "diamonds")]);
+  toBomb(fourRun);
+  playCards(fourRun, 1, run4sh);
+  assert.equal(fourRun.currentPlay?.player, 1);
+  // A four of a kind still cannot answer a pair-run bomb, comeback or not.
+  const quadAnswer = build([...quad("9"), c("8", "clubs")]);
+  toBomb(quadAnswer);
+  assert.throws(() => playCards(quadAnswer, 1, quad("9")), /comeback/i);
 });
 
 // ---------- instant wins ----------
@@ -510,6 +654,181 @@ test("chop: the chopped 2 is never charged again as a round-end leftover", () =>
   assert.deepEqual(result.penalties, []);
   // Final = post-chop scores + round deltas (+2/+1/-1/-2 by place).
   assert.deepEqual(match.scores, [1, -2, 3, -2]);
+  assert.equal(match.scores.reduce((a, b) => a + b, 0), 0);
+});
+
+// ---------- bombed-bomb penalty (TASK 021) ----------
+
+test("bombed-bomb penalty: a bomb beaten by a bomb pays 1 to the beater, instantly", () => {
+  const match = createMatch();
+  assert.deepEqual(
+    applyBombedBombPenalty(match, { player: 2, cards: seq3() }, run3high(), 3),
+    { payer: 2, payee: 3, points: 1 },
+  );
+  // The scores moved immediately — no round end involved.
+  assert.deepEqual(match.scores, [0, 0, -1, 1]);
+  // A LED four of a kind counts: beaten by a higher four of a kind
+  // or by a 4-pair double run, its owner pays the beater 1.
+  for (const answer of [quad("9"), seq4()]) {
+    const m2 = createMatch();
+    assert.deepEqual(
+      applyBombedBombPenalty(m2, { player: 0, cards: quad("5") }, answer, 1),
+      { payer: 0, payee: 1, points: 1 },
+    );
+    assert.deepEqual(m2.scores, [-1, 1, 0, 0]);
+  }
+});
+
+test("bombed-bomb penalty: no bombed bomb, no transfer — and never a chop at the same time", () => {
+  const cases: [{ player: number; cards: Card[] } | null, Card[]][] = [
+    [null, seq3()], // a lead
+    [{ player: 0, cards: [c("2", "hearts")] }, seq3()], // a bombed 2 — the chop's event
+    [{ player: 0, cards: [c("2", "clubs"), c("2", "diamonds")] }, seq4()], // a bombed pair of 2s
+    [{ player: 0, cards: seq3() }, quad("9")], // a quad cannot answer a pair run
+    [{ player: 0, cards: seq4() }, run3high()], // a 3-run cannot answer a 4-run
+    [{ player: 0, cards: [c("K", "clubs"), c("K", "diamonds")] }, quad("9")], // target not a bomb
+  ];
+  for (const [prevPlay, cards] of cases) {
+    const match = createMatch();
+    assert.equal(applyBombedBombPenalty(match, prevPlay, cards, 1), null);
+    assert.deepEqual(match.scores, [0, 0, 0, 0]);
+  }
+  // Mutual exclusion, both directions: the bomb-on-bomb event is not
+  // a chop, and the chop event is not a bombed bomb.
+  const match = createMatch();
+  assert.equal(applyChop(match, { player: 2, cards: seq3() }, run3high(), 3), null);
+  assert.equal(applyBombedBombPenalty(match, { player: 1, cards: [c("2", "hearts")] }, seq3(), 2), null);
+  assert.deepEqual(match.scores, [0, 0, 0, 0]);
+});
+
+test("bombed-bomb penalty: chains cascade — each link settles when its bomb falls", () => {
+  const match = createMatch();
+  const state = createTrickState(
+    [
+      [c("2", "hearts"), c("Q", "diamonds")],
+      [...seq3(), c("K", "spades")],
+      [...run3high(), c("10", "clubs")],
+      [c("4", "spades"), c("J", "diamonds")],
+    ],
+    { leader: 3, openingLead: false },
+  );
+  // Play the way the controller and runner do: capture the current
+  // play, apply the play, then settle both penalty kinds.
+  const play = (player: number, cards: Card[]) => {
+    const prevPlay = state.currentPlay;
+    playCards(state, player, cards);
+    return {
+      chop: applyChop(match, prevPlay, cards, player),
+      bombed: applyBombedBombPenalty(match, prevPlay, cards, player),
+    };
+  };
+  assert.deepEqual(play(3, [c("4", "spades")]), { chop: null, bombed: null });
+  assert.deepEqual(play(0, [c("2", "hearts")]), { chop: null, bombed: null });
+  // Link 1: player 1 bombs the 2 — player 0 pays 1 (the chop).
+  assert.deepEqual(play(1, seq3()), {
+    chop: { payer: 0, payee: 1, points: 1 },
+    bombed: null,
+  });
+  assert.deepEqual(match.scores, [-1, 1, 0, 0]);
+  // Link 2: player 2 bombs player 1's bomb — player 1 pays 1. The
+  // point player 1 just collected does not cancel the debt; both
+  // transfers stand.
+  assert.deepEqual(play(2, run3high()), {
+    chop: null,
+    bombed: { payer: 1, payee: 2, points: 1 },
+  });
+  assert.deepEqual(match.scores, [-1, 0, 1, 0]);
+  assert.equal(state.roundOver, false); // mid-round, exactly as ruled
+  passTurn(state, 3);
+  passTurn(state, 0);
+  passTurn(state, 1); // the second bomb stands; the trick clears to player 2
+  assert.equal(state.currentPlayer, 2);
+  assert.equal(state.trickNumber, 2);
+});
+
+test("bombed-bomb penalty: a bombed pair of 2s pays 2, then the bomb itself pays 1", () => {
+  const match = createMatch();
+  const state = createTrickState(
+    [
+      [c("2", "clubs"), c("2", "diamonds"), c("Q", "diamonds")],
+      [...seq4(), c("K", "spades")],
+      [...run4high(), c("10", "spades")],
+      [c("4", "spades"), c("4", "hearts"), c("J", "diamonds")],
+    ],
+    { leader: 3, openingLead: false },
+  );
+  const play = (player: number, cards: Card[]) => {
+    const prevPlay = state.currentPlay;
+    playCards(state, player, cards);
+    return {
+      chop: applyChop(match, prevPlay, cards, player),
+      bombed: applyBombedBombPenalty(match, prevPlay, cards, player),
+    };
+  };
+  assert.deepEqual(play(3, [c("4", "spades"), c("4", "hearts")]), { chop: null, bombed: null });
+  assert.deepEqual(play(0, [c("2", "clubs"), c("2", "diamonds")]), { chop: null, bombed: null });
+  assert.deepEqual(play(1, seq4()), {
+    chop: { payer: 0, payee: 1, points: 2 }, // 1 per 2, unchanged
+    bombed: null,
+  });
+  assert.deepEqual(play(2, run4high()), {
+    chop: null,
+    bombed: { payer: 1, payee: 2, points: 1 },
+  });
+  assert.deepEqual(match.scores, [-2, 1, 1, 0]);
+});
+
+test("bombed-bomb penalty: a played-and-bombed bomb is never charged as a round-end leftover", () => {
+  const match = createMatch();
+  const state = createTrickState(
+    [
+      [c("3", "spades"), c("Q", "diamonds")],
+      [c("2", "hearts"), c("K", "spades")],
+      [...seq3(), c("9", "clubs")],
+      [...run3high(), c("J", "spades"), c("2", "clubs")],
+    ],
+    { leader: 0, openingLead: false },
+  );
+  const play = (player: number, cards: Card[]) => {
+    const prevPlay = state.currentPlay;
+    playCards(state, player, cards);
+    return {
+      chop: applyChop(match, prevPlay, cards, player),
+      bombed: applyBombedBombPenalty(match, prevPlay, cards, player),
+    };
+  };
+  assert.deepEqual(play(0, [c("3", "spades")]), { chop: null, bombed: null });
+  assert.deepEqual(play(1, [c("2", "hearts")]), { chop: null, bombed: null });
+  assert.deepEqual(play(2, seq3()), {
+    chop: { payer: 1, payee: 2, points: 1 },
+    bombed: null,
+  });
+  assert.deepEqual(play(3, run3high()), {
+    chop: null,
+    bombed: { payer: 2, payee: 3, points: 1 },
+  });
+  assert.deepEqual(match.scores, [0, -1, 0, 1]);
+  passTurn(state, 0);
+  passTurn(state, 1);
+  passTurn(state, 2); // the second bomb stands; the trick clears to player 3
+  assert.equal(play(3, [c("J", "spades")]).chop, null); // player 3 down to the held 2
+  assert.equal(play(0, [c("Q", "diamonds")]).chop, null); // player 0 out
+  assert.equal(play(1, [c("K", "spades")]).chop, null); // player 1 out
+  passTurn(state, 2);
+  passTurn(state, 3);
+  assert.equal(play(2, [c("9", "clubs")]).chop, null); // player 2 out; round over
+  assert.equal(state.roundOver, true);
+  assert.deepEqual(state.finishOrder, [0, 1, 2, 3]);
+  const result = finishRound(match, state);
+  // The only leftover is player 3's unplayed 2. Both pair runs were
+  // PLAYED (and one was bombed) — a played bomb is in no hand at
+  // round end, so neither is charged as an unused bomb.
+  assert.deepEqual(result.penalties, [
+    { player: 3, points: 1, paidTo: 0, twos: [c("2", "clubs")], bombs: [] },
+  ]);
+  assert.deepEqual(result.deltas, [3, 1, -1, -3]);
+  // Final = post-transfer scores [0,-1,0,1] + round deltas.
+  assert.deepEqual(match.scores, [3, 0, -1, -2]);
   assert.equal(match.scores.reduce((a, b) => a + b, 0), 0);
 });
 

@@ -1,7 +1,7 @@
 import { detectInstantWin, type InstantWinKind } from "./instantWin.js";
 import { scoreRound, scoreInstantWin, type Penalty } from "./scoring.js";
 import { createTrickState, findOpeningLeader, type TrickState } from "./trick.js";
-import { bombBeats } from "./bombs.js";
+import { bombBeats, bombOnBombBeats } from "./bombs.js";
 import type { Card } from "./cards.js";
 
 // Match state for Thirteen / Tien Len.
@@ -33,7 +33,8 @@ export interface Match {
   history: RoundHistory[];
 }
 
-/** A bomb-penalty transfer (TASK 012), also the runner/controller ledger entry. */
+/** A bomb-penalty transfer (TASK 012; bombed-bomb transfers from
+    TASK 021 share the shape), also the runner/controller ledger entry. */
 export interface Chop {
   payer: number;
   payee: number;
@@ -146,6 +147,36 @@ export function applyChop(
   match.scores[prevPlay.player] -= points;
   match.scores[bomber] += points;
   return { payer: prevPlay.player, payee: bomber, points };
+}
+
+// BOMBED-BOMB PENALTY (John's ruling, TASK 021 — "bombs get bombed
+// needs penalty"): when a bomb play is beaten by another bomb play,
+// the beaten bomb's owner pays the player who beat it 1 point —
+// instantly, mid-round, as a zero-sum transfer on the match scores,
+// exactly like applyChop. This includes a LED four of a kind beaten
+// by a higher four of a kind or by a 4-pair double run. Chains
+// cascade: each transfer is settled when its bomb falls, and
+// payments already made stand (a player who collected for bombing a
+// 2 still pays when their own bomb is bombed). The engine's
+// bombOnBombBeats is the only definition of the event, so this never
+// overlaps applyChop: a bombed 2 is not a bomb, and a bombed bomb is
+// not a 2. Like a chop, the transfer lands immediately but the match
+// winner is still decided only at round end. A bomb that was played
+// is out of its owner's hand, so it can never also be charged as a
+// round-end unused-bomb leftover.
+// prevPlay is the trick's current play before this play ({ player,
+// cards }) or null on a lead. Returns { payer, payee, points: 1 }
+// when a bomb was bombed, else null.
+export function applyBombedBombPenalty(
+  match: Match,
+  prevPlay: { player: number; cards: Card[] } | null | undefined,
+  cards: Card[],
+  bomber: number,
+): Chop | null {
+  if (!prevPlay || !bombOnBombBeats(cards, prevPlay.cards)) return null;
+  match.scores[prevPlay.player] -= 1;
+  match.scores[bomber] += 1;
+  return { payer: prevPlay.player, payee: bomber, points: 1 };
 }
 
 // Score and apply a finished round from its trick state.
