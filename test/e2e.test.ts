@@ -207,7 +207,7 @@ const ELEMENT_IDS = [
   "continue-btn", "new-match-btn", "start-screen", "start-btn",
   "round-num", "new-match-top", "sort-btn", "clear-btn",
   "help-btn-top", "help-btn-start", "help-overlay", "help-close",
-  "odds-btn-top", "odds-btn-start", "odds-overlay", "odds-close",
+  "odds-btn-top", "odds-overlay", "odds-close",
 ];
 
 const registry = new Map<string, FakeElement>();
@@ -423,18 +423,25 @@ function pageSnapshot(): { dom: Record<string, DomSnapshot>; body: DomSnapshot; 
   return { dom, body: snapshotNode(fakeDocument.body), timers: timerQueue.length };
 }
 
-test("e2e: bomb odds card on the start screen — ships hidden, both buttons, open/close, nothing starts (TASK 022)", async () => {
+test("e2e: bomb odds card — header button only; the start screen has none (TASK 022, button removed in TASK 030)", async () => {
   const html = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
   assert.ok(html.includes('id="odds-overlay" hidden'), "odds card must ship hidden");
-  // Its own button, right next to How to play, in both places.
+  // Its own button, right next to How to play, in the header.
   assert.ok(html.includes(
     '<button class="ghost small" id="help-btn-top" type="button">How to play</button>\n' +
     '          <button class="ghost small" id="odds-btn-top" type="button">Bomb odds</button>',
   ), "header: Bomb odds sits next to How to play");
-  assert.ok(html.includes(
-    '<button id="help-btn-start" class="ghost" type="button">How to play</button>\n' +
-    '          <button id="odds-btn-start" class="ghost" type="button">Bomb odds</button>',
-  ), "start screen: Bomb odds sits next to How to play");
+  // TASK 030 pin: the start-screen button is gone, for good. The
+  // start action row is back to exactly Start Game + How to play.
+  assert.ok(!html.includes("odds-btn-start"), "no start-screen Bomb odds button anywhere in the page");
+  const startScreen = html.slice(html.indexOf("<h2>13 — Tiến Lên</h2>"), html.indexOf('id="banner"'));
+  assert.ok(startScreen.includes('id="start-btn"'), "start screen keeps Start Game");
+  assert.ok(startScreen.includes('id="help-btn-start"'), "start screen keeps How to play");
+  assert.ok(!startScreen.includes("odds"), "the start action row carries no odds control");
+  // The card's content is unchanged (engine-derived figures, TASK 022).
+  assert.ok(html.includes('<tr><td>3-pair double run</td><td class="num">8.36%</td><td class="num">1 in 12</td></tr>'));
+  assert.ok(html.includes('<tr><td>Six pairs</td><td class="num">0.43%</td><td class="num">1 in 231</td></tr>'));
+  assert.ok(html.includes('<tr class="any"><td>Any instant win</td><td class="num">0.83%</td><td class="num">1 in 121</td></tr>'));
   // A standalone card, not a section of How to play.
   const help = html.match(/id="help-overlay"[\s\S]*?id="help-close"/)?.[0] ?? "";
   assert.ok(help.length > 0 && !help.includes("odds"), "odds stay out of the How to play overlay");
@@ -450,10 +457,13 @@ test("e2e: bomb odds card on the start screen — ships hidden, both buttons, op
 
   await import("../src/main.js"); // already booted, or boots idle
 
+  // The header button opens and closes the card from the start
+  // screen too (the header is always in the DOM), and nothing
+  // about the page changes across the open/close cycle.
   assert.equal($("odds-overlay").hidden, true);
   assert.equal($("start-screen").hidden, false);
   const before = pageSnapshot();
-  $("odds-btn-start").click();
+  $("odds-btn-top").click();
   assert.equal($("odds-overlay").hidden, false);
   assert.equal($("start-screen").hidden, false);
   $("odds-close").click();
@@ -466,7 +476,7 @@ test("e2e: bomb odds card on the start screen — ships hidden, both buttons, op
   assert.equal(timerQueue.length, 0);
 
   // Backdrop click closes it too.
-  $("odds-btn-start").click();
+  $("odds-btn-top").click();
   assert.equal($("odds-overlay").hidden, false);
   $("odds-overlay").click();
   assert.equal($("odds-overlay").hidden, true);
