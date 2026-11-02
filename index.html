@@ -21,6 +21,7 @@
           <span class="chip">Round <b id="round-num">1</b></span>
           <span class="chip gold">First to <b>13</b> wins the match</span>
           <button class="ghost small" id="help-btn-top" type="button">How to play</button>
+          <button class="ghost small" id="odds-btn-top" type="button">Bomb odds</button>
           <button class="ghost small" id="new-match-top" type="button">New match</button>
         </div>
       </header>
@@ -73,6 +74,7 @@
         <div class="banner-actions">
           <button id="start-btn" type="button">Start Game</button>
           <button id="help-btn-start" class="ghost" type="button">How to play</button>
+          <button id="odds-btn-start" class="ghost" type="button">Bomb odds</button>
         </div>
       </div>
     </div>
@@ -115,6 +117,35 @@
         <p>1st +2, 2nd +1, 3rd pays 1 to 2nd, last pays 2 to 1st. Still holding 2s or unused bombs when the round ends: 1 point each, paid to the player above you.</p>
         <div class="banner-actions">
           <button id="help-close" type="button">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="overlay" id="odds-overlay" hidden>
+      <div class="modal oddscard">
+        <span class="odds-corner tl" aria-hidden="true">2<br>♥</span>
+        <span class="odds-corner br" aria-hidden="true">2<br>♥</span>
+        <h2>Bomb odds</h2>
+        <p class="odds-frame">Dealt-hand odds: the chance your 13-card deal holds each one.</p>
+        <h3>BOMBS</h3>
+        <table class="odds">
+          <tr><td>3-pair double run</td><td class="num">8.36%</td><td class="num">1 in 12</td></tr>
+          <tr><td>Four of a kind</td><td class="num">3.42%</td><td class="num">1 in 29</td></tr>
+          <tr><td>4-pair double run</td><td class="num">0.96%</td><td class="num">1 in 104</td></tr>
+          <tr class="any"><td>Any bomb</td><td class="num">11.63%</td><td class="num">1 in 8.6</td></tr>
+        </table>
+        <h3>INSTANT WINS</h3>
+        <table class="odds">
+          <tr><td>Six pairs</td><td class="num">0.43%</td><td class="num">1 in 231</td></tr>
+          <tr><td>Four 2s</td><td class="num">0.26%</td><td class="num">1 in 379</td></tr>
+          <tr><td>Five consecutive pairs</td><td class="num">0.065%</td><td class="num">1 in 1,542</td></tr>
+          <tr><td>Dragon straight</td><td class="num">0.058%</td><td class="num">1 in 1,720</td></tr>
+          <tr><td>Three consecutive triples</td><td class="num">0.010%</td><td class="num">1 in 10,041</td></tr>
+          <tr class="any"><td>Any instant win</td><td class="num">0.83%</td><td class="num">1 in 121</td></tr>
+        </table>
+        <p class="odds-note">A deal that fits two instant wins counts once, as the one the game awards.</p>
+        <div class="banner-actions">
+          <button id="odds-close" type="button">Close</button>
         </div>
       </div>
     </div>

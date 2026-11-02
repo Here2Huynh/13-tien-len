@@ -48,6 +48,10 @@ const els = {
   helpStart: $btn("help-btn-start"),
   helpOverlay: $("help-overlay"),
   helpClose: $btn("help-close"),
+  oddsTop: $btn("odds-btn-top"),
+  oddsStart: $btn("odds-btn-start"),
+  oddsOverlay: $("odds-overlay"),
+  oddsClose: $btn("odds-close"),
 };
 
 const selected = new Set<string>(); // card ids the player has tapped
@@ -946,6 +950,20 @@ els.helpStart.addEventListener("click", () => setHelp(true));
 els.helpClose.addEventListener("click", () => setHelp(false));
 els.helpOverlay.addEventListener("click", (event) => {
   if (event.target === els.helpOverlay) setHelp(false);
+});
+
+// Bomb odds card (TASK 022): the same pure-presentation contract as
+// the how-to-play overlay — static figures in index.html, no
+// controller call, no render, no timers.
+els.oddsOverlay.hidden = true;
+const setOdds = (open: boolean): void => {
+  els.oddsOverlay.hidden = !open;
+};
+els.oddsTop.addEventListener("click", () => setOdds(true));
+els.oddsStart.addEventListener("click", () => setOdds(true));
+els.oddsClose.addEventListener("click", () => setOdds(false));
+els.oddsOverlay.addEventListener("click", (event) => {
+  if (event.target === els.oddsOverlay) setOdds(false);
 });
 
 els.sortBtn.addEventListener("click", () => {
