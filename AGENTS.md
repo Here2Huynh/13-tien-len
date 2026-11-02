@@ -31,8 +31,16 @@ push, at the owner's order — and by Claude Code runs for Task 022.
 For Task 027 the Claude Code builder stalled on the owner's
 exhausted usage window and a sub-agent fallback finished the build;
 the owner then directed a return to the chats — "use the chats, I
-want the visibility" — so Task 027's verification and everything
-after go through the chats.)
+want the visibility" — and Task 027's verification ran there.
+Switch #5 (owner, 2026-11-02): at Claude's 5-hour reset, Claude
+Code resumes — the standing rule is a fresh usage check before
+every job: if the job fits the available Claude usage, builder and
+verifier run as Claude Code runs (separate runs, pinned
+`--model claude-opus-5-5 --effort high`); if it doesn't fit, the
+two chats are the fallback. A job already running in a chat when
+the window resets finishes in that chat. Task 023's build went to
+the Builder chat under this rule (check at assignment: 5-hour
+window still at 100%).
 
 - **BUILDER task** — the task file's Status reads `ASSIGNED (builder)`.
   Implement exactly what the task file says, nothing more. Branch
