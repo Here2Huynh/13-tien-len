@@ -176,6 +176,7 @@ const ELEMENT_IDS = [
   "continue-btn", "new-match-btn", "start-screen", "start-btn",
   "round-num", "new-match-top", "sort-btn", "clear-btn",
   "help-btn-top", "help-btn-start", "help-overlay", "help-close",
+  "odds-btn-top", "odds-btn-start", "odds-overlay", "odds-close",
 ];
 
 const registry = new Map<string, FakeElement>();
@@ -359,6 +360,86 @@ test("e2e: how-to-play overlay on the start screen — content, open/close, noth
   $("help-overlay").click();
   assert.equal($("help-overlay").hidden, true);
   assert.equal($("start-screen").hidden, false);
+});
+
+// ---------- TASK 022: Bomb odds card ----------
+
+// Everything the adapter has painted: every element it has touched,
+// recursively — classes, text, hidden/disabled, attributes, dataset,
+// inline style — plus the pending CPU timer count.
+interface DomSnapshot {
+  tag: string;
+  className: string;
+  text: string;
+  hidden: boolean;
+  disabled: boolean;
+  attrs: Record<string, string>;
+  dataset: Record<string, string>;
+  style: Record<string, string>;
+  children: DomSnapshot[];
+}
+function snapshotNode(node: FakeElement): DomSnapshot {
+  return {
+    tag: node.tagName, className: node.className, text: node._text,
+    hidden: node.hidden, disabled: node.disabled,
+    attrs: { ...node.attrs }, dataset: { ...node.dataset }, style: { ...node.style },
+    children: node.children.map(snapshotNode),
+  };
+}
+function pageSnapshot(): { dom: Record<string, DomSnapshot>; body: DomSnapshot; timers: number } {
+  const dom: Record<string, DomSnapshot> = {};
+  for (const id of [...registry.keys()].sort()) dom[id] = snapshotNode(registry.get(id)!);
+  return { dom, body: snapshotNode(fakeDocument.body), timers: timerQueue.length };
+}
+
+test("e2e: bomb odds card on the start screen — ships hidden, both buttons, open/close, nothing starts (TASK 022)", async () => {
+  const html = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
+  assert.ok(html.includes('id="odds-overlay" hidden'), "odds card must ship hidden");
+  // Its own button, right next to How to play, in both places.
+  assert.ok(html.includes(
+    '<button class="ghost small" id="help-btn-top" type="button">How to play</button>\n' +
+    '          <button class="ghost small" id="odds-btn-top" type="button">Bomb odds</button>',
+  ), "header: Bomb odds sits next to How to play");
+  assert.ok(html.includes(
+    '<button id="help-btn-start" class="ghost" type="button">How to play</button>\n' +
+    '          <button id="odds-btn-start" class="ghost" type="button">Bomb odds</button>',
+  ), "start screen: Bomb odds sits next to How to play");
+  // A standalone card, not a section of How to play.
+  const help = html.match(/id="help-overlay"[\s\S]*?id="help-close"/)?.[0] ?? "";
+  assert.ok(help.length > 0 && !help.includes("odds"), "odds stay out of the How to play overlay");
+  assert.ok(!html.toLowerCase().includes("chop"), "no chop vocabulary in the page");
+  // No new motion: the card's rules carry no animation or transition.
+  const css = readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8");
+  const cardRules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .filter((m) => /oddscard|odds-/.test(m[1]));
+  assert.ok(cardRules.length > 0, "the card is styled");
+  for (const rule of cardRules) {
+    assert.ok(!/animation|transition/.test(rule[2]), `no motion on ${rule[1].trim()}`);
+  }
+
+  await import("../src/main.js"); // already booted, or boots idle
+
+  assert.equal($("odds-overlay").hidden, true);
+  assert.equal($("start-screen").hidden, false);
+  const before = pageSnapshot();
+  $("odds-btn-start").click();
+  assert.equal($("odds-overlay").hidden, false);
+  assert.equal($("start-screen").hidden, false);
+  $("odds-close").click();
+  assert.equal($("odds-overlay").hidden, true);
+  assert.deepEqual(pageSnapshot(), before, "open/close leaves the page untouched");
+  assert.equal($("start-screen").hidden, false);
+  assert.equal(handCount(), 0);
+  assert.deepEqual(scoreValues(), [0, 0, 0, 0]);
+  assert.equal($("log").children.length, 0);
+  assert.equal(timerQueue.length, 0);
+
+  // Backdrop click closes it too.
+  $("odds-btn-start").click();
+  assert.equal($("odds-overlay").hidden, false);
+  $("odds-overlay").click();
+  assert.equal($("odds-overlay").hidden, true);
+  assert.deepEqual(pageSnapshot(), before);
 });
 
 test("e2e: how-to-play teaches bomb on a bomb with the worked example (TASK 021)", () => {
@@ -696,6 +777,35 @@ test("e2e: how-to-play overlay mid-game — header button, close leaves the game
   assert.equal($("trick-info").textContent, before.turn);
   assert.equal($("log").children.length, before.log);
   assert.equal($("play-btn").disabled, false); // still the human's turn
+});
+
+test("e2e: bomb odds card mid-game with CPU timers pending — open/close leaves the game byte-identical (TASK 022)", async () => {
+  await import("../src/main.js"); // already booted by the earlier tests
+
+  $("new-match-top").click();
+  // Play human moves until CPU turns are queued behind the timer.
+  let pending = false;
+  for (let steps = 0; steps < 200 && !pending; steps++) {
+    settleToYourTurn();
+    humanMove();
+    pending = timerQueue.length > 0 && $("banner").hidden;
+  }
+  assert.ok(pending, "need CPU timers pending for the mid-game probe");
+  assert.ok(handCount() > 0, "need a live game");
+
+  const before = pageSnapshot();
+  $("odds-btn-top").click();
+  assert.equal($("odds-overlay").hidden, false);
+  const open = pageSnapshot();
+  open.dom["odds-overlay"].hidden = true; // the one thing opening changes
+  assert.deepEqual(open, before, "opening touches nothing but the card");
+  $("odds-close").click();
+  assert.equal($("odds-overlay").hidden, true);
+  assert.deepEqual(pageSnapshot(), before, "closing restores the page exactly");
+
+  // The queued CPU turns then run as normal.
+  const result = settle();
+  assert.ok(result === "your-turn" || result === "banner");
 });
 
 // ---------- TASK 014: animation layer ----------
