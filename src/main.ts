@@ -498,9 +498,18 @@ function renderSeat(player: number, state: ControllerState): void {
   // Lockout (TASK 014): a seat that passed this trick is greyed
   // with the LOCKED stamp until the trick clears or they come back
   // in (a comeback play removes them from `passed` in the engine).
+  const lockedNow =
+    state.phase === "playing" && trick !== null && trick.passed.includes(player);
+  box.classList.toggle("lockedout", lockedNow);
+  // Stamp once per lockout (TASK 028): the stampIn animation is
+  // gated on .stampplay, carried only by the render where this
+  // seat NEWLY locks — it was not in the previous render's passed
+  // set for this same trick (fxPassed/fxTrickRef still hold the
+  // previous render's values here; endFx advances them after).
+  // Every later rebuild of the seat shows the stamp settled.
   box.classList.toggle(
-    "lockedout",
-    state.phase === "playing" && trick !== null && trick.passed.includes(player),
+    "stampplay",
+    lockedNow && !(fxTrickRef === trick && fxPassed.includes(player)),
   );
   const opp = el("div", `opp${active ? " active" : ""}`);
   const who = el("div", "who");
