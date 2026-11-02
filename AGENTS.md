@@ -41,6 +41,11 @@ two chats are the fallback. A job already running in a chat when
 the window resets finishes in that chat. Task 023's build went to
 the Builder chat under this rule (check at assignment: 5-hour
 window still at 100%).
+Switch #6 (owner, 2026-11-02, superseding Switch #5): "just keep
+builder and verifier in your chats now on" — the two chats are the
+standing builder/verifier route from now on. The usage-gated
+Claude Code routing is retired: no per-job usage checks, and
+Claude Code is not a pipeline route unless the owner re-opens it.
 
 - **BUILDER task** — the task file's Status reads `ASSIGNED (builder)`.
   Implement exactly what the task file says, nothing more. Branch
