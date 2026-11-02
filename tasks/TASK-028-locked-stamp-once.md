@@ -1,8 +1,10 @@
 # TASK 028 — LOCKED stamp: play it once, when the lock lands
 
-Status: QUEUED (owner pick locked 2026-11-01: stamp once at the
-lock, never on the owner's clicks; becomes ASSIGNED (builder) in
-queue order behind Task 027 unless the owner reorders)
+Status: ASSIGNED (verifier) — PR #28 open, branch
+task-028-locked-stamp-once; built in the Builder chat (commit
+141340b: suite 103 -> 105, real-app probes 8/8 claimed with a
+main control at 2 -> 7 replays). Route: the Verifier chat
+(Switch #6). Checklist: tasks/VERIFY-028.md.
 Read `AGENTS.md` first; it governs how work flows in this repo.
 
 Owner's report: every time he clicks anything — a card in his hand,
