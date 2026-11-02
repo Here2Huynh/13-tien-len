@@ -83,19 +83,45 @@ class FakeElement {
       },
     };
   }
+  // Parent tracking (TASK 023): the fake now knows the tree, so
+  // remove() really detaches and layout offsets can be simulated.
+  parent: FakeElement | null = null;
+  // Spawn history, recorded ONLY on the fx layer: its floats and
+  // ghosts remove themselves, so tests count spawns here instead
+  // of live children. (Recording this on every element would
+  // retain each render's throwaway nodes for the whole suite.)
+  appendHistory: FakeElement[] = [];
   appendChild(node: FakeElement): FakeElement {
-    const i = this.children.indexOf(node);
-    if (i >= 0) this.children.splice(i, 1);
+    if (node.parent) {
+      const i = node.parent.children.indexOf(node);
+      if (i >= 0) node.parent.children.splice(i, 1);
+    }
+    node.parent = this;
     this.children.push(node);
+    if (this.className === "fx-layer") this.appendHistory.push(node);
     return node;
   }
   insertBefore(node: FakeElement, ref: FakeElement | null): FakeElement {
-    const i = this.children.indexOf(node);
-    if (i >= 0) this.children.splice(i, 1);
+    if (node.parent) {
+      const i = node.parent.children.indexOf(node);
+      if (i >= 0) node.parent.children.splice(i, 1);
+    }
+    node.parent = this;
     const at = ref ? this.children.indexOf(ref) : -1;
     if (at < 0) this.children.push(node);
     else this.children.splice(at, 0, node);
+    if (this.className === "fx-layer") this.appendHistory.push(node);
     return node;
+  }
+  // Simulated layout (TASK 023): a child's layout slot is its index
+  // among its siblings (70px columns), so reordering children —
+  // Sort, drag — moves it, while pose transforms never do. This is
+  // what lets a unit test give the hand non-zero layout boxes.
+  get offsetLeft(): number {
+    return this.parent ? this.parent.children.indexOf(this) * 70 : 0;
+  }
+  get offsetTop(): number {
+    return 0;
   }
   getBoundingClientRect(): FakeRect {
     return this._rect ?? { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
@@ -111,6 +137,7 @@ class FakeElement {
     return this._className ?? "";
   }
   set textContent(value: string) {
+    for (const child of this.children) child.parent = null;
     this.children = [];
     this._text = value ?? "";
   }
@@ -120,7 +147,7 @@ class FakeElement {
   append(...nodes: (FakeElement | string)[]): void {
     for (let node of nodes) {
       if (typeof node === "string") node = new FakeText(node);
-      this.children.push(node);
+      this.appendChild(node);
     }
   }
   setAttribute(name: string, value: string): void {
@@ -139,8 +166,12 @@ class FakeElement {
     for (const fn of this.listeners.click ?? []) fn({ target: this });
   }
   remove(): void {
-    // The fake has no parent tracking; removal is a no-op so fx
-    // nodes stay countable in their layer after spawning.
+    // Real detach via parent tracking (TASK 023). Fx floats stay
+    // countable through the layer's appendHistory.
+    if (!this.parent) return;
+    const i = this.parent.children.indexOf(this);
+    if (i >= 0) this.parent.children.splice(i, 1);
+    this.parent = null;
   }
   // WAAPI stub (TASK 014): records every animation call so tests
   // can pin FLIP bookkeeping and the reduced-motion zero-call path.
@@ -932,7 +963,9 @@ test("e2e: bomb-penalty float — none on a New match reset, exactly one per gen
   await import("../src/main.js");
   const floatCount = (): number => {
     const layer = fakeDocument.body.children.find((ch) => ch.className === "fx-layer");
-    return layer ? layer.children.filter((ch) => ch.className === "fx-float").length : 0;
+    // appendHistory, not children: a float's own cleanup removes it
+    // from the layer, but the spawn is what the assertions count.
+    return layer ? layer.appendHistory.filter((ch) => ch.className === "fx-float").length : 0;
   };
   // A chop is the only mid-round score change, and it always moves
   // exactly two boxes by opposite amounts — the same signature the
@@ -1017,6 +1050,53 @@ test("e2e: bomb-penalty float — none on a New match reset, exactly one per gen
     }
   }
   assert.ok(verified, "no genuine chop occurred to verify the float against");
+});
+
+test("e2e: hand settle keys on layout, not pose — selection redraw animates nothing and reuses buttons (TASK 023)", async () => {
+  await import("../src/main.js");
+  $("new-match-top").click();
+  settleToYourTurn();
+  const handBtns = (): FakeElement[] => Array.from($("hand").children);
+  const before = handBtns();
+  assert.ok(before.length > 1, "need a hand to select from");
+  const target = before[1];
+  const targetId = target.dataset.cardId;
+  // The fake's layout boxes are non-zero (slot index x 70px), and
+  // this card's PAINTED box sits 15px above its slot — a hovered /
+  // selected pose. The old painted-box settle read exactly that as
+  // movement and dropped the card; the layout comparison must not.
+  target._rect = { left: 70, top: -15, right: 134, bottom: 81, width: 64, height: 96 };
+  const callsBefore = FakeElement.totalAnimateCalls;
+  target.click(); // select
+  const after = handBtns();
+  assert.equal(after.length, before.length);
+  assert.ok(
+    after.every((btn, i) => btn === before[i]),
+    "hand buttons must be reused across a selection redraw",
+  );
+  assert.ok(after[1].className.includes("sel"), "the clicked card is selected");
+  assert.equal(
+    FakeElement.totalAnimateCalls - callsBefore,
+    0,
+    "a selection-only redraw must start no animation (layout did not move)",
+  );
+  // A real layout move — Sort reverses the hand — DOES animate,
+  // and the animation drives the CSS `translate` property so the
+  // pose transform survives the slide.
+  target.click(); // deselect
+  const callsBeforeSort = FakeElement.totalAnimateCalls;
+  $("sort-btn").click();
+  assert.ok(
+    FakeElement.totalAnimateCalls - callsBeforeSort > 0,
+    "Sort must still settle-animate the moved cards",
+  );
+  const moved = handBtns().find((btn) => btn.dataset.cardId === targetId)!;
+  const settleAnim = moved.animations[moved.animations.length - 1];
+  const frames = settleAnim.keyframes as { translate?: string }[];
+  assert.ok(
+    frames[0].translate !== undefined && !("transform" in frames[0]),
+    "settle animation must keyframe the translate property, not transform",
+  );
 });
 
 
@@ -1162,11 +1242,22 @@ test("hand motion: shared transition and selected pose wins hover", () => {
     .map((m) => ({ selector: m[1].trim(), body: m[2] }));
   const hand = rules.filter((r) => r.selector.startsWith(".hand "));
   const transitions = hand.filter((r) => /transition:/.test(r.body));
-  assert.equal(transitions.length, 2);
-  assert.equal(transitions[0].selector, ".hand .card");
-  assert.match(transitions[0].body, /transition:transform \.13s ease, box-shadow \.13s ease;/);
-  assert.equal(transitions[1].selector, ".hand .card.dragging");
-  assert.match(transitions[1].body, /transition:none/);
+  // TASK 023 disclosed update: the count goes 2 -> 3 because the
+  // reduced-motion block gains `.hand .card{transition:none
+  // !important}` — with buttons reused across redraws, selection
+  // would otherwise glide there. Every pre-existing assertion
+  // below keeps its strength; the rules are now found by content
+  // because the reduced-motion rule shares the base selector and
+  // sits earlier in the file.
+  assert.equal(transitions.length, 3);
+  const shared = transitions.find((r) => /transition:transform/.test(r.body))!;
+  assert.equal(shared.selector, ".hand .card");
+  assert.match(shared.body, /transition:transform \.13s ease, box-shadow \.13s ease;/);
+  const dragging = transitions.find((r) => r.selector === ".hand .card.dragging")!;
+  assert.match(dragging.body, /transition:none/);
+  const reducedOff = transitions.filter((r) => /transition:none !important/.test(r.body));
+  assert.equal(reducedOff.length, 1);
+  assert.equal(reducedOff[0].selector, ".hand .card");
   const hover = hand.filter((r) => r.selector.includes(":hover"));
   assert.equal(hover.length, 1);
   assert.equal(hover[0].selector, ".hand .card:hover");
@@ -1175,7 +1266,7 @@ test("hand motion: shared transition and selected pose wins hover", () => {
   assert.match(selected.body, /transform:translateY\(-15px\) rotate\(0deg\);/);
   assert.match(selected.body, /background:#e8f5ff/);
   assert.match(selected.body, /0 0 0 3px var\(--blue\)/);
-  assert.match(transitions[0].body, /filter:none/);
+  assert.match(shared.body, /filter:none/);
   assert.ok(!hand.some((r) => r.selector.includes(":active")));
 });
 

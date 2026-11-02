@@ -55,6 +55,9 @@ body::after{
      (the WAAPI side is gated in the adapter). */
   .penrow, .penrow::before, .seat.lockedout .opp::after,
   .modal.instantwin::before, tr.winline{animation:none !important;}
+  .hand .card{/* TASK 023: buttons are reused across redraws now,
+    so selection would otherwise glide here via the shared
+    transition. */transition:none !important;}
 }
 .wrap{max-width:1080px;margin:0 auto;padding:16px 14px 48px;}
 
