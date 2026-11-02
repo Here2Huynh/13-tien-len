@@ -73,6 +73,7 @@ completion.
 | 021 | Bomb on a bomb — answerable bombs + bombed-bomb penalty | #24 | ✅ Merged · Live |
 | 022 | Bomb odds reference card — engine-derived dealt-hand odds | #25 | ✅ Merged · Live |
 | 027 | Summary modal scrollbars — inner scrollbox, shell never scrolls horizontally | #26 | ✅ Merged · Live |
+| 023 | Card hover/select drop — layout-keyed settle, reused hand buttons | #27 | ✅ Merged · Live |
 
 ## Play
 

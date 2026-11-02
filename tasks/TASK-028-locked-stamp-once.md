@@ -1,8 +1,9 @@
 # TASK 028 — LOCKED stamp: play it once, when the lock lands
 
-Status: QUEUED (owner pick locked 2026-11-01: stamp once at the
-lock, never on the owner's clicks; becomes ASSIGNED (builder) in
-queue order behind Task 027 unless the owner reorders)
+Status: ASSIGNED (builder) — Task 023 closed 2026-11-02; owner
+pick locked 2026-11-01: stamp once at the lock, never on the
+owner's clicks. Route: the Thirteen Builder chat (Switch #6 —
+builder and verifier stay in the chats)
 Read `AGENTS.md` first; it governs how work flows in this repo.
 
 Owner's report: every time he clicks anything — a card in his hand,
