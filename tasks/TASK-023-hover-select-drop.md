@@ -1,9 +1,13 @@
 # TASK 023 — Fix the card hover/select drop
 
-Status: ASSIGNED (builder) — Task 027 closed 2026-11-02; owner
-pick locked 2026-11-01: the FULL fix below. Route: the Builder
-chat (fresh Claude usage check at assignment showed the 5-hour
-window still at 100%, so the chat fallback runs it — Switch #5)
+Status: ASSIGNED (verifier) — PR #27 open, branch
+task-023-hover-select-drop; built in the Builder chat (commit
+d307161: suite 102 -> 103, real-app traces 28/28 claimed);
+verifier route: the Verifier chat — the fresh Claude usage check
+at verify time could not be completed (Anthropic usage endpoint
+returned HTTP 429), so availability was unproven and the chat
+fallback runs it per the owner's rule (Switch #5). Checklist:
+tasks/VERIFY-023.md.
 Read `AGENTS.md` first; it governs how work flows in this repo.
 
 Owner's report, in his words: he doesn't love the card animation on
