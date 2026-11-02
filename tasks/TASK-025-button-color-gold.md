@@ -11,13 +11,20 @@ disabled. Fix: recolor them **warm gold**, matching the gold trim
 line that already runs under the button row (owner's pick over
 vivid teal and coral red).
 
+Scope extended by the owner 2026-11-01 (second screenshot, same
+complaint): the header's HOW TO PLAY / NEW MATCH buttons too. The
+slate style is one class — `button.ghost` (#486a73) — and its full
+family in the shipped markup is: PASS, HINT, SORT, CLEAR (controls
+row) and HOW TO PLAY, BOMB ODDS, NEW MATCH (header, `.ghost.small`).
+All of them get the gold treatment under this task.
+
 ## Scope
 
-- The utility-row buttons (HINT, SORT, CLEAR) and any other button
-  sharing that exact slate style — the builder inventories every
-  element using the style, lists them in the PR, and recolors
-  exactly those. Buttons with their own distinct colors (primary
-  actions, dialogs) keep them.
+- Every `button.ghost` element (the seven buttons named above) —
+  the builder confirms the inventory against the shipped markup,
+  lists it in the PR, and recolors exactly those. Buttons with
+  their own distinct colors (Play cards' green, the start/dialog
+  primaries) keep them.
 - Derive the gold from the trim's actual value in the CSS: button
   face in that gold family, a deeper gold for hover/pressed. Text
   stays clearly legible against the gold (dark text if that's what
