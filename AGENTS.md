@@ -19,15 +19,20 @@ npm run build # type-checks, compiles, assembles dist/
 ## How work flows here (the pipeline)
 
 A foreman (Caspian, the owner's agent) scopes every task as a file in
-`tasks/`. The foreman runs Anthropic's Claude (the Claude Code CLI)
-in exactly two roles, and **the two roles are always separate runs**
-— the run that built something never verifies it. Every run launches
-pinned: `--model claude-opus-5-5 --effort high`. (Owner's switches,
-2026-11-01: the roles were filled by Claude bot chats for Tasks
-001–017, by Codex for Tasks 018–020, and by a Muse sub-agent for
-the Task 021 build — which Claude Code verified, locally before any
-push, at the owner's order. From Task 022 on, both roles are Claude
-Code runs.)
+`tasks/`. Two standing chats fill the pipeline's two roles — the
+**Thirteen Builder** chat and the **Thirteen Verifier** chat — and
+**the two roles are always separate chats**: the chat that built
+something never verifies it. The foreman assigns work in those
+chats; the owner can watch both work there. (Owner's switches,
+2026-11-01: the roles were filled by these same chats for Tasks
+001–017, by Codex for Tasks 018–020, by a Muse sub-agent for the
+Task 021 build — which Claude Code verified, locally before any
+push, at the owner's order — and by Claude Code runs for Task 022.
+For Task 027 the Claude Code builder stalled on the owner's
+exhausted usage window and a sub-agent fallback finished the build;
+the owner then directed a return to the chats — "use the chats, I
+want the visibility" — so Task 027's verification and everything
+after go through the chats.)
 
 - **BUILDER task** — the task file's Status reads `ASSIGNED (builder)`.
   Implement exactly what the task file says, nothing more. Branch
