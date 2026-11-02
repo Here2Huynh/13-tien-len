@@ -1,9 +1,8 @@
 # TASK 030 — Remove the Bomb Odds button from the start screen
 
-Status: ASSIGNED (builder) — Task 028 closed 2026-11-02; owner
-feedback + pick locked 2026-11-02: remove ONLY the start-screen
-button; the header button and the odds card stay. Route: the
-Thirteen Builder chat (Switch #6).
+Status: QUEUED (owner feedback + pick locked 2026-11-02: remove
+ONLY the start-screen button; the header button and the odds card
+stay. Becomes ASSIGNED (builder) in queue order behind Task 028)
 Read `AGENTS.md` first; it governs how work flows in this repo.
 
 Owner's report (screenshot of the start screen, 2026-11-02): the
