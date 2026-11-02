@@ -49,7 +49,6 @@ const els = {
   helpOverlay: $("help-overlay"),
   helpClose: $btn("help-close"),
   oddsTop: $btn("odds-btn-top"),
-  oddsStart: $btn("odds-btn-start"),
   oddsOverlay: $("odds-overlay"),
   oddsClose: $btn("odds-close"),
 };
@@ -1010,7 +1009,6 @@ const setOdds = (open: boolean): void => {
   els.oddsOverlay.hidden = !open;
 };
 els.oddsTop.addEventListener("click", () => setOdds(true));
-els.oddsStart.addEventListener("click", () => setOdds(true));
 els.oddsClose.addEventListener("click", () => setOdds(false));
 els.oddsOverlay.addEventListener("click", (event) => {
   if (event.target === els.oddsOverlay) setOdds(false);
