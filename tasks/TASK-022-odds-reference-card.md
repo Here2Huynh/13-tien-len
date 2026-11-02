@@ -1,7 +1,6 @@
 # TASK 022 — Bomb odds reference card
 
-Status: QUEUED (behind Task 021 — becomes ASSIGNED (builder) only
-after Task 021 merges; branch off the post-021 `main`)
+Status: ASSIGNED (builder) — Task 021 merged; branch off current `main`
 Read `AGENTS.md` first; it governs how work flows in this repo.
 
 FR (John, 2026-11-01): show the probability of each bomb on a

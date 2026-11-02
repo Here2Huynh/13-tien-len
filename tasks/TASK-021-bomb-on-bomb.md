@@ -1,6 +1,6 @@
 # TASK 021 — Bomb on a bomb: answerable bombs + bombed-bomb penalty
 
-Status: ASSIGNED (builder)
+Status: COMPLETE (PR #24 — verifier PASS, Claude Code, 2026-11-01)
 Read `AGENTS.md` first; it governs how work flows in this repo.
 
 Owner ruling (John, 2026-11-01 — this closes the parked bomb-vs-bomb

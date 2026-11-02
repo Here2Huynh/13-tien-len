@@ -19,12 +19,15 @@ npm run build # type-checks, compiles, assembles dist/
 ## How work flows here (the pipeline)
 
 A foreman (Caspian, the owner's agent) scopes every task as a file in
-`tasks/`. Claude sub-agents spawned by the foreman per task work in
-exactly two roles, and **the two roles are always separate spawns** —
-the agent that built something never verifies it. (Owner's switch,
+`tasks/`. The foreman runs Anthropic's Claude (the Claude Code CLI)
+in exactly two roles, and **the two roles are always separate runs**
+— the run that built something never verifies it. Every run launches
+pinned: `--model claude-opus-5-5 --effort high`. (Owner's switches,
 2026-11-01: the roles were filled by Claude bot chats for Tasks
-001–017 and by Codex for Tasks 018–020; from Task 021 on they are
-Claude sub-agents spawned from the foreman's chat.)
+001–017, by Codex for Tasks 018–020, and by a Muse sub-agent for
+the Task 021 build — which Claude Code verified, locally before any
+push, at the owner's order. From Task 022 on, both roles are Claude
+Code runs.)
 
 - **BUILDER task** — the task file's Status reads `ASSIGNED (builder)`.
   Implement exactly what the task file says, nothing more. Branch
@@ -59,8 +62,15 @@ loops, suite delta) in the pipeline metrics ledger.
   (after passing): only four of a kind and the 4-pair double run, on
   your own turn in order. Five consecutive pairs is an instant win
   only, NOT a bomb — triple 2s are unbeatable.
+- Bombs can be bombed (owner's ruling, 2026-11-01, Task 021): over a
+  bomb, a higher bomb of the same kind answers; a 4-pair double run
+  bombs ANY bomb (over another 4-pair run it must be higher); four
+  of a kind can never answer a pair-run bomb. Comeback eligibility
+  is unchanged and applies to bomb answers too.
 - Bomb penalty: when a played 2 is bombed, its owner pays the bomber
-  1 point per 2, instantly, mid-round.
+  1 point per 2, instantly, mid-round. When a bomb is beaten by
+  another bomb, the beaten bomb's owner pays the beater 1 point,
+  instantly — a led four of a kind included (Task 021).
 - Instant-win hands (dealt): four 2s; six pairs; five consecutive
   pairs; dragon straight 3–A; three consecutive triples. Each other
   player pays the winner 2; the round ends; no leftover penalties.
