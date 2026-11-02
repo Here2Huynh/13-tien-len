@@ -69,6 +69,7 @@ completion.
 | 014 | Animations — full bundle (FLIP, deal, collect, bomb juice, instant-win/lockout/penalty) | #19 | ✅ Merged · Live |
 | 018 | Cheatsheet bomb examples + playable-bomb flicker (Codex-cloud pilot) | #20 | ✅ Merged · Live |
 | 019 | Seamless hand-card hover/select motion | #22 | ✅ Merged · Live |
+| 020 | Site favicon — the 2♥ card (original option C) | #23 | ✅ Merged · Live |
 
 ## Play
 
