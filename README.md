@@ -72,6 +72,7 @@ completion.
 | 020 | Site favicon — the 2♥ card (original option C) | #23 | ✅ Merged · Live |
 | 021 | Bomb on a bomb — answerable bombs + bombed-bomb penalty | #24 | ✅ Merged · Live |
 | 022 | Bomb odds reference card — engine-derived dealt-hand odds | #25 | ✅ Merged · Live |
+| 027 | Summary modal scrollbars — inner scrollbox, shell never scrolls horizontally | #26 | ✅ Merged · Live |
 
 ## Play
 

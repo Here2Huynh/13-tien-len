@@ -1,7 +1,6 @@
 # TASK 027 — Summary modal shows scrollbars it doesn't need
 
-Status: ASSIGNED (verifier) — PR #26 open, head `1ee3386`; builder was a fallback sub-agent run (Claude Code builder stalled on the owner's exhausted usage window). Checklist: tasks/VERIFY-027.md. (Filed from owner feedback 2026-11-01 with a
-screenshot; fix approach is the owner's pick (surgical).
+Status: COMPLETE — PR #26 merged (989e95e) on the Verifier chat's PASS, deployed and live-verified 2026-11-02; suite 101 → 102.
 Read `AGENTS.md` first; it governs how work flows in this repo.
 
 Owner's report: on desktop, the round/match summary modal (the

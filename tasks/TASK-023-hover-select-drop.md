@@ -1,7 +1,9 @@
 # TASK 023 — Fix the card hover/select drop
 
-Status: QUEUED (owner pick locked 2026-11-01: the FULL fix below;
-becomes ASSIGNED (builder) when Task 027 closes — next in queue)
+Status: ASSIGNED (builder) — Task 027 closed 2026-11-02; owner
+pick locked 2026-11-01: the FULL fix below. Route: the Builder
+chat (fresh Claude usage check at assignment showed the 5-hour
+window still at 100%, so the chat fallback runs it — Switch #5)
 Read `AGENTS.md` first; it governs how work flows in this repo.
 
 Owner's report, in his words: he doesn't love the card animation on
