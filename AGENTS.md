@@ -19,25 +19,32 @@ npm run build # type-checks, compiles, assembles dist/
 ## How work flows here (the pipeline)
 
 A foreman (Caspian, the owner's agent) scopes every task as a file in
-`tasks/`. Codex works in exactly two roles, and **the two roles are
-always separate tasks in separate sessions** — the session that built
-something never verifies it.
+`tasks/`. Claude sub-agents spawned by the foreman per task work in
+exactly two roles, and **the two roles are always separate spawns** —
+the agent that built something never verifies it. (Owner's switch,
+2026-11-01: the roles were filled by Claude bot chats for Tasks
+001–017 and by Codex for Tasks 018–020; from Task 021 on they are
+Claude sub-agents spawned from the foreman's chat.)
 
 - **BUILDER task** — the task file's Status reads `ASSIGNED (builder)`.
   Implement exactly what the task file says, nothing more. Branch
-  `task-NNN-<slug>` off `main`, open a PR against `main`, and report in
-  the PR description: what changed, the checks you ran, and any
-  disclosure the task file asks for. Never merge. Never deploy. Never
-  work on a task whose status is not `ASSIGNED (builder)`.
+  `task-NNN-<slug>` off `main` in your clone, run the checks, commit
+  locally, and end with a report for the foreman: what changed, the
+  checks you ran, and any disclosure the task file asks for. The
+  foreman pushes the branch and opens the PR against `main`. Never
+  merge. Never deploy. Never work on a task whose status is not
+  `ASSIGNED (builder)`.
 - **VERIFIER task** — the task file's Status reads `ASSIGNED
   (verifier)` and names a PR. Start from a fresh checkout of the PR
   head. Run the task file's checklist plus your own independent probes.
-  Post your verdict — PASS or FAIL with evidence (counts, commands,
-  what you probed) — as a comment on the PR. Never fix, never edit
-  code, never merge, never deploy.
+  Return your verdict — PASS or FAIL with evidence (counts, commands,
+  what you probed) — to the foreman, who posts it verbatim as a comment
+  on the PR. Never fix, never edit code, never merge, never deploy.
 
 The foreman reads the PR and the verdict, merges only on a PASS,
-deploys, and updates the README progress table.
+deploys, and updates the README progress table. The foreman also logs
+every run's metrics (wall time per role, first-pass verdict, fix
+loops, suite delta) in the pipeline metrics ledger.
 
 ## Locked rules (do not change — these are the owner's custom rules)
 
