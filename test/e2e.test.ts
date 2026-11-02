@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { createDeck, makeCard, type Card } from "../src/engine/cards.js";
 import { createTrickState, playCards, passTurn } from "../src/engine/trick.js";
 import { createMatch } from "../src/engine/match.js";
@@ -286,6 +287,29 @@ function humanMove() {
 }
 
 // ---------- the tests ----------
+
+test("e2e: favicon links ship in the document head (TASK 020)", () => {
+  const html = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
+  const head = html.match(/<head>([\s\S]*?)<\/head>/)?.[1];
+  assert.ok(head, "document must have a head");
+  for (const link of [
+    '<link rel="icon" type="image/svg+xml" href="/favicon.svg">',
+    '<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">',
+    '<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">',
+  ]) {
+    assert.ok(head.includes(link), `missing icon link: ${link}`);
+  }
+});
+
+test("e2e: build ships all three unchanged icon assets (TASK 020)", () => {
+  const root = new URL("../../", import.meta.url);
+  execFileSync(process.execPath, ["build.mjs"], { cwd: root, stdio: "inherit" });
+  for (const icon of ["favicon.svg", "favicon-32.png", "apple-touch-icon.png"]) {
+    const source = readFileSync(new URL(icon, root));
+    assert.ok(source.length > 0, `${icon} must not be empty`);
+    assert.deepEqual(readFileSync(new URL(`dist/${icon}`, root)), source);
+  }
+});
 
 test("e2e: how-to-play overlay on the start screen — content, open/close, nothing starts (TASK 017)", async () => {
   // The shipped page carries the whole cheatsheet, initially hidden,
