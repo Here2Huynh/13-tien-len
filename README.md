@@ -70,6 +70,7 @@ completion.
 | 018 | Cheatsheet bomb examples + playable-bomb flicker (Codex-cloud pilot) | #20 | ✅ Merged · Live |
 | 019 | Seamless hand-card hover/select motion | #22 | ✅ Merged · Live |
 | 020 | Site favicon — the 2♥ card (original option C) | #23 | ✅ Merged · Live |
+| 021 | Bomb on a bomb — answerable bombs + bombed-bomb penalty | #24 | ✅ Merged · Live |
 
 ## Play
 
