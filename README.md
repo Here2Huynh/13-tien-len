@@ -71,6 +71,7 @@ completion.
 | 019 | Seamless hand-card hover/select motion | #22 | ✅ Merged · Live |
 | 020 | Site favicon — the 2♥ card (original option C) | #23 | ✅ Merged · Live |
 | 021 | Bomb on a bomb — answerable bombs + bombed-bomb penalty | #24 | ✅ Merged · Live |
+| 022 | Bomb odds reference card — engine-derived dealt-hand odds | #25 | ✅ Merged · Live |
 
 ## Play
 

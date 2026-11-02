@@ -1,6 +1,6 @@
 # TASK 022 — Bomb odds reference card
 
-Status: ASSIGNED (builder) — Task 021 merged; branch off current `main`
+Status: COMPLETE — PR #25 merged (a9306b3), deployed and live-verified 2026-11-01; suite 96 → 101
 Read `AGENTS.md` first; it governs how work flows in this repo.
 
 FR (John, 2026-11-01): show the probability of each bomb on a
