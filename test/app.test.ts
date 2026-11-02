@@ -8,7 +8,7 @@ import { playMatch, seededRng } from "../src/engine/runner.js";
 import { newDeal, shuffle } from "../src/engine/deal.js";
 import {
   cardLabel, sortHand, validateSelection,
-  emptyTrickView, applyToTrickView, describePlay, bombPenaltyLogLine,
+  emptyTrickView, applyToTrickView, describePlay, bombPenaltyLogLine, bombedBombLogLine,
   comebackLogLine, penaltyLine,
   roundResultRows, scoreRows,
   type SelectionCheck,
@@ -139,6 +139,86 @@ test("ai: on a comeback turn it uses a comeback-legal bomb, not the 3-pair run",
 test("ai: on a comeback turn with only a 3-pair run it passes", () => {
   const state = comebackState([...run3(), c("8", "clubs")]);
   assert.deepEqual(chooseAction(state, 1), { type: "pass" });
+});
+
+// ---------- ai vs bombs (TASK 021) ----------
+
+const run3high = () => [
+  c("7", "clubs"), c("7", "diamonds"), c("8", "clubs"),
+  c("8", "diamonds"), c("9", "clubs"), c("9", "diamonds"),
+];
+const run4 = () => [...run3(), c("6", "clubs"), c("6", "diamonds")];
+
+test("ai: against a 3-pair bomb it answers with the weakest sufficient bomb", () => {
+  // The hand also holds a low 4-pair run, which would answer any
+  // bomb — but its 3-pair subsets (3-4-5 and 4-5-6) cannot answer
+  // this target, so the weakest sufficient bomb is the higher
+  // 3-pair run: same-kind answers come before the 4-pair run in the
+  // policy's tier order, exactly as against a 2.
+  const run3top = [
+    c("J", "clubs"), c("J", "diamonds"), c("Q", "clubs"),
+    c("Q", "diamonds"), c("K", "clubs"), c("K", "diamonds"),
+  ];
+  const run4low = [
+    c("3", "spades"), c("3", "hearts"), c("4", "spades"), c("4", "hearts"),
+    c("5", "spades"), c("5", "hearts"), c("6", "spades"), c("6", "hearts"),
+  ];
+  const target = [
+    c("8", "spades"), c("8", "clubs"), c("9", "spades"),
+    c("9", "clubs"), c("10", "spades"), c("10", "clubs"),
+  ];
+  const state = actingState([...run3top, ...run4low], { player: 3, cards: target, type: "bomb" });
+  const action = chooseAction(state, 0);
+  assert.equal(action.type, "play");
+  assert.equal(detectBomb(cardsOf(action))?.kind, "pair-sequence-3");
+  assert.deepEqual(ids(cardsOf(action)), ids(run3top));
+});
+
+test("ai: against a pair-run bomb a four of a kind is not sufficient — it passes", () => {
+  const state = actingState(
+    [...four8s(), c("K", "spades")],
+    { player: 3, cards: run3(), type: "bomb" },
+  );
+  assert.deepEqual(chooseAction(state, 0), { type: "pass" });
+});
+
+test("ai: against a four of a kind bomb it answers with the 4-pair run", () => {
+  const four7s = [c("7", "spades"), c("7", "clubs"), c("7", "diamonds"), c("7", "hearts")];
+  const state = actingState(
+    [...run4(), c("K", "spades")],
+    { player: 3, cards: four7s, type: "four-of-a-kind" },
+  );
+  const action = chooseAction(state, 0);
+  assert.equal(action.type, "play");
+  assert.equal(detectBomb(cardsOf(action))?.kind, "pair-sequence-4");
+});
+
+function comebackVsBombState(p1Hand: Card[]) {
+  const state = createTrickState([
+    [c("3", "spades"), c("4", "clubs"), c("Q", "diamonds")],
+    p1Hand,
+    [c("2", "hearts"), c("K", "spades")],
+    [...run3(), c("J", "spades")],
+  ]);
+  playCards(state, 0, [c("3", "spades")]);
+  passTurn(state, 1); // player 1 passes before the 2 lands
+  playCards(state, 2, [c("2", "hearts")]);
+  playCards(state, 3, run3()); // the bomb lands after the pass
+  passTurn(state, 0);
+  assert.equal(state.currentPlayer, 1); // comeback turn, facing the bomb
+  return state;
+}
+
+test("ai: on a comeback turn against a bomb it uses the 4-pair run, not the 3-pair run", () => {
+  const run4sh = [
+    c("6", "spades"), c("6", "hearts"), c("7", "spades"), c("7", "hearts"),
+    c("8", "spades"), c("8", "hearts"), c("9", "spades"), c("9", "hearts"),
+  ];
+  const action = chooseAction(comebackVsBombState([...run4sh, c("K", "diamonds")]), 1);
+  assert.equal(action.type, "play");
+  assert.equal(detectBomb(cardsOf(action))?.kind, "pair-sequence-4");
+  const runOnly = chooseAction(comebackVsBombState([...run3high(), c("K", "diamonds")]), 1);
+  assert.deepEqual(runOnly, { type: "pass" });
 });
 
 // ---------- runner ----------
@@ -356,6 +436,25 @@ test("model: the bomb penalty log line names payer, points, and payee", () => {
   );
 });
 
+test("model: the bombed-bomb log line names payer and payee (TASK 021)", () => {
+  assert.equal(
+    bombedBombLogLine({ payer: 1, payee: 2, points: 1 }),
+    "Bomb penalty: Mina pays 1 to Kenji — her bomb was bombed.",
+  );
+  assert.equal(
+    bombedBombLogLine({ payer: 2, payee: 0, points: 1 }),
+    "Bomb penalty: Kenji pays 1 to You — his bomb was bombed.",
+  );
+  assert.equal(
+    bombedBombLogLine({ payer: 0, payee: 3, points: 1 }),
+    "Bomb penalty: You pay 1 to Rosa — your bomb was bombed.",
+  );
+  assert.equal(
+    bombedBombLogLine({ payer: 3, payee: 1, points: 1 }),
+    "Bomb penalty: Rosa pays 1 to Mina — her bomb was bombed.",
+  );
+});
+
 test("controller: a bombed 2 is chopped instantly — log line and scores move mid-round", () => {
   const hands = [
     [c("3", "spades"), c("5", "clubs"), c("8", "diamonds")],
@@ -375,6 +474,38 @@ test("controller: a bombed 2 is chopped instantly — log line and scores move m
   );
   assert.deepEqual(s.match!.scores, [0, -1, 1, 0]);
   assert.equal(s.phase, "playing"); // mid-round: the round did not end
+});
+
+test("controller: a bombed bomb pays 1 instantly — chain settles on the CPU chain (TASK 021)", () => {
+  const hands = [
+    [c("3", "spades"), c("8", "hearts"), c("Q", "diamonds")],
+    [c("2", "clubs"), c("2", "diamonds")],
+    [
+      c("4", "clubs"), c("4", "diamonds"), c("5", "clubs"), c("5", "diamonds"),
+      c("6", "clubs"), c("6", "diamonds"), c("J", "spades"),
+    ],
+    [
+      c("7", "clubs"), c("7", "diamonds"), c("8", "clubs"), c("8", "diamonds"),
+      c("9", "clubs"), c("9", "diamonds"), c("10", "spades"),
+    ],
+  ];
+  const controller = createController({ schedule: sync, dealHands: () => hands });
+  controller.newMatch();
+  const s = controller.state;
+  // You open with the 3 of spades; Mina answers with a single 2,
+  // Kenji bombs it with a 3-pair double run, and Rosa bombs Kenji's
+  // bomb with a higher one — all on the CPU chain.
+  assert.equal(controller.humanPlay([c("3", "spades")]), true);
+  const at = (line: string) => s.log.indexOf(line);
+  assert.ok(at("Mina plays single 2♣.") >= 0, `log: ${s.log.join(" | ")}`);
+  assert.ok(at("Kenji plays a BOMB — 3-pair double run.") > at("Mina plays single 2♣."));
+  assert.ok(at("Bomb penalty: Mina pays 1 to Kenji — her 2 was bombed.") > at("Kenji plays a BOMB — 3-pair double run."));
+  assert.ok(at("Rosa plays a BOMB — 3-pair double run.") > at("Bomb penalty: Mina pays 1 to Kenji — her 2 was bombed."));
+  assert.ok(at("Bomb penalty: Kenji pays 1 to Rosa — his bomb was bombed.") > at("Rosa plays a BOMB — 3-pair double run."));
+  // Mina paid 1 for her 2; Kenji collected 1 and paid 1; Rosa is up 1.
+  assert.deepEqual(s.match!.scores, [0, -1, 0, 1]);
+  assert.equal(s.phase, "playing"); // mid-round: the round did not end
+  assert.equal(s.trick!.currentPlay!.player, 3); // Rosa's bomb is on top
 });
 
 test("controller: log — a play that clears the trick is logged like any other play", () => {

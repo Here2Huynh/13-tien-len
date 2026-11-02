@@ -1,11 +1,11 @@
 import { newDeal } from "../engine/deal.js";
 import {
-  createMatch, startRound, applyInstantWin, finishRound, applyChop,
+  createMatch, startRound, applyInstantWin, finishRound, applyChop, applyBombedBombPenalty,
   type Match, type Chop,
 } from "../engine/match.js";
 import { playCards, passTurn, hasComebackTurn, type TrickState } from "../engine/trick.js";
 import { chooseAction, type Action } from "../engine/ai.js";
-import { detectBomb, bombTarget } from "../engine/bombs.js";
+import { detectBomb, bombOnBombBeats, bombTarget } from "../engine/bombs.js";
 import type { Card } from "../engine/cards.js";
 import type { Penalty } from "../engine/scoring.js";
 import type { InstantWinKind } from "../engine/instantWin.js";
@@ -16,6 +16,7 @@ import {
   applyToTrickView,
   describePlay,
   bombPenaltyLogLine,
+  bombedBombLogLine,
   comebackLogLine,
   validateSelection,
   type TrickView,
@@ -41,7 +42,7 @@ export interface RoundSummary {
   finishOrder: number[];
   deltas: number[];
   penalties: Penalty[];
-  /** This round's bomb-penalty transfers (TASK 012), in order. */
+  /** This round's bomb-penalty transfers (TASK 012 + TASK 021), in order. */
   chops: Chop[];
   scores: number[];
   matchWinner: number | null;
@@ -164,11 +165,13 @@ export function createController(options: ControllerOptions = {}): Controller {
     // other action, even though the trick view then resets.
     if (action.type === "play") {
       // The play functioned as a bomb when it answered a single 2 /
-      // pair of 2s with a bomb — that context decides the phrasing.
+      // pair of 2s with a bomb, or answered a bomb with one (TASK
+      // 021) — that context decides the phrasing.
       const wasBomb =
         prevPlay !== null &&
-        bombTarget(prevPlay.cards) !== null &&
-        detectBomb(action.cards) !== null;
+        detectBomb(action.cards) !== null &&
+        (bombTarget(prevPlay.cards) !== null ||
+          bombOnBombBeats(action.cards, prevPlay.cards));
       log(`${name(player)} plays ${describePlay(action.cards, wasBomb)}.`);
       if (wasComeback) log(comebackLogLine(player));
       // Chop: bombing a played 2 / pair of 2s transfers 1 point per
@@ -180,6 +183,16 @@ export function createController(options: ControllerOptions = {}): Controller {
       if (chop) {
         roundChops.push(chop);
         log(bombPenaltyLogLine(chop));
+      }
+      // Bombed-bomb penalty: beating a bomb with a bomb transfers
+      // 1 point from the beaten bomb's owner to the player who
+      // bombed it, instantly (TASK 021). Mutually exclusive with
+      // the chop above — a bombed 2 is not a bomb, a bombed bomb
+      // is not a 2 — and settled the same way.
+      const bombedBomb = applyBombedBombPenalty(match, prevPlay, action.cards, player);
+      if (bombedBomb) {
+        roundChops.push(bombedBomb);
+        log(bombedBombLogLine(bombedBomb));
       }
     } else if (trick.trickNumber !== trickNumberBefore) {
       // This pass closed the trick: no lockout to call — the trick

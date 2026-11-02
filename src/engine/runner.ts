@@ -1,5 +1,5 @@
 import { newDeal } from "./deal.js";
-import { createMatch, startRound, applyInstantWin, finishRound, applyChop, type Chop } from "./match.js";
+import { createMatch, startRound, applyInstantWin, finishRound, applyChop, applyBombedBombPenalty, type Chop } from "./match.js";
 import { playCards, passTurn } from "./trick.js";
 import { chooseAction } from "./ai.js";
 import type { InstantWinKind } from "./instantWin.js";
@@ -40,9 +40,11 @@ export function seededRng(seed: number): () => number {
 
 // Play one full match with all four seats on the CPU policy.
 // Any illegal play throws out of the engine, so a completed match is
-// proof the policy only made legal plays. Chops are applied the
-// moment a bomb lands on a 2 (see match.applyChop), so final scores
-// = sum of round deltas + net chops per player.
+// proof the policy only made legal plays. Bomb penalties are applied
+// the moment they land — a bomb on a 2 (see match.applyChop) or a
+// bomb on a bomb (see match.applyBombedBombPenalty) — and both kinds
+// share the chops ledger, so final scores = sum of round deltas +
+// net chops per player.
 // Returns { winner, scores, rounds: [{ deltas, winner, instantWin }],
 //           chops: [{ payer, payee, points }] }.
 export function playMatch(seed: number, { maxRounds = 500, maxActionsPerRound = 10000 }: PlayMatchOptions = {}): MatchResult {
@@ -74,6 +76,8 @@ export function playMatch(seed: number, { maxRounds = 500, maxActionsPerRound = 
         playCards(state, player, action.cards);
         const chop = applyChop(match, prevPlay, action.cards, player);
         if (chop) chops.push(chop);
+        const bombedBomb = applyBombedBombPenalty(match, prevPlay, action.cards, player);
+        if (bombedBomb) chops.push(bombedBomb);
       } else passTurn(state, player);
     }
     const { deltas } = finishRound(match, state);

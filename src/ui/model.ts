@@ -131,6 +131,15 @@ export function bombPenaltyLogLine({ payer, payee, points }: Chop): string {
   return `Bomb penalty: ${SEAT_NAMES[payer]} ${pays} ${points} to ${SEAT_NAMES[payee]} — ${POSSESSIVES[payer]} ${what} was bombed.`;
 }
 
+// The log line for the bombed-bomb penalty (TASK 021): the moment a
+// bomb is beaten by another bomb, its owner pays the player who
+// bombed it 1 point.
+// "Bomb penalty: Mina pays 1 to Kenji — her bomb was bombed."
+export function bombedBombLogLine({ payer, payee }: Chop): string {
+  const pays = payer === HUMAN ? "pay" : "pays";
+  return `Bomb penalty: ${SEAT_NAMES[payer]} ${pays} 1 to ${SEAT_NAMES[payee]} — ${POSSESSIVES[payer]} bomb was bombed.`;
+}
+
 // The companion line when a player who passed earlier in the same
 // trick returns with a comeback bomb (TASK 016).
 export function comebackLogLine(player: number): string {

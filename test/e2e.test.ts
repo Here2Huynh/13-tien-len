@@ -361,6 +361,20 @@ test("e2e: how-to-play overlay on the start screen — content, open/close, noth
   assert.equal($("start-screen").hidden, false);
 });
 
+test("e2e: how-to-play teaches bomb on a bomb with the worked example (TASK 021)", () => {
+  const html = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
+  assert.ok(html.includes(
+    "<p>Bombs can be bombed. A higher bomb of the same kind answers it, and a 4-pair double run bombs any bomb. Four of a kind can't bomb a pair-run bomb.</p>",
+  ));
+  assert.ok(html.includes(
+    "<p>Example: 2♥ is bombed by 4♠4♣ 5♠5♣ 6♠6♣ — a 3-pair double run — then 7♠7♣ 8♠8♣ 9♠9♣ — a higher 3-pair double run — bombs that bomb. The 2's owner pays the first bomber 1 point, and the first bomber pays the second 1 point.</p>",
+  ));
+  assert.ok(html.includes(
+    "<p>Bomb a bomb and its owner pays you 1 point — instantly. Even a led four of a kind counts: beat it with a higher four of a kind or a 4-pair double run and its owner pays you 1.</p>",
+  ));
+  assert.ok(!html.toLowerCase().includes("chop"), "no chop vocabulary in the page");
+});
+
 test("e2e: start gate — nothing is dealt or running until Start Game is clicked", async () => {
   // The real page's Sort button contains an arrow span; mirror it in
   // the fake DOM before the page module grabs its elements.
@@ -940,6 +954,40 @@ test("e2e: playable bomb flicker vs single 2 — both bombs and every overlappin
 test("e2e: playable bomb flicker vs pair of 2s — four pairs and quads only", async () => {
   await assertFlicker(bombFixture([...fourPairs, ...nines], pairRun(["2"])), [...fourPairs, ...nines]);
   await assertFlicker(bombFixture([...threePairs, ...nines], pairRun(["2"])), nines);
+});
+
+// A bomb on the table as the target: seat 2 leads a single 2 and
+// seat 3 bombs it, leaving the bomb as the play the human faces.
+function bombOnBombFixture(hand: Card[], bomb: Card[]): ControllerState {
+  const hands = [hand, [makeCard("J", "hearts")],
+    [makeCard("Q", "hearts"), makeCard("2", "spades")],
+    [makeCard("K", "hearts"), ...bomb]];
+  const trick = createTrickState(hands, { leader: 2, openingLead: false });
+  playCards(trick, 2, [makeCard("2", "spades")]);
+  playCards(trick, 3, bomb);
+  return { phase: "playing", match: createMatch(), trick, message: "", log: [],
+    trickView: emptyTrickView(), roundSummary: null };
+}
+
+test("e2e: playable bomb flicker vs a bomb — only the bombs that answer it (TASK 021)", async () => {
+  const tens = createDeck().filter((card) => card.rank === "10");
+  const threes = createDeck().filter((card) => card.rank === "3");
+  // A higher 3-pair run answers the 3-pair bomb; four 3s cannot
+  // answer a pair-run bomb and stay dark. (The quad rank is kept
+  // clear of the run's ranks — a quad on an adjacent rank would
+  // extend the run into a 4-pair run and rightly flicker too.)
+  const higherRun = pairRun(["7", "8", "9"]);
+  await assertFlicker(
+    bombOnBombFixture([...higherRun, ...threes, makeCard("A", "hearts")], threePairs),
+    higherRun,
+  );
+  // The 4-pair double run bombs any bomb; the quad still stays dark.
+  const fourPairsDH = (["4", "5", "6", "7"] as Card["rank"][]).flatMap((rank) =>
+    [makeCard(rank, "diamonds"), makeCard(rank, "hearts")]);
+  await assertFlicker(
+    bombOnBombFixture([...fourPairsDH, ...tens], threePairs),
+    fourPairsDH,
+  );
 });
 
 test("e2e: comeback flicker uses engine eligibility and keeps the foil", async () => {

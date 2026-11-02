@@ -1,6 +1,6 @@
 import { rankValue, type Card, type Rank } from "./cards.js";
 import { detectCombination } from "./combinations.js";
-import type { PlayLike } from "./plays.js";
+import { highestCard, type PlayLike } from "./plays.js";
 
 // Bombs for Thirteen / Tien Len (locked ladder):
 // - Pair sequence of 3 consecutive pairs: bombs a single 2 only.
@@ -9,6 +9,12 @@ import type { PlayLike } from "./plays.js";
 // A bomb is the only play that can beat a 2 / pair of 2s outside the
 // normal same-type rule. Five consecutive pairs is NOT a bomb
 // (instant win only). Triple 2s are unbeatable: no bomb beats them.
+//
+// Bomb on a bomb (John's ruling, TASK 021): a bomb that is the play
+// to beat can itself be answered — by a higher bomb of the same kind,
+// or by a 4-pair double run, which bombs ANY bomb regardless of rank
+// (over another 4-pair run it must still be higher). A four of a kind
+// can never answer a pair-run bomb. See bombOnBombBeats.
 
 export type BombKind = "pair-sequence-3" | "pair-sequence-4" | "four-of-a-kind";
 
@@ -104,4 +110,33 @@ export function bombBeats(bombPlay: PlayLike, targetPlay: PlayLike): boolean {
     return bomb.kind === "pair-sequence-4" || bomb.kind === "four-of-a-kind";
   }
   return false; // triple 2s are unbeatable; bombs only target 2s
+}
+
+// Bomb on a bomb (John's ruling, TASK 021): does `bombPlay` answer
+// the bomb `targetPlay` that is currently on the table?
+// - A 4-pair double run bombs any bomb: a 3-pair run or a four of a
+//   kind falls to any 4-pair run, whatever its rank; another 4-pair
+//   run falls only to a higher one.
+// - Otherwise the answer must be the same kind, strictly higher:
+//   a higher 3-pair run over a 3-pair run, a higher four of a kind
+//   over a four of a kind. (The four-of-a-kind case also passes the
+//   normal same-type rule in plays.js; this function is the single
+//   definition of the bomb ladder over bombs.)
+// - A four of a kind never answers a pair-run bomb, and a 3-pair run
+//   answers nothing but a lower 3-pair run.
+// Strength inside a kind compares by highest card (rank, then suit):
+// for four of a kind that is just the rank; for a pair run it is the
+// top pair's highest card.
+export function bombOnBombBeats(bombPlay: PlayLike, targetPlay: PlayLike): boolean {
+  const bomb = detectBomb(bombPlay);
+  const target = detectBomb(targetPlay);
+  if (!bomb || !target) return false;
+  if (bomb.kind === "pair-sequence-4" && target.kind !== "pair-sequence-4") {
+    return true; // the 4-pair double run bombs any other bomb, any rank
+  }
+  if (bomb.kind !== target.kind) return false;
+  const bombHigh = highestCard(bomb.cards);
+  const targetHigh = highestCard(target.cards);
+  if (!bombHigh || !targetHigh) return false;
+  return bombHigh.value > targetHigh.value;
 }

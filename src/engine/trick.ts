@@ -1,6 +1,6 @@
 import { detectCombination, type CombinationType } from "./combinations.js";
 import { beats } from "./plays.js";
-import { detectBomb, bombBeats, bombTarget, isComebackBomb } from "./bombs.js";
+import { detectBomb, bombBeats, bombOnBombBeats, bombTarget, isComebackBomb } from "./bombs.js";
 import type { Card } from "./cards.js";
 
 // Trick / turn state machine for Thirteen / Tien Len. Engine only.
@@ -9,13 +9,16 @@ import type { Card } from "./cards.js";
 // - Opening lead of a hand: the player holding 3 of spades leads, and
 //   3 of spades must be included in the first play.
 // - A follow play must beat the current trick play (same type, same
-//   card count, higher — see plays.js), or bomb it if the current play
-//   is a 2 / pair of 2s (see bombs.js).
+//   card count, higher — see plays.js), bomb it if the current play
+//   is a 2 / pair of 2s, or answer it if the current play is itself a
+//   bomb (see bombs.js — the TASK 021 bomb ladder over bombs).
 // - Passing locks a player out for the rest of the current trick —
 //   with one exception, the comeback bomb: a player who passed before
 //   the current play was made gets a turn in order against a 2 / pair
-//   of 2s, and may come back ONLY with four of a kind or the 4-pair
-//   double run. The 3-pair double run cannot be a comeback bomb.
+//   of 2s or a bomb, and may come back ONLY with four of a kind or
+//   the 4-pair double run (still bound by the bomb ladder: a four of
+//   a kind cannot answer a pair-run bomb). The 3-pair double run
+//   cannot be a comeback bomb.
 // - When all other active players pass, the trick clears and the player
 //   who made the last play leads the next trick (any legal combination).
 // - Turn order is clockwise to the next player who can still act.
@@ -95,13 +98,14 @@ function isLockedOut(state: TrickState, player: number): boolean {
 }
 
 // A passed player is waiting on a comeback decision when the current
-// play is a bombable 2 / pair of 2s, they passed before it was played,
-// and they have not declined it yet.
+// play is a bombable 2 / pair of 2s or a bomb (TASK 021), they passed
+// before it was played, and they have not declined it yet.
 export function hasComebackTurn(state: TrickState, player: number): boolean {
   return (
     isLockedOut(state, player) &&
     state.currentPlay !== null &&
-    bombTarget(state.currentPlay.cards) !== null &&
+    (bombTarget(state.currentPlay.cards) !== null ||
+      detectBomb(state.currentPlay.cards) !== null) &&
     state.comebackCandidates.includes(player) &&
     !state.bombDecisionMade.includes(player)
   );
@@ -169,13 +173,23 @@ export function playCards(state: TrickState, player: number, cards: Card[]): Tri
     }
   } else if (comeback) {
     // Comeback after passing: only a comeback bomb that beats the
-    // current 2 / pair of 2s. The 3-pair double run does not qualify.
-    if (!isComebackBomb(cards) || !bombBeats(cards, state.currentPlay.cards)) {
+    // current play — a 2 / pair of 2s via the bomb ladder, or a bomb
+    // via the bomb-on-bomb ladder (TASK 021). The 3-pair double run
+    // does not qualify, and kind rules still bind.
+    if (
+      !isComebackBomb(cards) ||
+      (!bombBeats(cards, state.currentPlay.cards) &&
+        !bombOnBombBeats(cards, state.currentPlay.cards))
+    ) {
       throw new Error(
         "Comeback after passing requires four of a kind or a 4-pair double run that bombs the current play",
       );
     }
-  } else if (!beats(cards, state.currentPlay.cards) && !bombBeats(cards, state.currentPlay.cards)) {
+  } else if (
+    !beats(cards, state.currentPlay.cards) &&
+    !bombBeats(cards, state.currentPlay.cards) &&
+    !bombOnBombBeats(cards, state.currentPlay.cards)
+  ) {
     throw new Error("Play does not beat the current trick play");
   }
 

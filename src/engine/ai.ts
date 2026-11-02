@@ -1,7 +1,7 @@
 import { RANKS, type Card, type Rank } from "./cards.js";
 import { detectCombination } from "./combinations.js";
 import { beats, highestCard } from "./plays.js";
-import { detectBomb, bombBeats, bombTarget, isComebackBomb, type BombKind } from "./bombs.js";
+import { detectBomb, bombBeats, bombOnBombBeats, bombTarget, isComebackBomb, type BombKind } from "./bombs.js";
 import { hasComebackTurn, type TrickState } from "./trick.js";
 
 // Simple rule-based CPU policy for Thirteen / Tien Len.
@@ -17,12 +17,15 @@ import { hasComebackTurn, type TrickState } from "./trick.js";
 //   opening lead, only plays including 3 of spades are considered
 //   (the engine enforces this; the AI complies by construction).
 // - On follow: play the lowest play that beats the current play. If no
-//   normal play beats it and the current play is a single 2 or a pair
-//   of 2s, bomb it with the weakest sufficient bomb; otherwise pass.
-//   (A higher-suit 2 is a normal beating play and is used as one.)
+//   normal play beats it and the current play is a single 2, a pair
+//   of 2s, or a bomb (TASK 021), bomb it with the weakest sufficient
+//   bomb; otherwise pass. (A higher-suit 2 is a normal beating play
+//   and is used as one; so is a higher four of a kind over a four of
+//   a kind.)
 // - Weakest sufficient bomb order (the ladder order from the locked
 //   rules): pair-sequence-3, then pair-sequence-4, then four of a kind;
-//   within a kind, lowest highest-card first.
+//   within a kind, lowest highest-card first. Against a bomb the same
+//   order applies over the bombs the bomb-on-bomb ladder allows.
 // - On a comeback turn (after passing): same bomb policy, restricted
 //   to comeback-legal bombs (four of a kind, pair-sequence-4) exactly
 //   as the engine allows; otherwise pass.
@@ -140,7 +143,7 @@ const byBombOrder = (a: Card[], b: Card[]): number => compareKeys(bombKey(a), bo
 
 function weakestBomb(hand: Card[], current: Card[], { comebackOnly = false } = {}): Card[] | null {
   const bombs = enumerateBombs(hand)
-    .filter((bomb) => bombBeats(bomb, current))
+    .filter((bomb) => bombBeats(bomb, current) || bombOnBombBeats(bomb, current))
     .filter((bomb) => !comebackOnly || isComebackBomb(bomb))
     .sort(byBombOrder);
   return bombs[0] ?? null;
@@ -175,7 +178,7 @@ export function chooseAction(state: TrickState, player: number): Action {
     .sort(byPlayOrder);
   if (beating.length > 0) return { type: "play", cards: beating[0] };
 
-  if (bombTarget(current) !== null) {
+  if (bombTarget(current) !== null || detectBomb(current) !== null) {
     const bomb = weakestBomb(hand, current);
     if (bomb) return { type: "play", cards: bomb };
   }
