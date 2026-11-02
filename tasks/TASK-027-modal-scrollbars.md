@@ -1,6 +1,6 @@
 # TASK 027 — Summary modal shows scrollbars it doesn't need
 
-Status: ASSIGNED (builder) — owner feedback 2026-11-01 with a
+Status: ASSIGNED (verifier) — PR #26 open, head `1ee3386`; builder was a fallback sub-agent run (Claude Code builder stalled on the owner's exhausted usage window). Checklist: tasks/VERIFY-027.md. (Filed from owner feedback 2026-11-01 with a
 screenshot; fix approach is the owner's pick (surgical).
 Read `AGENTS.md` first; it governs how work flows in this repo.
 
