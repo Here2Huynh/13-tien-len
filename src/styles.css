@@ -53,7 +53,7 @@ body::after{
   .hand .card, .hand .card.bombhot::after{animation:none !important;}
   /* TASK 014: every CSS-side animation in the bundle is off too
      (the WAAPI side is gated in the adapter). */
-  .penrow, .penrow::before, .seat.lockedout .opp::after,
+  .penrow, .penrow::before, .seat.lockedout.stampplay .opp::after,
   .modal.instantwin::before, tr.winline{animation:none !important;}
   .hand .card{/* TASK 023: buttons are reused across redraws now,
     so selection would otherwise glide here via the shared
@@ -399,8 +399,11 @@ button.small{padding:9px 14px;font-size:12.5px;border-radius:10px;}
 .fx-ghostcard{position:fixed;pointer-events:none;will-change:transform,opacity;}
 /* Lockout: a passed seat's backs grey out under a LOCKED stamp
    until the trick clears or the seat comes back in; the human
-   hand greys by the same rule. The stamp animates in once when
-   the class lands. */
+   hand greys by the same rule. The stamp itself is static; the
+   stampIn animation hangs on .stampplay, which the adapter adds
+   only on the render where the seat newly locks (TASK 028) — so
+   it plays exactly once per lockout instead of replaying on
+   every seat rebuild. Look, keyframes, duration unchanged. */
 .seat.lockedout .back{filter:grayscale(1) brightness(.55);}
 .seat.lockedout .opp{position:relative;}
 .seat.lockedout .opp::after{
@@ -409,6 +412,8 @@ button.small{padding:9px 14px;font-size:12.5px;border-radius:10px;}
   font-size:12px;font-weight:900;letter-spacing:1.5px;color:#ffd9d4;
   background:rgba(120,20,10,.55);border:2px solid rgba(255,157,148,.8);
   border-radius:6px;padding:2px 7px;pointer-events:none;
+}
+.seat.lockedout.stampplay .opp::after{
   animation:stampIn .28s cubic-bezier(.2,1.4,.4,1) both;
 }
 @keyframes stampIn{

@@ -914,6 +914,71 @@ test("e2e: lockout grey — a CPU lockout pass greys the seat until the round en
   }
 });
 
+test("e2e: LOCKED stamp plays once per lockout — stampplay only on the newly-locked render (TASK 028)", async () => {
+  const { render } = await import("../src/main.js");
+  // A trick where Mina (seat 1) has just passed: the human leads
+  // the 3 of spades, Mina passes and locks.
+  const lockState = (): ControllerState => {
+    const hands = [
+      [makeCard("3", "spades"), makeCard("9", "clubs")],
+      [makeCard("5", "hearts"), makeCard("6", "hearts")],
+      [makeCard("7", "hearts")],
+      [makeCard("8", "hearts")],
+    ];
+    const trick = createTrickState(hands, { leader: 0, openingLead: true });
+    playCards(trick, 0, [makeCard("3", "spades")]);
+    passTurn(trick, 1);
+    return { phase: "playing", match: createMatch(), trick, message: "", log: [],
+      trickView: emptyTrickView(), roundSummary: null };
+  };
+  const seatClasses = (): string[] => $("seat-1").className.split(/\s+/);
+
+  // The lock render itself carries the stamp animation.
+  const s1 = lockState();
+  render(s1);
+  assert.ok(seatClasses().includes("lockedout"), "Mina is locked out");
+  assert.ok(seatClasses().includes("stampplay"), "the lock render carries the stamp animation");
+
+  // Any later re-render of the SAME trick while she stays locked
+  // — which is what every owner click (selection, Hint, Sort,
+  // Clear) produces — must show the stamp settled.
+  render(s1);
+  assert.ok(seatClasses().includes("lockedout"), "still locked out");
+  assert.ok(!seatClasses().includes("stampplay"), "re-renders must not replay the stamp");
+
+  // A new trick where she locks again stamps again, once, and
+  // settles on its next re-render.
+  const s2 = lockState();
+  render(s2);
+  assert.ok(seatClasses().includes("stampplay"), "a new lockout stamps again");
+  render(s2);
+  assert.ok(!seatClasses().includes("stampplay"), "and settles again on the next render");
+});
+
+test("locked stamp: stampIn hangs on the stampplay gate only, look unchanged (TASK 028)", () => {
+  const rawCss = readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8");
+  const css = rawCss.replace(/\/\*[\s\S]*?\*\//g, "");
+  const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .map((m) => ({ selector: m[1].trim(), body: m[2] }));
+  const base = rules.find((r) => r.selector === ".seat.lockedout .opp::after")!;
+  assert.ok(base, "the stamp's base rule exists");
+  assert.match(base.body, /content:"LOCKED"/);
+  assert.ok(!/animation:/.test(base.body), "the base stamp carries no animation — it is the settled look");
+  const gated = rules.find((r) => r.selector === ".seat.lockedout.stampplay .opp::after")!;
+  assert.ok(gated, "the stampplay gate rule exists");
+  assert.match(gated.body, /animation:stampIn \.28s cubic-bezier\(\.2,1\.4,\.4,1\) both;/);
+  const frames = css.match(/@keyframes stampIn\{([\s\S]*?)\n\}/)?.[1] ?? "";
+  assert.match(frames, /from\{opacity:0;.*scale\(2\.1\)/);
+  assert.match(frames, /to\{opacity:1;.*scale\(1\);/);
+  // Reduced motion still suppresses the stamp animation: the
+  // reduced block's animation:none rule names the gated selector.
+  const reduced = rules.filter((r) => /animation:none !important/.test(r.body));
+  assert.ok(
+    reduced.some((r) => r.selector.includes(".seat.lockedout.stampplay .opp::after")),
+    "reduced-motion block must cover the gated stamp selector",
+  );
+});
+
 test("e2e: animations on vs reduced-motion — identical final state, zero calls when reduced (TASK 014)", async () => {
   await import("../src/main.js");
   const playOutMatch = (): { scores: number[]; title: string } => {
