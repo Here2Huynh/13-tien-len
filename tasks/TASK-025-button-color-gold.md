@@ -1,7 +1,6 @@
 # TASK 025 — Utility buttons: warm gold (stop reading as disabled)
 
-Status: ASSIGNED (builder) — 2026-11-02, after the Task 024
-close-out (owner pick locked 2026-11-01: warm gold)
+Status: ASSIGNED (verifier) — PR #33 open, head 2e3c4bd; builder run (Claude Code) commit 77544d8; foreman pickup verified 116/116 + build clean. Owner ruling pending on Disclosure 1 (PASS stays red vs goes gold) — merge waits for it. (Originally assigned to the builder 2026-11-02 after the Task 024 close-out; owner pick locked 2026-11-01: warm gold.)
 Read `AGENTS.md` first; it governs how work flows in this repo.
 
 Owner's report, with screenshot: the HINT / SORT / CLEAR buttons'
