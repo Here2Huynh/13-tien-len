@@ -75,6 +75,7 @@ completion.
 | 027 | Summary modal scrollbars — inner scrollbox, shell never scrolls horizontally | #26 | ✅ Merged · Live |
 | 023 | Card hover/select drop — layout-keyed settle, reused hand buttons | #27 | ✅ Merged · Live |
 | 028 | LOCKED stamp plays once per lockout, never on clicks | #28 | ✅ Merged · Live |
+| 030 | Start-screen Bomb Odds button removed (header copy stays) | #29 | ✅ Merged · Live |
 
 ## Play
 

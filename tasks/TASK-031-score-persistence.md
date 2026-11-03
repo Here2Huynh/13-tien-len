@@ -1,8 +1,9 @@
 # TASK 031 — Persist match scores in local storage
 
-Status: QUEUED (owner FR + pick locked 2026-11-02: SCORES ONLY,
-in local storage — survives refresh and tab close. Becomes
-ASSIGNED (builder) in queue order behind Task 030)
+Status: ASSIGNED (builder) — Task 030 closed 2026-11-02; owner
+FR + pick locked 2026-11-02: SCORES ONLY, in local storage —
+survives refresh and tab close. Route: the Thirteen Builder
+chat (Switch #6).
 Read `AGENTS.md` first; it governs how work flows in this repo.
 
 Owner's request, in his words: "Add game scoring caching into
