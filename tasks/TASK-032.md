@@ -1,6 +1,6 @@
 # TASK-032: Round-over banner — labeled PLACE / PLAYER / TOTAL / ROUND columns
 
-Status: ASSIGNED (verifier) — 2026-11-03, PR #35 open (head 3474a90); built by the Builder chat (local commit e242eb3), foreman pickup verified 120/120 + build clean (filed 2026-11-02; John's pick locked — see below)
+Status: COMPLETE — PR #35 merged (9499f90) on the Verifier chat's PASS (head 3474a90, verdict comment 6608402354), deployed (b5a01c34) and live-verified 2026-11-03; suite 119 → 120. Built by the Builder chat (local commit e242eb3), foreman pickup verified 120/120 + build clean (filed 2026-11-02; John's pick locked — see below)
 
 ## Owner feedback
 

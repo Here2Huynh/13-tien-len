@@ -81,6 +81,7 @@ completion.
 | 024 | Responsive game screen — stage zoom scales with viewport, capped at 1.5x (81px hand card) | #32 | ✅ Merged · Live |
 | 025 | Utility buttons warm gold — button.ghost family recolored from the trim (PASS keeps red) | #33 | ✅ Merged · Live |
 | 026 | Favicon v2 — card only, full frame, bigger heart (V4) | #34 | ✅ Merged · Live |
+| 032 | Round-over banner — labeled PLACE / PLAYER / TOTAL / ROUND columns + medals | #35 | ✅ Merged · Live |
 
 ## Play
 
