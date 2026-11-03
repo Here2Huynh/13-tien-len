@@ -1679,3 +1679,50 @@ test("e2e: finish medals — 1st gold, 2nd silver, 3rd/4th keep the green pill (
   // The green pill itself is untouched for the lower places.
   assert.match(css, /\.badge\.done\{background:var\(--green\);color:#06350f;\}/);
 });
+
+test("e2e: responsive stage zoom — capped factor, phone floor, compensated motion math (TASK 024)", async () => {
+  const main = await import("../src/main.js");
+  const setWidth = (innerWidth: number | undefined): void => {
+    (globalThis as { window?: unknown }).window = {
+      innerWidth,
+      matchMedia: () => ({ matches: false }),
+    };
+  };
+  try {
+    // The factor mirrors the CSS clamp: viewport width over the
+    // 1080px design width, floored at 1, capped at 1.5.
+    setWidth(360);
+    assert.equal(main.stageScale(), 1, "phone width: no scaling (today's presentation)");
+    setWidth(1080);
+    assert.equal(main.stageScale(), 1, "design width: exactly 1");
+    setWidth(1440);
+    assert.ok(Math.abs(main.stageScale() - 4 / 3) < 1e-9, "laptop width: proportional growth");
+    setWidth(1620);
+    assert.equal(main.stageScale(), 1.5, "cap point: exactly 1.5");
+    setWidth(2560);
+    assert.equal(main.stageScale(), 1.5, "very large: still capped at 1.5");
+    setWidth(undefined);
+    assert.equal(main.stageScale(), 1, "no viewport (harness): 1");
+  } finally {
+    setWidth(1024);
+  }
+  // The shipped CSS carries the same clamp on the stage, and the
+  // phone presentation rules are untouched.
+  const css = readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8");
+  assert.match(
+    css,
+    /\.wrap\{max-width:1080px;margin:0 auto;padding:16px 14px 48px;zoom:clamp\(1, calc\(100vw \/ 1080px\), 1\.5\);}/,
+    "the stage zoom declaration ships as designed",
+  );
+  assert.match(
+    css,
+    /@media \(max-width:640px\)\{[\s\S]*?\.card\{width:48px;height:68px;\}/,
+    "the phone card size is unchanged",
+  );
+  // The two in-stage rect->translate conversions divide by the
+  // factor (the fx layer lives outside the stage in client
+  // space and needs none).
+  const src = readFileSync(new URL("../../src/main.ts", import.meta.url), "utf8");
+  assert.match(src, /\(src\.left - dst\.left\) \/ stageScale\(\)/, "pile-mini FLIP compensates");
+  assert.match(src, /\(dragState\.x - dragState\.startX\) \/ stageScale\(\)/, "drag tracking compensates");
+});

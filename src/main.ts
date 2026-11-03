@@ -165,6 +165,20 @@ function rectOf(node: HTMLElement): RectLike {
   return { left: r.left, top: r.top, width: r.width, height: r.height };
 }
 
+// TASK 024: the stage (.wrap) zooms with the viewport (see
+// styles.css): factor = viewport width over the 1080px design
+// width, floored at 1, capped at 1.5. Rects are VISUAL pixels
+// (post-zoom) while a CSS transform on an in-stage element is in
+// LOCAL (pre-zoom) pixels, so a rect-derived delta becomes a
+// local translate only after dividing by this factor. Mirrors
+// the CSS clamp exactly; the test harness has no viewport, so
+// it reads 1 there and the math is today's.
+export function stageScale(): number {
+  const w = typeof window !== "undefined" ? window.innerWidth : 0;
+  if (!w || !Number.isFinite(w)) return 1;
+  return Math.min(1.5, Math.max(1, w / 1080));
+}
+
 function beginFx(): FxBegin {
   // A new render supersedes any in-flight motion: cancel back to
   // the elements' natural (final) state before measuring.
@@ -343,7 +357,7 @@ function endFx(fx: FxBegin, state: ControllerState): void {
         const dst = rectOf(mini);
         animate(mini, [
           {
-            transform: `translate(${src.left - dst.left}px, ${src.top - dst.top}px) scale(1.05)`,
+            transform: `translate(${(src.left - dst.left) / stageScale()}px, ${(src.top - dst.top) / stageScale()}px) scale(1.05)`,
             opacity: 0.85,
           },
           { transform: "translate(0, 0) scale(1)", opacity: 1 },
@@ -829,7 +843,10 @@ function attachDragHandlers(btn: HTMLButtonElement): void {
       }
     }
     dragSwap(btn, ev.clientX, ev.clientY);
-    btn.style.transform = `translate(${dragState.x - dragState.startX}px, ${dragState.y - dragState.startY}px)`;
+    // Pointer deltas are visual pixels; the transform is local
+    // (TASK 024 stage zoom) — divide so the card tracks the
+    // pointer 1:1 at any stage scale.
+    btn.style.transform = `translate(${(dragState.x - dragState.startX) / stageScale()}px, ${(dragState.y - dragState.startY) / stageScale()}px)`;
   });
   const endDrag = () => {
     if (!dragState || dragState.el !== btn) return;

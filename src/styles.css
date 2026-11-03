@@ -59,7 +59,20 @@ body::after{
     so selection would otherwise glide here via the shared
     transition. */transition:none !important;}
 }
-.wrap{max-width:1080px;margin:0 auto;padding:16px 14px 48px;}
+/* TASK 024: the stage scales with the viewport. zoom is
+   layout-real, so every px rule in this file (cards, pile,
+   seats, text) scales together and the geometry code's layout
+   math stays consistent; the factor is the viewport width over
+   the stage's 1080px design width, floored at 1 (phone and
+   small windows keep today's presentation exactly) and capped
+   at 1.5 — past the cap the wrap's auto margins center the
+   1620px stage and the body backdrop fills the rest. A browser
+   without calc() division drops the declaration and keeps the
+   unscaled presentation. The fixed overlays and the fx layer
+   live outside .wrap and intentionally stay unscaled: their
+   vh-based caps (TASK 027) and client-space math (TASK 014)
+   are pinned to the unscaled viewport. */
+.wrap{max-width:1080px;margin:0 auto;padding:16px 14px 48px;zoom:clamp(1, calc(100vw / 1080px), 1.5);}
 
 header.top{
   display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;
