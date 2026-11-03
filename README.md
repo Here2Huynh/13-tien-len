@@ -77,6 +77,7 @@ completion.
 | 028 | LOCKED stamp plays once per lockout, never on clicks | #28 | ✅ Merged · Live |
 | 030 | Start-screen Bomb Odds button removed (header copy stays) | #29 | ✅ Merged · Live |
 | 031 | Match scores persist in local storage (scores only) | #30 | ✅ Merged · Live |
+| 029 | Scoreboard medals — gold for 1st, silver for 2nd (top two only) | #31 | ✅ Merged · Live |
 
 ## Play
 

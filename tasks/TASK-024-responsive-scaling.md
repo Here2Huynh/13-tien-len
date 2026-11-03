@@ -1,8 +1,9 @@
 # TASK 024 — Responsive game screen (scale up on bigger screens)
 
-Status: QUEUED (owner pick locked 2026-11-02: CAP the scale —
-see "The cap" below; becomes ASSIGNED (builder) in queue order
-behind Tasks 023, 028, 029 unless the owner reorders)
+Status: ASSIGNED (builder) — 2026-11-02, on the Task 029 close-out
+(queue order after 029 merged and deployed). Owner pick locked
+2026-11-02: CAP the scale — see "The cap" below. Route: Switch #6
+chats (Thirteen Builder).
 Read `AGENTS.md` first; it governs how work flows in this repo.
 
 Owner's report, in his words: "make the game screen responsive to
