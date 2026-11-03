@@ -7,7 +7,9 @@ import { inflateSync } from "node:zlib";
 import { createDeck, makeCard, type Card } from "../src/engine/cards.js";
 import { createTrickState, playCards, passTurn } from "../src/engine/trick.js";
 import { createMatch } from "../src/engine/match.js";
-import { emptyTrickView } from "../src/ui/model.js";
+import { emptyTrickView, SEAT_NAMES } from "../src/ui/model.js";
+import { newDeal } from "../src/engine/deal.js";
+import { detectInstantWin } from "../src/engine/instantWin.js";
 import type { ControllerState } from "../src/ui/controller.js";
 import { seededRng } from "../src/engine/runner.js";
 
@@ -1485,10 +1487,12 @@ test("modal shell: no horizontal scroll; the banner scrolls in an inner box (TAS
   assert.match(scrollbox.body, /overflow-y:auto/);
   assert.match(scrollbox.body, /overflow-x:hidden/);
   assert.match(scrollbox.body, /padding:26px 22px/);
-  // The burst itself is untouched, declaration for declaration: it
-  // stays the modal's ::before in its original layer. It no longer
-  // grows scrollbars because it is the scroller's SIBLING now, not
-  // its child — no part of it sits inside the .scrollbox subtree.
+  // The burst stays the modal's ::before in its original layer. It
+  // no longer grows scrollbars because it is the scroller's SIBLING
+  // now, not its child — no part of it sits inside the .scrollbox
+  // subtree. (TASK 033 later stretched its TIMING by design —
+  // burstHold 2.4s with a full-glow plateau; position, inset,
+  // gradient and layer are still the declarations pinned here.)
   const modalOn = rules.find((r) => r.selector === ".modal.instantwin")!;
   assert.ok(modalOn, ".modal.instantwin rule exists");
   assert.match(modalOn.body, /position:relative/);
@@ -1500,8 +1504,18 @@ test("modal shell: no horizontal scroll; the banner scrolls in an inner box (TAS
   assert.match(burst.body, /border-radius:50%/);
   assert.match(burst.body, /z-index:-1/);
   assert.match(burst.body, /radial-gradient\(circle,rgba\(255,197,48,\.55\) 0%,rgba\(255,197,48,\.18\) 42%,transparent 68%\)/);
-  assert.match(burst.body, /animation:burst \.9s ease-out both/);
-  // Burst keyframes untouched: same scale/opacity arc.
+  assert.match(burst.body, /animation:burstHold 2\.4s ease-out both/);
+  // burstHold keyframes (TASK 033): the burst arc with a plateau
+  // at full glow — reaches opacity 1 at 20%, still 1 at 55%, then
+  // fades to the same end state.
+  const holdFrames = css.match(/@keyframes burstHold\{([\s\S]*?)\n\}/)?.[1];
+  assert.ok(holdFrames);
+  assert.ok(holdFrames.includes("0%{opacity:0;transform:scale(.55);}"));
+  assert.ok(holdFrames.includes("20%{opacity:1;transform:scale(1);}"));
+  assert.ok(holdFrames.includes("55%{opacity:1;transform:scale(1.05);}"));
+  assert.ok(holdFrames.includes("100%{opacity:0;transform:scale(1.12);}"));
+  // Burst keyframes untouched: same scale/opacity arc (the TASK
+  // 033 celebration beat's burst still uses them).
   const keyframes = css.match(/@keyframes burst\{([\s\S]*?)\n\}/)?.[1];
   assert.ok(keyframes);
   assert.ok(keyframes.includes("0%{opacity:0;transform:scale(.55);}"));
@@ -2112,4 +2126,150 @@ test("e2e: round-over banner — subline, PLACE/PLAYER/TOTAL/ROUND columns, meda
     }
   }
   assert.ok(attached, "a penalty note row appeared and was verified attached under its payer");
+});
+
+// ---------- TASK 033: instant-win celebration beat ----------
+
+test("e2e: instant-win celebration beat — withheld banner, skip, no replay, timed handoff (TASK 033)", async () => {
+  await import("../src/main.js");
+  const hasCls = (node: FakeElement, cls: string): boolean =>
+    (node.className ?? "").split(/\s+/).includes(cls);
+  const findBeat = (): FakeElement | null => {
+    const walk = (node: FakeElement): FakeElement | null => {
+      if (hasCls(node, "iwbeat")) return node;
+      for (const child of node.children) {
+        const hit = walk(child);
+        if (hit) return hit;
+      }
+      return null;
+    };
+    return walk(fakeDocument.body);
+  };
+  // A seed whose FIRST deal hands some seat an instant win, found
+  // with the engine itself so the scripted deal is exact.
+  let scripted: { seed: number; winner: number; kind: string } | null = null;
+  for (let seed = 1; seed < 5000 && !scripted; seed++) {
+    const hands = newDeal(seededRng(seed));
+    for (let p = 0; p < 4; p++) {
+      const win = detectInstantWin(hands[p]);
+      if (win) {
+        scripted = { seed, winner: p, kind: win.kind };
+        break;
+      }
+    }
+  }
+  assert.ok(scripted, "a seed with an instant-win first deal exists");
+  const { seed, winner, kind } = scripted;
+  const kindWords = kind.replaceAll("-", " ");
+
+  // --- the beat: banner withheld, content pinned ---
+  pumpTimers();
+  Math.random = seededRng(seed);
+  $("new-match-top").click();
+  const beat = findBeat();
+  assert.ok(beat, "the beat overlay was created");
+  assert.equal(beat.hidden, false, "the beat is showing");
+  assert.equal($("banner").hidden, true, "the banner is withheld during the beat");
+  const card = beat.children[0];
+  assert.ok(hasCls(card, "iwbeat-card"), "the beat card is the overlay's child");
+  assert.equal(card.children[0].textContent, "INSTANT WIN!", "the headline");
+  assert.equal(
+    card.children[1].textContent,
+    `${SEAT_NAMES[winner]} — ${kindWords}`,
+    "the winner line uses the banner note's kind wording",
+  );
+  assert.equal(timerQueue.length, 1, "exactly one timer pending: the beat's handoff");
+
+  // --- a re-render of the same summary must not replay it ---
+  $("clear-btn").click();
+  assert.equal(findBeat(), beat, "the overlay is not rebuilt by a re-render");
+  assert.equal(beat.hidden, false, "the beat is still showing after a re-render");
+  assert.equal($("banner").hidden, true, "the banner is still withheld");
+  assert.equal(timerQueue.length, 1, "no second beat timer was armed");
+
+  // --- skip: a tap hands off at once ---
+  beat.click();
+  assert.equal(beat.hidden, true, "the skip hides the beat");
+  assert.equal($("banner").hidden, false, "the banner lands immediately on skip");
+  assert.equal($("banner-title").textContent, "Instant win!");
+  // (The modal's .instantwin class lives on the banner's child in
+  // the shipped HTML — this harness's flat id registry has no such
+  // child to read; the class toggle is pinned by the CSS rules
+  // below and exercised by the browser probe.)
+  const note = $("banner-body").children.find((c) => c.tagName === "P");
+  assert.equal(
+    note?.textContent,
+    `${SEAT_NAMES[winner]} was dealt an instant-win hand (${kindWords}). Everyone else pays 2.`,
+    "the banner note is unchanged",
+  );
+  const table = $("banner-body").children.find((c) => c.tagName === "TABLE");
+  assert.ok(table, "the banner table is present");
+  const winRows = table.children.filter((tr) => hasCls(tr, "winline"));
+  assert.equal(winRows.length, 1, "exactly the winner's row pulses");
+  assert.ok(
+    winRows[0].textContent.includes(SEAT_NAMES[winner]),
+    "the pulsing row is the winner's",
+  );
+  // The skipped beat's timer is still in the fake queue (the fake
+  // setTimeout has no clearTimeout counterpart); firing it must be
+  // a no-op, not a second handoff.
+  pumpTimers();
+  assert.equal($("banner").hidden, false, "a stale beat timer does not disturb the banner");
+  assert.equal(beat.hidden, true, "the beat stays settled");
+
+  // --- the timed handoff: a fresh instant win, left to run ---
+  Math.random = seededRng(seed);
+  $("new-match-top").click();
+  assert.equal(findBeat(), beat, "the same overlay element is reused");
+  assert.equal(beat.hidden, false, "a new instant-win summary plays the beat again");
+  assert.equal($("banner").hidden, true, "the banner is withheld again");
+  pumpTimers(); // fires the beat's handoff timer
+  assert.equal(beat.hidden, true, "the beat ends at the handoff");
+  assert.equal($("banner").hidden, false, "the banner follows the beat");
+  assert.equal($("banner-title").textContent, "Instant win!");
+
+  // --- non-instant rounds are untouched ---
+  // A plain deal: no beat at deal time, and the round-over banner
+  // lands with the overlay hidden throughout. (This harness's
+  // timers are a FIFO queue, so a wrongly-armed beat timer would
+  // be pumped through inside settle() — the transient check is
+  // the browser probe in the task's proof bar; here the end state
+  // and the deal-time state are pinned.)
+  let plainSeed = 0;
+  for (let s = 1; s < 5000; s++) {
+    if (newDeal(seededRng(s)).every((h) => !detectInstantWin(h))) {
+      plainSeed = s;
+      break;
+    }
+  }
+  assert.ok(plainSeed > 0, "a seed with a plain first deal exists");
+  Math.random = seededRng(plainSeed);
+  $("new-match-top").click();
+  assert.equal(beat.hidden, true, "no beat for a plain deal");
+  driveToRoundBanner031();
+  assert.equal($("banner-title").textContent, "Round over", "a plain round-over banner");
+  assert.equal(beat.hidden, true, "the beat never showed for the plain round");
+
+  // --- shipped style pins ---
+  const css = readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8");
+  const rules = [...css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .map((m) => ({ selector: m[1].trim(), body: m[2] }));
+  const cardRule = rules.find((r) => r.selector === ".iwbeat-card")!;
+  assert.ok(cardRule, ".iwbeat-card rule exists");
+  assert.match(cardRule.body, /position:absolute/);
+  assert.match(cardRule.body, /animation:stampIn \.45s cubic-bezier\(\.2,1\.4,\.4,1\) both/);
+  const beatBurst = rules.find((r) => r.selector === ".iwbeat-card::before")!;
+  assert.ok(beatBurst, "the beat burst rule exists");
+  assert.match(beatBurst.body, /inset:-70px/);
+  assert.match(beatBurst.body, /animation:burst 2\.6s ease-out both/);
+  const winRow = rules.find((r) => r.selector === "tr.winline")!;
+  assert.ok(winRow, "tr.winline rule exists");
+  assert.match(winRow.body, /animation:winPulse \.8s ease-in-out 4 both/);
+  assert.match(
+    css,
+    /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.iwbeat-card[^{}]*\{animation:none !important;/,
+    "reduced motion stills the beat (text shows statically, timer still hands off)",
+  );
+  const mainTs = readFileSync(new URL("../../src/main.ts", import.meta.url), "utf8");
+  assert.match(mainTs, /const BEAT_MS = 2800;/, "the beat's total duration is ~2.8s");
 });
