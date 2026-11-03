@@ -34,6 +34,28 @@ round-over summary banner:
 - The Continue button and the banner's existing entrance behavior are
   unchanged.
 
+## Amendment (John, 2026-11-02): medals in this view too
+
+John, with a screenshot of this banner taken after Task 029 shipped:
+"add the gold and silver medals in this view too — adjust the
+existing ticket if it makes sense." It does: same screen, same
+rendering pass, and this task was still queued, so the medals fold
+in here rather than spawning a second banner task.
+
+- The PLACE cell for 1st and 2nd renders Task 029's medal component —
+  the same `.medal gold` / `.medal silver` disc markup and CSS the
+  scoreboard uses (numeral in the disc, `role="img"`,
+  `aria-label="Finished 1st"` / `"Finished 2nd"`). Reuse the shipped
+  component; do not invent a second medal style.
+- 3rd and 4th keep the plain ordinal text in the PLACE cell (no
+  pills, no medals — top two only, same rule as Task 029).
+- Semantics match Task 029: the medals mark this round's finish
+  order, which is what these rows already are.
+- Sizing: the banner rows are taller than the scoreboard's name row;
+  the disc may render at its native size or scale modestly to sit
+  well in the row — builder's call within the no-layout-shift rule,
+  judged by the before/after screenshots below.
+
 ## Scope
 
 - Presentation only, confined to the round-over summary banner (the
@@ -58,7 +80,9 @@ round-over summary banner:
 - Before/after phone screenshots (390×844) in the PR: (a) a mid-match
   round-over where totals differ from round gains (e.g. total 7, round
   +2), (b) a round-over that includes penalty note rows, both rendering
-  in the locked four-column layout.
+  in the locked four-column layout — and the "after" shots must show
+  the gold medal on the 1st-place row and the silver on the 2nd, with
+  plain ordinals on 3rd/4th.
 - Tests as needed to pin the new structure (e.g. the header row, the
   "/13" total format, place in its own cell); suite grows from 105,
   count never drops, no weakened assertions.
