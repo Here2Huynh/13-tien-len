@@ -1,6 +1,6 @@
 # TASK-033: Instant win — dedicated celebration beat before the banner
 
-Status: ASSIGNED (verifier) — PR #36, head 529c874; builder local commit 59695dc. Filed 2026-11-03; John's pick locked (option B, see below). Suite baseline: 120 → 121.
+Status: COMPLETE — PR #36 merged (1c49e7c) on the Verifier chat's PASS (head 529c874, verdict comment 6616842127), deployed (8c97aa7b) and live-verified 2026-11-03; suite 120 → 121. Built by the Builder chat (local commit 59695dc), foreman pickup verified 121/121 + build clean (filed 2026-11-03; John's pick locked — option B, see below)
 
 ## Owner feedback
 

@@ -82,6 +82,7 @@ completion.
 | 025 | Utility buttons warm gold — button.ghost family recolored from the trim (PASS keeps red) | #33 | ✅ Merged · Live |
 | 026 | Favicon v2 — card only, full frame, bigger heart (V4) | #34 | ✅ Merged · Live |
 | 032 | Round-over banner — labeled PLACE / PLAYER / TOTAL / ROUND columns + medals | #35 | ✅ Merged · Live |
+| 033 | Instant-win celebration beat — dedicated INSTANT WIN! beat before the banner, stretched banner timings | #36 | ✅ Merged · Live |
 
 ## Play
 
