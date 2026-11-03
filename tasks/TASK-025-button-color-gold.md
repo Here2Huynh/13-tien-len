@@ -1,6 +1,6 @@
 # TASK 025 — Utility buttons: warm gold (stop reading as disabled)
 
-Status: ASSIGNED (verifier) — PR #33 open, head 2e3c4bd; builder run (Claude Code) commit 77544d8; foreman pickup verified 116/116 + build clean. Owner ruling pending on Disclosure 1 (PASS stays red vs goes gold) — merge waits for it. (Originally assigned to the builder 2026-11-02 after the Task 024 close-out; owner pick locked 2026-11-01: warm gold.)
+Status: COMPLETE — PR #33 merged 3b6384c (2026-11-02), deployed f5bce2f0; suite 114 → 116. Verifier: items 1–3, 5, 6 PASS + item 4 PASS on the Option C harness re-run (71 checks). Owner rulings: PASS stays red (Disclosure 1); probe sandbox = Option C.
 Read `AGENTS.md` first; it governs how work flows in this repo.
 
 Owner's report, with screenshot: the HINT / SORT / CLEAR buttons'

@@ -79,6 +79,7 @@ completion.
 | 031 | Match scores persist in local storage (scores only) | #30 | ✅ Merged · Live |
 | 029 | Scoreboard medals — gold for 1st, silver for 2nd (top two only) | #31 | ✅ Merged · Live |
 | 024 | Responsive game screen — stage zoom scales with viewport, capped at 1.5x (81px hand card) | #32 | ✅ Merged · Live |
+| 025 | Utility buttons warm gold — button.ghost family recolored from the trim (PASS keeps red) | #33 | ✅ Merged · Live |
 
 ## Play
 
