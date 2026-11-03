@@ -393,6 +393,27 @@ test("controller: illegal selections surface the engine error and change nothing
   assert.equal(s.trick!.hands[0].length, 12);
 });
 
+test("controller: newMatch seed restores points and round (TASK 031)", () => {
+  const controller = createController({ schedule: sync, dealHands: () => newDeal(seededRng(11)) });
+  controller.newMatch({ scores: [5, -2, 3, 0], round: 4 });
+  const s = controller.state;
+  assert.equal(s.phase, "playing");
+  assert.deepEqual(s.match!.scores, [5, -2, 3, 0]);
+  assert.equal(s.match!.roundNumber, 4);
+  assert.ok(
+    s.log.some((line) => line.startsWith("Round 4:")),
+    "the saved round is the round dealt",
+  );
+});
+
+test("controller: newMatch without a seed is a fresh 0-0 round 1 (TASK 031)", () => {
+  const controller = createController({ schedule: sync, dealHands: () => newDeal(seededRng(11)) });
+  controller.newMatch({ scores: [5, -2, 3, 0], round: 4 });
+  controller.newMatch();
+  assert.deepEqual(controller.state.match!.scores, [0, 0, 0, 0]);
+  assert.equal(controller.state.match!.roundNumber, 1);
+});
+
 test("controller: log — a four of a kind played against a single 2 is logged as a bomb", () => {
   const hands = [
     [c("3", "spades"), c("5", "clubs"), c("8", "diamonds")],

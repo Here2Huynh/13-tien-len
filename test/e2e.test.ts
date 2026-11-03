@@ -237,6 +237,33 @@ const installFakeTimers = (): void => {
 installFakeTimers();
 Math.random = seededRng(2026);
 
+// ---------- fake localStorage (TASK 031) ----------
+// Installed before main.js is ever imported; the persistence
+// tests steer it per test (contents + a throws mode simulating
+// unavailable storage).
+class FakeStorage {
+  map = new Map<string, string>();
+  throws = false;
+  getItem(key: string): string | null {
+    if (this.throws) throw new Error("storage unavailable");
+    return this.map.get(key) ?? null;
+  }
+  setItem(key: string, value: string): void {
+    if (this.throws) throw new Error("storage unavailable");
+    this.map.set(key, String(value));
+  }
+  removeItem(key: string): void {
+    if (this.throws) throw new Error("storage unavailable");
+    this.map.delete(key);
+  }
+  clear(): void {
+    this.map.clear();
+  }
+}
+const fakeStorage = new FakeStorage();
+(globalThis as { localStorage: unknown }).localStorage = fakeStorage;
+const SCORE_KEY = "thirteen.matchScore.v1";
+
 const $ = (id: string): FakeElement => fakeDocument.getElementById(id);
 
 function pumpTimers() {
@@ -1411,4 +1438,181 @@ test("modal shell: no horizontal scroll; the banner scrolls in an inner box (TAS
     '        <div class="scrollbox">\n' +
     '          <h2 id="banner-title"></h2>',
   ), "banner modal is a shell around a scrollbox");
+});
+
+// ---------- TASK 031: score persistence ----------
+
+// Play from wherever the game is until a round-end banner shows.
+function driveToRoundBanner031(): void {
+  for (let steps = 0; steps < 20000; steps++) {
+    const phase = settle();
+    if (phase === "banner") {
+      assert.ok(!isMatchEndBanner(), "round ended the match unexpectedly early");
+      return;
+    }
+    humanMove();
+  }
+  throw new Error("never reached a round banner");
+}
+
+test("e2e: score persistence — nothing saved at 0-0 round 1; standings saved when the round lands (TASK 031)", async () => {
+  await import("../src/main.js");
+  fakeStorage.clear();
+  fakeStorage.throws = false;
+  $("new-match-top").click();
+  settle();
+  assert.deepEqual(scoreValues(), [0, 0, 0, 0]);
+  assert.equal(
+    fakeStorage.map.has(SCORE_KEY), false,
+    "a fresh 0-0 round-1 board writes no save",
+  );
+  driveToRoundBanner031();
+  const raw = fakeStorage.map.get(SCORE_KEY);
+  assert.ok(raw, "a save exists once points and the round have moved");
+  const saved = JSON.parse(raw) as { scores: number[]; round: number };
+  assert.deepEqual(saved.scores, scoreValues(), "the save holds the board exactly");
+  assert.equal(saved.round, 2, "the save holds the round the match advanced to");
+  assert.ok(saved.scores.some((s) => s !== 0), "the saved board is a real one");
+});
+
+test("e2e: score persistence — Start restores points and round; scoring accumulates on top (TASK 031)", async () => {
+  await import("../src/main.js");
+  fakeStorage.clear();
+  fakeStorage.throws = false;
+  fakeStorage.setItem(SCORE_KEY, JSON.stringify({ scores: [5, -2, 3, 0], round: 4 }));
+  $("start-btn").click();
+  settle();
+  assert.deepEqual(scoreValues(), [5, -2, 3, 0], "points restored exactly (negatives included)");
+  assert.equal($("round-num").textContent, "4", "the saved round is the round dealt");
+  assert.deepEqual(
+    JSON.parse(fakeStorage.map.get(SCORE_KEY)!) as unknown,
+    { scores: [5, -2, 3, 0], round: 4 },
+    "the save survives the restore and still holds the restored standings",
+  );
+  // Play the restored round out: the board moves on top of the
+  // restored values. Round scoring is zero-sum (deltas sum to 0;
+  // penalties and bomb penalties are transfers), so the restored
+  // total is invariant, and the persisted round advances to 5 —
+  // from a fresh start one round could only ever reach round 2.
+  driveToRoundBanner031();
+  const after = scoreValues();
+  assert.equal(after.reduce((a, b) => a + b, 0), 6, "restored total preserved by zero-sum scoring");
+  const saved = JSON.parse(fakeStorage.map.get(SCORE_KEY)!) as { scores: number[]; round: number };
+  assert.deepEqual(saved.scores, after, "the save tracks the accumulated board");
+  assert.equal(saved.round, 5, "the restored match advanced from round 4 to round 5");
+});
+
+test("e2e: score persistence — New Match clears the save; match end clears it (TASK 031)", async () => {
+  await import("../src/main.js");
+  fakeStorage.clear();
+  fakeStorage.throws = false;
+  fakeStorage.setItem(SCORE_KEY, JSON.stringify({ scores: [5, -2, 3, 0], round: 4 }));
+  $("start-btn").click();
+  settle();
+  assert.ok(fakeStorage.map.has(SCORE_KEY), "save present mid-match");
+  $("new-match-top").click();
+  settle();
+  assert.equal(fakeStorage.map.has(SCORE_KEY), false, "New Match clears the save");
+  assert.deepEqual(scoreValues(), [0, 0, 0, 0]);
+  assert.equal($("round-num").textContent, "1");
+  // A full match with saving on: the save exists mid-match and is
+  // gone once the match is decided.
+  let sawSave = false;
+  for (let steps = 0; steps < 20000; steps++) {
+    const phase = settle();
+    if (fakeStorage.map.has(SCORE_KEY)) sawSave = true;
+    if (phase === "banner") {
+      if (isMatchEndBanner()) break;
+      $("continue-btn").click();
+      continue;
+    }
+    humanMove();
+  }
+  assert.ok(isMatchEndBanner(), "the driven match completed");
+  assert.ok(sawSave, "the save was written during the match");
+  assert.equal(fakeStorage.map.has(SCORE_KEY), false, "match end clears the save");
+});
+
+test("e2e: score persistence — corrupt and out-of-range saves are discarded (TASK 031)", async () => {
+  await import("../src/main.js");
+  const badPayloads = [
+    "not json at all",
+    JSON.stringify({ scores: [1, 2, 3], round: 2 }), // three seats
+    JSON.stringify({ scores: [0, 0, 0, 13], round: 2 }), // above the cap (owner band A)
+    JSON.stringify({ scores: [0, 0, 0, -100], round: 2 }), // below the floor (owner band A)
+    JSON.stringify({ scores: [0, 0, 0, 1.5], round: 2 }), // non-integer points
+    JSON.stringify({ scores: ["5", 0, 0, 0], round: 2 }), // wrong value type
+    JSON.stringify({ scores: [5, 0, 0, 0], round: 0 }), // round below 1
+    JSON.stringify({ scores: [5, 0, 0, 0], round: 2.5 }), // non-integer round
+    JSON.stringify({ scores: [5, 0, 0, 0] }), // missing round
+    JSON.stringify([5, 0, 0, 0]), // wrong shape entirely
+  ];
+  for (const payload of badPayloads) {
+    fakeStorage.clear();
+    fakeStorage.throws = false;
+    fakeStorage.setItem(SCORE_KEY, payload);
+    $("start-btn").click();
+    // Judge the restore decision on the immediate post-click
+    // render, before any pumped CPU chain can move points. A
+    // discarded save starts a FRESH match, which shows exactly
+    // one of two boards: a quiet 0-0 at round 1, or — when the
+    // fresh deal itself is an instant win — the instant-win
+    // deltas (+6/-2/-2/-2) at round 2. Any restored state (the
+    // payload's points at the payload's round, or those points
+    // shifted by an instant win on the restored deal) falls
+    // outside both shapes.
+    const scores = scoreValues();
+    const pill = $("round-num").textContent;
+    const freshQuiet = pill === "1" && scores.every((s) => s === 0);
+    const freshInstant = pill === "2" &&
+      [...scores].sort((a, b) => a - b).join(",") === "-2,-2,-2,6";
+    assert.ok(
+      freshQuiet || freshInstant,
+      `discarded, fresh start: ${payload} (got ${scores.join("/") || "none"} at round ${pill})`,
+    );
+    // Anything left in the store is a NEW save of that fresh
+    // board — never the bad payload kept.
+    const kept = fakeStorage.map.get(SCORE_KEY);
+    if (kept !== undefined) {
+      assert.deepEqual(JSON.parse(kept), { scores, round: Number(pill) });
+    }
+  }
+  // The band's edges are inclusive: -99 and 12 restore fine. A
+  // restored board always carries a magnitude no fresh board can
+  // reach (fresh values live in [-2, 6]; seat 1 sits at -99 or
+  // -99 shifted by an instant win), at round 9 (or 10 if the
+  // restored deal itself instant-won).
+  fakeStorage.setItem(SCORE_KEY, JSON.stringify({ scores: [12, -99, 0, 5], round: 9 }));
+  $("start-btn").click();
+  const edgeScores = scoreValues();
+  const edgePill = $("round-num").textContent;
+  assert.ok(edgePill === "9" || edgePill === "10", `band edges restore the round (got ${edgePill})`);
+  assert.ok(
+    Math.max(...edgeScores.map((s) => Math.abs(s))) >= 10,
+    `band edges restore the points (got ${edgeScores.join("/")})`,
+  );
+  if (edgePill === "9") assert.deepEqual(edgeScores, [12, -99, 0, 5], "exact board when no instant win intervenes");
+  fakeStorage.clear();
+});
+
+test("e2e: score persistence — storage that throws on every access never breaks a match (TASK 031)", async () => {
+  await import("../src/main.js");
+  fakeStorage.clear();
+  fakeStorage.throws = true;
+  try {
+    $("start-btn").click(); // the read path throws internally — swallowed
+    for (let steps = 0; steps < 20000; steps++) {
+      const phase = settle();
+      if (phase === "banner") {
+        if (isMatchEndBanner()) break;
+        $("continue-btn").click();
+        continue;
+      }
+      humanMove();
+    }
+    assert.ok(isMatchEndBanner(), "a full match completes with storage throwing throughout");
+  } finally {
+    fakeStorage.throws = false;
+    fakeStorage.clear();
+  }
 });
