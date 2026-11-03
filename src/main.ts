@@ -1,4 +1,8 @@
-import { createController, type ControllerState } from "./ui/controller.js";
+import {
+  createController,
+  type ControllerState,
+  type RoundSummary,
+} from "./ui/controller.js";
 import { enumerateBombs } from "./engine/ai.js";
 import { isComebackBomb, bombBeats, bombOnBombBeats, detectBomb, bombTarget } from "./engine/bombs.js";
 import { hasComebackTurn, type TrickPlay, type TrickState } from "./engine/trick.js";
@@ -700,12 +704,105 @@ function playableBombIds(state: ControllerState): Set<string> {
   return ids;
 }
 
+// ---- Instant-win celebration beat (TASK 033) -----------------------
+// A dedicated full-screen beat precedes the instant-win banner: the
+// table dims under the shared overlay backdrop, "INSTANT WIN!" stamps
+// in over a gold burst, and the winner line names the hand. It is a
+// live-transition moment only — pure adapter state, never persisted
+// (a reload lands wherever the TASK 031 restore lands, beat-free),
+// and it carries no exclusive information: the banner after it shows
+// the full note and table exactly as before.
+//
+// Once-only, the TASK 028 discipline: the beat is keyed to the
+// roundSummary OBJECT. The first render that meets a fresh
+// instant-win summary starts the beat and withholds the banner;
+// re-renders of the same summary leave the overlay and its timer
+// exactly as they are (no rebuild, so the CSS entrance never
+// restarts, and no second timer); the handoff — timer or a tap
+// anywhere on the overlay — settles the beat for that summary, and
+// every later render paints the banner directly.
+const BEAT_MS = 2800;
+let beatSummary: RoundSummary | null = null;
+let beatDone = false;
+let beatTimer: ReturnType<typeof setTimeout> | null = null;
+let beatOverlay: HTMLElement | null = null;
+let beatLine: HTMLElement | null = null;
+
+function ensureBeatOverlay(): HTMLElement {
+  if (beatOverlay) return beatOverlay;
+  const overlay = el("div", "overlay iwbeat");
+  const card = el("div", "iwbeat-card");
+  const line = el("div", "iwbeat-line");
+  card.append(el("h2", "iwbeat-title", "INSTANT WIN!"), line);
+  overlay.append(card);
+  overlay.hidden = true;
+  overlay.addEventListener("click", () => {
+    if (beatSummary) finishBeat(beatSummary);
+  });
+  if (document.body) document.body.append(overlay);
+  beatOverlay = overlay;
+  beatLine = line;
+  return overlay;
+}
+
+function startBeat(summary: RoundSummary): void {
+  beatSummary = summary;
+  beatDone = false;
+  const { winner, kind } = summary.instantWin as {
+    winner: number;
+    kind: string;
+  };
+  const overlay = ensureBeatOverlay();
+  // The winner line uses the banner note's own kind wording
+  // (hyphens as spaces): "<Name> — <hand kind>".
+  if (beatLine) {
+    beatLine.textContent = `${SEAT_NAMES[winner]} — ${kind.replaceAll("-", " ")}`;
+  }
+  overlay.hidden = false;
+  beatTimer = setTimeout(() => finishBeat(summary), BEAT_MS);
+}
+
+function finishBeat(summary: RoundSummary): void {
+  // Identity + done guards make a stale timer (one whose skip
+  // already landed) and a double handoff both no-ops.
+  if (beatSummary !== summary || beatDone) return;
+  beatDone = true;
+  if (beatTimer !== null) {
+    clearTimeout(beatTimer);
+    beatTimer = null;
+  }
+  if (beatOverlay) beatOverlay.hidden = true;
+  render(controller.state);
+}
+
+function teardownBeat(): void {
+  // The banner state went away (phase moved on): the beat dies
+  // with it, without a handoff render.
+  if (beatTimer !== null) {
+    clearTimeout(beatTimer);
+    beatTimer = null;
+  }
+  if (beatOverlay) beatOverlay.hidden = true;
+  beatSummary = null;
+  beatDone = false;
+}
+
 function renderBanner(state: ControllerState): void {
   const summary = state.roundSummary;
   const modal = els.banner.children[0] as HTMLElement | undefined;
   if ((state.phase !== "roundEnd" && state.phase !== "matchEnd") || !summary) {
     els.banner.hidden = true;
     modal?.classList.remove("instantwin");
+    teardownBeat();
+    return;
+  }
+  if (summary.instantWin && !(beatSummary === summary && beatDone)) {
+    // The beat gate: a fresh instant-win summary starts its beat;
+    // while the beat is live the banner stays withheld and the
+    // overlay is left untouched.
+    els.banner.hidden = true;
+    modal?.classList.remove("instantwin");
+    if (beatSummary !== summary) startBeat(summary);
     return;
   }
   els.banner.hidden = false;

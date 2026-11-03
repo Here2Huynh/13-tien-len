@@ -60,7 +60,8 @@ body::after{
   /* TASK 014: every CSS-side animation in the bundle is off too
      (the WAAPI side is gated in the adapter). */
   .penrow, .penrow::before, .seat.lockedout.stampplay .opp::after,
-  .modal.instantwin::before, tr.winline{animation:none !important;}
+  .modal.instantwin::before, tr.winline,
+  .iwbeat-card, .iwbeat-card::before{animation:none !important;}
   .hand .card{/* TASK 023: buttons are reused across redraws now,
     so selection would otherwise glide here via the shared
     transition. */transition:none !important;}
@@ -502,12 +503,51 @@ button.small{padding:9px 14px;font-size:12.5px;border-radius:10px;}
 .modal.instantwin::before{
   content:"";position:absolute;inset:-34px;border-radius:50%;z-index:-1;pointer-events:none;
   background:radial-gradient(circle,rgba(255,197,48,.55) 0%,rgba(255,197,48,.18) 42%,transparent 68%);
-  opacity:0;animation:burst .9s ease-out both;
+  opacity:0;animation:burstHold 2.4s ease-out both;
 }
+/* TASK 033: the banner burst stretched to ~2.4s with a visible
+   hold near full glow (the 20%→55% plateau) before it fades — not
+   a straight stretch of burst, whose arc has no hold segment. The
+   burst keyframes themselves are unchanged; the celebration
+   beat's burst below still uses them. */
+@keyframes burstHold{0%{opacity:0;transform:scale(.55);}20%{opacity:1;transform:scale(1);}55%{opacity:1;transform:scale(1.05);}100%{opacity:0;transform:scale(1.12);}}
 @keyframes burst{0%{opacity:0;transform:scale(.55);}30%{opacity:1;}100%{opacity:0;transform:scale(1.12);}}
-tr.winline{animation:winPulse .8s ease-in-out 2 both;}
+tr.winline{animation:winPulse .8s ease-in-out 4 both;}
 tr.winline td:first-child{color:var(--gold-bright);}
 @keyframes winPulse{0%{transform:scale(1);opacity:.35;}35%{transform:scale(1.045);opacity:1;}100%{transform:scale(1);opacity:1;}}
+/* Instant-win celebration beat (TASK 033): a full-screen overlay
+   in the shared .overlay shell (its dim backdrop is the table
+   dimming) shown before the banner. The card stamps in with the
+   LOCKED stamp's own keyframes and easing, stretched to the
+   beat's ~0.45s entrance — stampIn's transforms center an
+   absolutely-positioned element, so the card is positioned that
+   way, and its resting transform in the class is the keyframes'
+   end state (which is also what reduced motion, animation off,
+   must land on). The gold burst behind the headline reuses the
+   burst keyframes, larger (inset -70px vs the modal's -34px) and
+   longer (2.6s) than the banner's. A tap anywhere skips — the
+   overlay itself is the target. Type is clamped so the headline
+   and winner line fit a 360px phone without overflow. */
+.overlay.iwbeat{cursor:pointer;}
+.iwbeat-card{
+  position:absolute;left:50%;top:50%;z-index:0;max-width:94vw;text-align:center;
+  transform:translate(-50%,-50%) rotate(-10deg);
+  animation:stampIn .45s cubic-bezier(.2,1.4,.4,1) both;
+}
+.iwbeat-card::before{
+  content:"";position:absolute;inset:-70px;border-radius:50%;z-index:-1;pointer-events:none;
+  background:radial-gradient(circle,rgba(255,197,48,.55) 0%,rgba(255,197,48,.18) 42%,transparent 68%);
+  opacity:0;animation:burst 2.6s ease-out both;
+}
+.iwbeat-title{
+  margin:0;font-size:clamp(34px,11vw,58px);font-weight:900;line-height:1.1;
+  color:#fff;text-shadow:2px 2px 0 var(--red), 0 4px 10px rgba(0,0,0,.35);
+  white-space:nowrap;
+}
+.iwbeat-line{
+  margin-top:10px;font-size:clamp(16px,5.2vw,22px);font-weight:800;
+  color:var(--gold-bright);text-shadow:0 2px 8px rgba(0,0,0,.5);
+}
 
 @media (max-width:640px){
   body{font-size:16px;}
