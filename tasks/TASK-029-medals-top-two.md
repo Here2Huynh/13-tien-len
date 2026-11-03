@@ -1,8 +1,6 @@
 # TASK 029 — Medals for 1st and 2nd place (scoreboard badges)
 
-Status: QUEUED (owner pick locked 2026-11-01: top two only;
-becomes ASSIGNED (builder) in queue order behind Tasks 027–028
-unless the owner reorders)
+Status: ASSIGNED (builder) — Task 031 closed 2026-11-02; owner pick locked 2026-11-01: top two only. Route: the Builder chat (Switch #6). Branch `task-029-medals-top-two` off main; commit locally, do not push, report in the Builder chat. Use the ui-ux-pro-max skill for this UI work per standing instruction.
 Read `AGENTS.md` first; it governs how work flows in this repo.
 
 Owner's report, with screenshot: the scoreboard's green finish

@@ -76,6 +76,7 @@ completion.
 | 023 | Card hover/select drop — layout-keyed settle, reused hand buttons | #27 | ✅ Merged · Live |
 | 028 | LOCKED stamp plays once per lockout, never on clicks | #28 | ✅ Merged · Live |
 | 030 | Start-screen Bomb Odds button removed (header copy stays) | #29 | ✅ Merged · Live |
+| 031 | Match scores persist in local storage (scores only) | #30 | ✅ Merged · Live |
 
 ## Play
 

@@ -1,11 +1,6 @@
 # TASK 031 — Persist match scores in local storage
 
-Status: ASSIGNED (verifier) — PR #30 open, branch
-task-031-score-persistence; built in the Builder chat (local
-commit eafa7d1, remote head e21f7f3: suite 105 -> 112, engine
-diff zero, persistent-context probe 14/14 claimed). Route: the
-Verifier chat (Switch #6).
-Checklist: tasks/VERIFY-031.md.
+Status: COMPLETE — PR #30 merged (431a67c) on the Verifier chat's PASS, deployed (dd9ae8c1) and live-verified 2026-11-02; suite 105 → 112.
 Read `AGENTS.md` first; it governs how work flows in this repo.
 
 Owner's request, in his words: "Add game scoring caching into
