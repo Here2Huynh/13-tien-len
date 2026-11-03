@@ -65,9 +65,17 @@ export interface ControllerOptions {
   dealHands?: () => Card[][];
 }
 
+/** Seed for a restored match (TASK 031): starting points and the
+    round to deal. Validation of any persisted form lives in the
+    adapter's storage layer; the controller trusts the seed. */
+export interface MatchSeed {
+  scores: number[];
+  round: number;
+}
+
 export interface Controller {
   state: ControllerState;
-  newMatch(): void;
+  newMatch(seed?: MatchSeed): void;
   continueRound(): void;
   humanPlay(cards: Card[]): boolean;
   humanPass(): boolean;
@@ -252,8 +260,12 @@ export function createController(options: ControllerOptions = {}): Controller {
 
   return {
     state,
-    newMatch() {
+    newMatch(seed?: MatchSeed) {
       state.match = createMatch();
+      if (seed) {
+        state.match.scores = [...seed.scores];
+        state.match.roundNumber = seed.round;
+      }
       state.log = [];
       log("New match — first to 13.");
       startRoundInternal();
