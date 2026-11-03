@@ -1,9 +1,7 @@
 # TASK 024 — Responsive game screen (scale up on bigger screens)
 
-Status: ASSIGNED (verifier) — 2026-11-02, PR #32 open
-(head af624a8, branch task-024-responsive-scaling). Owner pick locked
-2026-11-02: CAP the scale — see "The cap" below. Route: Switch #6
-chats (Thirteen Verifier).
+Status: COMPLETE — PR #32 merged (b274ea4) on the Verifier chat's PASS (head af624a8, verdict comment 6597132003), deployed (c9d7c187) and live-verified 2026-11-02; suite 113 → 114. Owner pick locked
+2026-11-02: CAP the scale — see "The cap" below. Both verifier disclosures accepted: phone stays 48px (byte-identical to main at 360×640; desktop scales 54 → 72 → 81 exactly) and fixed overlays stay unscaled (Task 027 fits intact; enlarging dialogs is the owner's follow-up call).
 Read `AGENTS.md` first; it governs how work flows in this repo.
 
 Owner's report, in his words: "make the game screen responsive to

@@ -1,8 +1,7 @@
 # TASK 025 — Utility buttons: warm gold (stop reading as disabled)
 
-Status: QUEUED (owner pick locked 2026-11-01: warm gold; becomes
-ASSIGNED (builder) in queue order behind Tasks 022–024 unless the
-owner reorders)
+Status: ASSIGNED (builder) — 2026-11-02, after the Task 024
+close-out (owner pick locked 2026-11-01: warm gold)
 Read `AGENTS.md` first; it governs how work flows in this repo.
 
 Owner's report, with screenshot: the HINT / SORT / CLEAR buttons'
