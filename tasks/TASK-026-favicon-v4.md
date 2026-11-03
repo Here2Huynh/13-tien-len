@@ -1,8 +1,6 @@
 # TASK 026 — Favicon v2: card only, full frame, bigger heart (V4)
 
-Status: ASSIGNED (verifier) — PR #34 open, head d218c2c (text commit 49c287f + PNG upload commit); builder run (Claude Code) commit 74e7af8; foreman verified remote head: all hashes locked-exact, 119/119. (Assigned to the builder 2026-11-02 on the Task 025 close-out; owner FR 2026-11-01; design LOCKED — V4, the
-owner's pick from rendered examples; becomes ASSIGNED (builder) in
-queue order behind Tasks 022–025 unless the owner reorders)
+Status: COMPLETE — PR #34 merged 19c10ed (2026-11-03), deployed 9146e029; suite 116 → 119. Verifier PASS all 6 items: assets byte-exact vs locked masters (sources + dist), negative probe (old assets fail exactly the 4 icon tests); live icons hash-verified after deploy. (Owner FR 2026-11-01; design LOCKED — V4, the owner's pick from rendered examples.)
 Read `AGENTS.md` first; it governs how work flows in this repo.
 
 Owner's FR: the Task 020 favicon (card on a teal tile) reads too
