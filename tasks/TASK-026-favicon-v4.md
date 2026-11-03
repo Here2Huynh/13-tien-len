@@ -1,6 +1,6 @@
 # TASK 026 — Favicon v2: card only, full frame, bigger heart (V4)
 
-Status: ASSIGNED (builder) — 2026-11-02, on the Task 025 close-out (owner FR 2026-11-01; design LOCKED — V4, the
+Status: ASSIGNED (verifier) — PR #34 open, head d218c2c (text commit 49c287f + PNG upload commit); builder run (Claude Code) commit 74e7af8; foreman verified remote head: all hashes locked-exact, 119/119. (Assigned to the builder 2026-11-02 on the Task 025 close-out; owner FR 2026-11-01; design LOCKED — V4, the
 owner's pick from rendered examples; becomes ASSIGNED (builder) in
 queue order behind Tasks 022–025 unless the owner reorders)
 Read `AGENTS.md` first; it governs how work flows in this repo.
