@@ -1,6 +1,6 @@
 # TASK-032: Round-over banner — labeled PLACE / PLAYER / TOTAL / ROUND columns
 
-Status: QUEUED (filed 2026-11-02; John's pick locked — see below)
+Status: ASSIGNED (builder) — 2026-11-03, on the Task 026 close-out (filed 2026-11-02; John's pick locked — see below)
 
 ## Owner feedback
 
