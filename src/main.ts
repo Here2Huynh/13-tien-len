@@ -867,7 +867,20 @@ function renderScoreboard(state: ControllerState): void {
     );
     const nm = el("div", "nm");
     nm.append(el("span", null, SEAT_NAMES[player]));
-    if (finishIdx >= 0) nm.append(el("span", "badge done", ORDINALS[finishIdx]));
+    if (finishIdx === 0 || finishIdx === 1) {
+      // Top two finish as medals, not pills (TASK 029): a flat
+      // disc with the place number stamped in and a ribbon behind
+      // it, drawn in CSS (.medal). The accessible name carries the
+      // place; the "Finished 1st" meta line below says it too.
+      const medal = el(
+        "span",
+        `medal ${finishIdx === 0 ? "gold" : "silver"}`,
+        `${finishIdx + 1}`,
+      );
+      medal.setAttribute("role", "img");
+      medal.setAttribute("aria-label", `Finished ${ORDINALS[finishIdx]}`);
+      nm.append(medal);
+    } else if (finishIdx >= 2) nm.append(el("span", "badge done", ORDINALS[finishIdx]));
     else if (trick?.currentPlay && state.trickView.entries[player]?.type === "pass")
       nm.append(el("span", "badge pass", "Passed"));
     box.append(nm);
