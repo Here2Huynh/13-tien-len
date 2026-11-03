@@ -1,6 +1,6 @@
 # TASK-033: Instant win — dedicated celebration beat before the banner
 
-Status: ASSIGNED (builder) — filed 2026-11-03; John's pick locked (option B, see below). Suite baseline: 120.
+Status: ASSIGNED (verifier) — PR #36, head 529c874; builder local commit 59695dc. Filed 2026-11-03; John's pick locked (option B, see below). Suite baseline: 120 → 121.
 
 ## Owner feedback
 
