@@ -33,10 +33,20 @@ the match POINTS persist; the hand in progress does not.
 - CLEAR: the save is removed when a match ends (someone reaches
   13) and when New Match starts a fresh match. After either, a
   reload starts at 0–0 as today.
-- VALIDATE on read: points are integers 0–12 for every seat
-  (a finished match never restores), round is an integer ≥ 1,
-  exactly four seats. Anything else — corrupt JSON, wrong shape,
-  out-of-range values — discard the save and start fresh.
+- VALIDATE on read: points are integers from −99 to 12 for every
+  seat, round is an integer ≥ 1, exactly four seats. Anything
+  else — corrupt JSON, wrong shape, out-of-range values — discard
+  the save and start fresh.
+  (RULED by John, 2026-11-02, option A: the range originally filed
+  here — 0–12 — was a foreman spec error the builder caught before
+  writing code: every finished round pays +2 / +1 / −1 / −2, so two
+  seats are ALWAYS negative after round 1 and nearly every genuine
+  save would have been discarded. The cap of 12 keeps the intent
+  that a finished match never restores — the winner is decided at
+  round end. Accepted edge: a bomb penalty can push a seat to 13+
+  mid-round; a save written in that exact window is out of range
+  and is discarded on reload. Rare, and it self-heals at round
+  end.)
 - UNAVAILABLE storage (private mode, quota, throws on access):
   the game plays exactly as today. All storage access is
   failure-tolerant; a storage exception must never break a render
