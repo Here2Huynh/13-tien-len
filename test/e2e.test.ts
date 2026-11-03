@@ -1616,3 +1616,66 @@ test("e2e: score persistence — storage that throws on every access never break
     fakeStorage.clear();
   }
 });
+
+test("e2e: finish medals — 1st gold, 2nd silver, 3rd/4th keep the green pill (TASK 029)", async () => {
+  await import("../src/main.js");
+  fakeStorage.clear();
+  // Play a full round: at the round banner every seat has a
+  // finish place.
+  $("new-match-top").click();
+  for (let steps = 0; steps < 20000; steps++) {
+    const phase = settle();
+    if (phase === "banner") {
+      assert.ok(!isMatchEndBanner(), "round one of a fresh match cannot end the match");
+      break;
+    }
+    humanMove();
+  }
+  // Scoreboard boxes are in seat order; the FINISH place of each
+  // seat is on its meta line ("Finished 1st"…). Read each box's
+  // name-row marker and group by the place it claims.
+  const byPlace: Record<string, { classes: string; text: string; label: string | null; role: string | null }> = {};
+  const boxes = $("scores").children;
+  assert.equal(boxes.length, 4);
+  for (const box of boxes) {
+    const meta = box.children.find((c) => (c.className ?? "").split(/\s+/).includes("meta"));
+    const place = /^Finished (\d(?:st|nd|rd|th))$/.exec(meta?.textContent ?? "")?.[1];
+    assert.ok(place, `every seat shows a finish place (meta: ${meta?.textContent})`);
+    const nm = box.children.find((c) => (c.className ?? "").split(/\s+/).includes("nm"));
+    const marker = nm?.children.find((c) => {
+      const cls = (c.className ?? "").split(/\s+/);
+      return cls.includes("medal") || (cls.includes("badge") && cls.includes("done"));
+    });
+    assert.ok(marker, `${place} has a finish marker`);
+    byPlace[place] = {
+      classes: marker.className,
+      text: marker.textContent,
+      label: marker.getAttribute("aria-label"),
+      role: marker.getAttribute("role"),
+    };
+  }
+  // 1st: gold medal, numeral 1, accessible name for the place.
+  assert.equal(byPlace["1st"].classes, "medal gold");
+  assert.equal(byPlace["1st"].text, "1");
+  assert.equal(byPlace["1st"].label, "Finished 1st");
+  assert.equal(byPlace["1st"].role, "img");
+  // 2nd: silver medal, numeral 2.
+  assert.equal(byPlace["2nd"].classes, "medal silver");
+  assert.equal(byPlace["2nd"].text, "2");
+  assert.equal(byPlace["2nd"].label, "Finished 2nd");
+  // 3rd and 4th: the green pill, exactly as before.
+  assert.equal(byPlace["3rd"].classes, "badge done");
+  assert.equal(byPlace["3rd"].text, "3rd");
+  assert.equal(byPlace["3rd"].label, null);
+  assert.equal(byPlace["4th"].classes, "badge done");
+  assert.equal(byPlace["4th"].text, "4th");
+  // The medal styling ships: gold and silver discs, the ribbon,
+  // and the pill footprint (19px) so the row does not shift.
+  const css = readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8");
+  assert.match(css, /\.medal\{[^}]*width:19px;height:19px;border-radius:50%;/);
+  assert.match(css, /\.medal\.gold\{background:linear-gradient\(180deg, var\(--gold-bright\), var\(--gold\)\);/);
+  assert.match(css, /\.medal\.silver\{background:linear-gradient\(180deg, #f4f7f9, #b7c2ca\);/);
+  assert.match(css, /\.medal::before\{[^}]*linear-gradient\(90deg, var\(--red\) 0 50%, var\(--blue\) 50% 100%\);/);
+  // The green pill itself is untouched for the lower places.
+  assert.match(css, /\.badge\.done\{background:var\(--green\);color:#06350f;\}/);
+});
