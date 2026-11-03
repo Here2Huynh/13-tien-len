@@ -731,44 +731,108 @@ function renderBanner(state: ControllerState): void {
   } else {
     els.bannerTitle.textContent = "Round over";
   }
-  const table = el("table");
-  const rows = summary.instantWin
-    ? [0, 1, 2, 3].map((player) => ({
-        player,
-        name: SEAT_NAMES[player],
-        place: player === (summary.instantWin as { winner: number }).winner ? "★" : "",
-        delta: summary.deltas[player],
-      }))
-    : roundResultRows(summary.finishOrder, summary.deltas);
-  for (const row of rows) {
-    const tr = el("tr");
-    if (summary.instantWin && row.player === summary.instantWin.winner) {
-      tr.classList.add("winline");
+  if (summary.instantWin) {
+    // Instant-win variant: existing content, unchanged (TASK 032
+    // scope) — the note above, the star row, the plain table.
+    const table = el("table");
+    const rows = [0, 1, 2, 3].map((player) => ({
+      player,
+      name: SEAT_NAMES[player],
+      place: player === (summary.instantWin as { winner: number }).winner ? "★" : "",
+      delta: summary.deltas[player],
+    }));
+    for (const row of rows) {
+      const tr = el("tr");
+      if (row.player === summary.instantWin.winner) {
+        tr.classList.add("winline");
+      }
+      tr.append(
+        el("td", null, row.place ? `${row.place} ${row.name}` : row.name),
+        el("td", null, `score ${summary.scores[row.player]}`),
+      );
+      const delta = el(
+        "td",
+        `delta ${row.delta > 0 ? "pos" : row.delta < 0 ? "neg" : ""}`,
+        row.delta > 0 ? `+${row.delta}` : `${row.delta}`,
+      );
+      tr.append(delta);
+      table.append(tr);
     }
-    tr.append(
-      el("td", null, row.place ? `${row.place} ${row.name}` : row.name),
-      el("td", null, `score ${summary.scores[row.player]}`),
-    );
-    const delta = el(
-      "td",
-      `delta ${row.delta > 0 ? "pos" : row.delta < 0 ? "neg" : ""}`,
-      row.delta > 0 ? `+${row.delta}` : `${row.delta}`,
-    );
-    tr.append(delta);
-    table.append(tr);
+    body.append(table);
+    summary.penalties.forEach((penalty, i) => {
+      const p = el("p", "note penrow", penaltyLine(penalty));
+      p.style.animationDelay = `${i * 130}ms`;
+      if (typeof p.style.setProperty === "function") {
+        p.style.setProperty("--d", `${i * 130}ms`);
+      }
+      body.append(p);
+    });
+    els.continueBtn.hidden = state.phase === "matchEnd";
+    els.newMatchBtn.hidden = state.phase !== "matchEnd";
+    return;
   }
-  body.append(table);
-  summary.penalties.forEach((penalty, i) => {
-    // Penalty rows (TASK 014): each slides in with a red flash,
-    // staggered, instead of appearing as plain text.
-    const p = el("p", "note penrow", penaltyLine(penalty));
-    p.style.animationDelay = `${i * 130}ms`;
-    // The ::before flash reads the same stagger from --d.
-    if (typeof p.style.setProperty === "function") {
-      p.style.setProperty("--d", `${i * 130}ms`);
-    }
-    body.append(p);
+  // Round-over / match-over summary (TASK 032, John's locked
+  // mockup A + PLACE column): a subline naming the round just
+  // finished and the target, then a labeled four-column table —
+  // PLACE | PLAYER | TOTAL (with muted /13) | ROUND (the signed
+  // gain, colored as before). 1st and 2nd carry the TASK 029
+  // medal in the PLACE cell; 3rd/4th keep plain ordinal text.
+  // Penalty notes stay attached under their payer's row.
+  const roundJustFinished = state.match ? state.match.roundNumber - 1 : 1;
+  body.append(el("div", "roundsub", `ROUND ${roundJustFinished} · FIRST TO 13`));
+  const table = el("table", "sumtable");
+  const thead = el("thead");
+  const headRow = el("tr");
+  headRow.append(
+    el("th", null, "Place"),
+    el("th", null, "Player"),
+    el("th", "num", "Total"),
+    el("th", "num", "Round"),
+  );
+  thead.append(headRow);
+  table.append(thead);
+  const rows = roundResultRows(summary.finishOrder, summary.deltas);
+  rows.forEach((row, placeIdx) => {
+    const tr = el("tr");
+    const placeCell = el("td", "place");
+    if (placeIdx === 0 || placeIdx === 1) placeCell.append(finishMedal(placeIdx));
+    else placeCell.textContent = row.place;
+    const total = el("td", "num total");
+    total.append(
+      el("span", null, `${summary.scores[row.player]}`),
+      el("span", "tsuffix", " /13"),
+    );
+    tr.append(
+      placeCell,
+      el("td", null, row.name),
+      total,
+      el(
+        "td",
+        `delta num ${row.delta > 0 ? "pos" : row.delta < 0 ? "neg" : ""}`,
+        row.delta > 0 ? `+${row.delta}` : `${row.delta}`,
+      ),
+    );
+    table.append(tr);
+    summary.penalties.forEach((penalty, i) => {
+      if (penalty.player !== row.player) return;
+      // Penalty rows (TASK 014): each slides in with a red flash,
+      // staggered, instead of appearing as plain text — now as a
+      // full-width row directly under the payer's row.
+      const prow = el("tr", "penrowtr");
+      const cell = el("td");
+      cell.setAttribute("colspan", "4");
+      const p = el("p", "note penrow", penaltyLine(penalty));
+      p.style.animationDelay = `${i * 130}ms`;
+      // The ::before flash reads the same stagger from --d.
+      if (typeof p.style.setProperty === "function") {
+        p.style.setProperty("--d", `${i * 130}ms`);
+      }
+      cell.append(p);
+      prow.append(cell);
+      table.append(prow);
+    });
   });
+  body.append(table);
   els.continueBtn.hidden = state.phase === "matchEnd";
   els.newMatchBtn.hidden = state.phase !== "matchEnd";
 }
@@ -869,6 +933,22 @@ function attachDragHandlers(btn: HTMLButtonElement): void {
   btn.addEventListener("pointercancel", endDrag);
 }
 
+// The finish medal (TASK 029, reused by TASK 032): a flat disc
+// with the place number stamped in and a ribbon behind it, drawn
+// in CSS (.medal). The accessible name carries the place. One
+// component, two call sites — the scoreboard badge and the
+// round-over banner's PLACE cell — so the two never drift.
+function finishMedal(placeIdx: number): HTMLElement {
+  const medal = el(
+    "span",
+    `medal ${placeIdx === 0 ? "gold" : "silver"}`,
+    `${placeIdx + 1}`,
+  );
+  medal.setAttribute("role", "img");
+  medal.setAttribute("aria-label", `Finished ${ORDINALS[placeIdx]}`);
+  return medal;
+}
+
 function renderScoreboard(state: ControllerState): void {
   els.roundNum.textContent = `${state.match ? state.match.roundNumber : 1}`;
   els.scores.textContent = "";
@@ -885,18 +965,9 @@ function renderScoreboard(state: ControllerState): void {
     const nm = el("div", "nm");
     nm.append(el("span", null, SEAT_NAMES[player]));
     if (finishIdx === 0 || finishIdx === 1) {
-      // Top two finish as medals, not pills (TASK 029): a flat
-      // disc with the place number stamped in and a ribbon behind
-      // it, drawn in CSS (.medal). The accessible name carries the
-      // place; the "Finished 1st" meta line below says it too.
-      const medal = el(
-        "span",
-        `medal ${finishIdx === 0 ? "gold" : "silver"}`,
-        `${finishIdx + 1}`,
-      );
-      medal.setAttribute("role", "img");
-      medal.setAttribute("aria-label", `Finished ${ORDINALS[finishIdx]}`);
-      nm.append(medal);
+      // Top two finish as medals, not pills (TASK 029): the
+      // shared finishMedal component below.
+      nm.append(finishMedal(finishIdx));
     } else if (finishIdx >= 2) nm.append(el("span", "badge done", ORDINALS[finishIdx]));
     else if (trick?.currentPlay && state.trickView.entries[player]?.type === "pass")
       nm.append(el("span", "badge pass", "Passed"));
