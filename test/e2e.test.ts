@@ -1726,3 +1726,162 @@ test("e2e: responsive stage zoom — capped factor, phone floor, compensated mot
   assert.match(src, /\(src\.left - dst\.left\) \/ stageScale\(\)/, "pile-mini FLIP compensates");
   assert.match(src, /\(dragState\.x - dragState\.startX\) \/ stageScale\(\)/, "drag tracking compensates");
 });
+
+// TASK 025 helpers: parse the shipped CSS into rules (comments
+// stripped) and measure colors the way WCAG does.
+function task025Rules(): { css: string; rules: { selector: string; body: string }[] } {
+  const rawCss = readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8");
+  const css = rawCss.replace(/\/\*[\s\S]*?\*\//g, "");
+  const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .map((m) => ({ selector: m[1].trim(), body: m[2] }));
+  return { css, rules };
+}
+function task025Rgb(hex: string): [number, number, number] {
+  assert.match(hex, /^#[0-9a-f]{6}$/);
+  return [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255) as [number, number, number];
+}
+function task025Contrast(a: string, b: string): number {
+  const lum = (hex: string): number => {
+    const [r, g, bl] = task025Rgb(hex).map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+  };
+  const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+}
+function task025Hsl(hex: string): { h: number; s: number; l: number } {
+  const [r, g, b] = task025Rgb(hex);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  const d = max - min;
+  if (d === 0) return { h: 0, s: 0, l };
+  const s = d / (1 - Math.abs(2 * l - 1));
+  const h = max === r ? 60 * (((g - b) / d) % 6) : max === g ? 60 * ((b - r) / d + 2) : 60 * ((r - g) / d + 4);
+  return { h: (h + 360) % 360, s, l };
+}
+
+test("utility buttons: the button.ghost family is warm gold from the trim, with dark legible ink (TASK 025)", () => {
+  // Inventory, pinned on the shipped markup: eight button.ghost
+  // elements — the controls row, the header's .ghost.small trio,
+  // and the start screen's How to play.
+  const html = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
+  const ghostIds = [...html.matchAll(/<button\b[^>]*>/g)]
+    .map((m) => m[0])
+    .filter((tag) => /class="[^"]*\bghost\b[^"]*"/.test(tag))
+    .map((tag) => tag.match(/id="([^"]+)"/)?.[1]);
+  assert.deepEqual(ghostIds, [
+    "help-btn-top", "odds-btn-top", "new-match-top",
+    "pass-btn", "hint-btn", "sort-btn", "clear-btn",
+    "help-btn-start",
+  ]);
+  const { css, rules } = task025Rules();
+  // The gold family is derived from the trim: --gold is still the
+  // hand zone's turn border, and the deeper shades share its hue
+  // and saturation, stepping down in lightness.
+  const token = (name: string): string => {
+    const m = css.match(new RegExp(`--${name}:(#[0-9a-f]{6});`));
+    assert.ok(m, `--${name} token ships`);
+    return m[1];
+  };
+  const gold = token("gold");
+  const deep = token("gold-deep");
+  const ledge = token("gold-ledge");
+  const ink = token("gold-ink");
+  assert.equal(gold, "#ffb223", "the trim gold itself is unchanged");
+  const trim = rules.filter((r) => r.selector === ".handzone.myturn");
+  assert.ok(trim.some((r) => /border-color:var\(--gold\);/.test(r.body)), "the trim is --gold");
+  const g = task025Hsl(gold);
+  for (const shade of [deep, ledge]) {
+    const s = task025Hsl(shade);
+    assert.ok(Math.abs(s.h - g.h) < 1.5, `${shade} keeps the trim's hue`);
+    assert.ok(s.s > 0.98, `${shade} keeps the trim's full saturation`);
+  }
+  assert.ok(g.l > task025Hsl(deep).l && task025Hsl(deep).l > task025Hsl(ledge).l, "gold > deep > ledge in lightness");
+  // Text stays clearly legible: WCAG AA (4.5:1) on the face and on
+  // the hover/pressed shade; white would not be (1.8:1).
+  assert.ok(task025Contrast(ink, gold) >= 4.5, "ink on gold meets AA");
+  assert.ok(task025Contrast(ink, deep) >= 4.5, "ink on deep gold meets AA");
+  assert.ok(task025Contrast("#ffffff", gold) < 3, "white on gold would not be legible");
+  // The rules: gold face + dark ink + gold ledge; deeper gold on
+  // hover and pressed. The old slate is gone from the stylesheet.
+  const ghost = rules.find((r) => r.selector === "button.ghost:not(#pass-btn)")!;
+  assert.ok(ghost, "button.ghost rule exists");
+  assert.match(ghost.body, /background:var\(--gold\);/);
+  assert.match(ghost.body, /color:var\(--gold-ink\);/);
+  assert.match(ghost.body, /box-shadow:0 5px 0 var\(--gold-ledge\), 0 8px 16px rgba\(0,0,0,\.3\)/);
+  const hover = rules.find((r) => r.selector === "button.ghost:not(#pass-btn):hover")!;
+  assert.ok(hover, "button.ghost:hover rule exists");
+  assert.match(hover.body, /background:var\(--gold-deep\);/);
+  const active = rules.find((r) => r.selector === "button.ghost:not(#pass-btn):active")!;
+  assert.ok(active, "button.ghost:active rule exists");
+  assert.match(active.body, /background:var\(--gold-deep\);/);
+  assert.match(active.body, /box-shadow:0 1px 0 var\(--gold-ledge\), 0 3px 8px rgba\(0,0,0,\.3\);/);
+  assert.ok(!/#486a73|#33525b/i.test(css), "the slate face and ledge are gone");
+  // The Sort toggle's id rule no longer forces white over the gold:
+  // word and arrow both carry the dark ink.
+  const sort = rules.find((r) => r.selector === "#sort-btn")!;
+  assert.ok(sort, "#sort-btn rule exists");
+  assert.match(sort.body, /color:var\(--gold-ink\);/);
+  const arrow = rules.find((r) => r.selector === "#sort-btn .sort-arrow")!;
+  assert.ok(arrow, "#sort-btn .sort-arrow rule exists");
+  assert.match(arrow.body, /color:inherit;margin-left:5px;font-weight:900;/);
+  assert.ok(!rules.some((r) => r.selector.includes("ghost") && /color:#fff/.test(r.body)), "no white text on gold");
+});
+
+test("utility buttons: genuine disabled states stay grey; primaries keep their colors (TASK 025)", () => {
+  const { rules } = task025Rules();
+  // PASS and HINT really are disabled off-turn (renderControls).
+  // HINT takes the grey below; PASS keeps its own red (next block).
+  const src = readFileSync(new URL("../../src/main.ts", import.meta.url), "utf8");
+  assert.match(src, /els\.passBtn\.disabled = !myTurn;/);
+  assert.match(src, /els\.hintBtn\.disabled = !myTurn;/);
+  // The shared disabled wash is untouched...
+  const base = rules.find((r) => r.selector === "button:disabled")!;
+  assert.ok(base, "button:disabled rule exists");
+  assert.equal(base.body, "opacity:.4;cursor:not-allowed;transform:none;filter:grayscale(.4);");
+  // ...and a disabled gold button drops to a fully desaturated grey
+  // face, ledge, and ink — declared after hover/pressed so neither
+  // can repaint it gold.
+  const idx = (selector: string): number => rules.findIndex((r) => r.selector === selector);
+  const disabled = rules[idx("button.ghost:not(#pass-btn):disabled")];
+  assert.ok(disabled, "button.ghost:disabled rule exists");
+  assert.ok(idx("button.ghost:not(#pass-btn):disabled") > idx("button.ghost:not(#pass-btn):hover"));
+  assert.ok(idx("button.ghost:not(#pass-btn):disabled") > idx("button.ghost:not(#pass-btn):active"));
+  assert.match(disabled.body, /filter:grayscale\(1\);/);
+  assert.ok(!/var\(--gold/.test(disabled.body), "no gold in the disabled state");
+  const colors = [...disabled.body.matchAll(/#[0-9a-f]{6}/g)].map((m) => m[0]);
+  assert.equal(colors.length, 3, "face, ink, ledge");
+  for (const c of colors) {
+    const chroma = Math.max(...task025Rgb(c)) - Math.min(...task025Rgb(c));
+    assert.ok(chroma < 0.06, `${c} is a desaturated grey`);
+  }
+  const face = disabled.body.match(/background:(#[0-9a-f]{6});/)?.[1];
+  const ledgeShadow = disabled.body.match(/box-shadow:0 5px 0 (#[0-9a-f]{6}),/)?.[1];
+  assert.ok(face && ledgeShadow);
+  assert.ok(task025Hsl(ledgeShadow).l < task025Hsl(face).l, "the grey keeps its 3D ledge");
+  // Buttons with their own colors keep them. PASS is a .ghost in
+  // the markup but has always been red via its id rule: every gold
+  // rule skips it, and its red face, ledge, and pressed ledge are
+  // unchanged (so its text, hover, and disabled look are the base
+  // button's white / brightness / grey wash, exactly as before).
+  const ghostRules = rules.filter((r) => /\bbutton\.ghost\b/.test(r.selector));
+  assert.equal(ghostRules.length, 4);
+  for (const r of ghostRules) assert.ok(r.selector.startsWith("button.ghost:not(#pass-btn)"), `${r.selector} skips PASS`);
+  const pass = rules.find((r) => r.selector === "#pass-btn")!;
+  assert.equal(pass.body, "background:var(--red);box-shadow:0 5px 0 var(--red-dark), 0 8px 16px rgba(0,0,0,.3), inset 0 2px 0 rgba(255,255,255,.35);");
+  const passActive = rules.find((r) => r.selector === "#pass-btn:active")!;
+  assert.equal(passActive.body, "box-shadow:0 1px 0 var(--red-dark), 0 3px 8px rgba(0,0,0,.3);");
+  assert.ok(!rules.some((r) => r.selector.startsWith("#pass-btn") && /color:|filter:/.test(r.body)), "PASS text and filters come from the base button");
+  // Play cards stays green, the start/dialog primaries stay the
+  // base blue.
+  const play = rules.find((r) => r.selector === "#play-btn")!;
+  assert.match(play.body, /background:var\(--green\);box-shadow:0 5px 0 var\(--green-dark\)/);
+  const button = rules.find((r) => r.selector === "button")!;
+  assert.match(button.body, /background:var\(--blue\);color:#fff;/);
+  const html = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
+  for (const id of ["play-btn", "start-btn", "continue-btn", "new-match-btn"]) {
+    const tag = html.match(new RegExp(`<button\\b[^>]*id="${id}"[^>]*>`))?.[0];
+    assert.ok(tag, `#${id} ships`);
+    assert.ok(!/\bghost\b/.test(tag), `#${id} is not a ghost button`);
+  }
+});

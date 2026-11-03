@@ -8,6 +8,12 @@
   --outline:rgba(10,20,24,.55);
   --felt:#2f7d64; --felt-deep:#256851; --felt-center:#3b9273;
   --gold:#ffb223; --gold-bright:#ffd23e; --coin:#f5b81d;
+  /* TASK 025: the utility-button gold family, derived from --gold
+     (the hand zone's turn trim): same hue 39deg and full saturation,
+     lightness stepped down 57% -> 45% (hover/pressed) -> 36% (the
+     3D ledge). --gold-ink is the dark text on it: 6.86:1 on --gold,
+     5.10:1 on --gold-deep (WCAG AA). */
+  --gold-deep:#e69500; --gold-ledge:#b87700; --gold-ink:#4a2f00;
   --blue:#009dff; --blue-dark:#0077c2;
   --red:#ef3e4a; --red-dark:#c02732;
   --green:#3ecf6f; --green-dark:#23a34c;
@@ -108,13 +114,22 @@ button{
 button:hover{filter:brightness(1.08);transform:translateY(-1px);}
 button:active{transform:translateY(4px);box-shadow:0 1px 0 var(--blue-dark), 0 3px 8px rgba(0,0,0,.3);}
 button:disabled{opacity:.4;cursor:not-allowed;transform:none;filter:grayscale(.4);}
-button.ghost{background:#486a73;box-shadow:0 5px 0 #33525b, 0 8px 16px rgba(0,0,0,.3), inset 0 2px 0 rgba(255,255,255,.25);}
-button.ghost:active{box-shadow:0 1px 0 #33525b, 0 3px 8px rgba(0,0,0,.3);}
+/* TASK 025: utility buttons are warm gold (the trim's own --gold),
+   deeper gold on hover/pressed, dark ink for legibility. A genuinely
+   disabled one (HINT off-turn) drops to a flat desaturated grey on
+   top of the shared disabled wash, so the disabled signal stays.
+   PASS is a .ghost in the markup but has always carried its own red
+   (#pass-btn below), so it is left exactly as it was. */
+button.ghost:not(#pass-btn){background:var(--gold);color:var(--gold-ink);box-shadow:0 5px 0 var(--gold-ledge), 0 8px 16px rgba(0,0,0,.3), inset 0 2px 0 rgba(255,255,255,.35);}
+button.ghost:not(#pass-btn):hover{background:var(--gold-deep);filter:none;}
+button.ghost:not(#pass-btn):active{background:var(--gold-deep);box-shadow:0 1px 0 var(--gold-ledge), 0 3px 8px rgba(0,0,0,.3);}
+button.ghost:not(#pass-btn):disabled{background:#6b777a;color:#e3e8ea;box-shadow:0 5px 0 #4b5558, 0 8px 16px rgba(0,0,0,.3);filter:grayscale(1);}
 button.danger{background:var(--red);box-shadow:0 5px 0 var(--red-dark), 0 8px 16px rgba(0,0,0,.3), inset 0 2px 0 rgba(255,255,255,.35);}
 button.small{padding:9px 14px;font-size:12.5px;border-radius:10px;}
-/* Sort toggle — plain word and arrow, white text, no badge or highlight */
-#sort-btn{color:#fff;}
-#sort-btn .sort-arrow{color:#fff;margin-left:5px;font-weight:900;}
+/* Sort toggle — plain word and arrow, no badge or highlight. TASK 025:
+   both take the gold button's dark ink (white on gold is 1.8:1). */
+#sort-btn{color:var(--gold-ink);}
+#sort-btn .sort-arrow{color:inherit;margin-left:5px;font-weight:900;}
 
 /* Scoreboard — Balatro sidebar boxes */
 .scores{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;}
