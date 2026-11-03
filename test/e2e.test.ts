@@ -1968,3 +1968,148 @@ test("utility buttons: genuine disabled states stay grey; primaries keep their c
     assert.ok(!/\bghost\b/.test(tag), `#${id} is not a ghost button`);
   }
 });
+
+test("e2e: round-over banner — subline, PLACE/PLAYER/TOTAL/ROUND columns, medals, attached penalty rows (TASK 032)", async () => {
+  await import("../src/main.js");
+  const SEATS = ["You", "Mina", "Kenji", "Rosa"];
+  const hasClass = (node: FakeElement, cls: string): boolean =>
+    (node.className ?? "").split(/\s+/).includes(cls);
+  const findDeep = (node: FakeElement, pred: (n: FakeElement) => boolean): FakeElement | undefined => {
+    if (pred(node)) return node;
+    for (const child of node.children) {
+      const hit = findDeep(child, pred);
+      if (hit) return hit;
+    }
+    return undefined;
+  };
+  // Play from wherever the game is until a round/match banner.
+  const driveToBanner = (): void => {
+    for (let steps = 0; steps < 20000; steps++) {
+      const phase = settle();
+      if (phase === "banner") return;
+      humanMove();
+    }
+    throw new Error("never reached a banner");
+  };
+  const dataRows = (): FakeElement[] => {
+    const table = $("banner-body").children.find((c) => c.tagName === "TABLE");
+    assert.ok(table, "the banner has a table");
+    return table.children.filter((c) => c.tagName === "TR");
+  };
+  const checkBanner = (round: number): { totals: number[] } => {
+    const body = $("banner-body");
+    // Subline: first child, naming the round just finished.
+    const sub = body.children[0];
+    assert.equal(sub.className, "roundsub");
+    assert.equal(sub.textContent, `ROUND ${round} · FIRST TO 13`);
+    // Header row: PLACE | PLAYER | TOTAL | ROUND (th text is
+    // title-case in the DOM; the shipped CSS uppercases it).
+    const table = body.children.find((c) => c.tagName === "TABLE");
+    assert.ok(table && hasClass(table, "sumtable"), "the summary table carries .sumtable");
+    const thead = table.children.find((c) => c.tagName === "THEAD");
+    assert.ok(thead, "the table has a header");
+    assert.deepEqual(
+      thead.children[0].children.map((c) => c.textContent),
+      ["Place", "Player", "Total", "Round"],
+    );
+    const rows = dataRows();
+    assert.equal(rows.length, 4, "one row per finisher");
+    const totals: number[] = [];
+    rows.forEach((tr, placeIdx) => {
+      const [placeCell, nameCell, totalCell, deltaCell] = tr.children;
+      const name = nameCell.textContent;
+      const seat = SEATS.indexOf(name);
+      assert.ok(seat >= 0, `row ${placeIdx} names a seat (got ${name})`);
+      if (placeIdx === 0 || placeIdx === 1) {
+        const medal = placeCell.children[0];
+        assert.ok(medal, `${name}: medal present in the PLACE cell`);
+        assert.equal(medal.className, placeIdx === 0 ? "medal gold" : "medal silver");
+        assert.equal(medal.textContent, `${placeIdx + 1}`);
+        assert.equal(medal.getAttribute("aria-label"), `Finished ${placeIdx === 0 ? "1st" : "2nd"}`);
+        assert.equal(medal.getAttribute("role"), "img");
+      } else {
+        assert.equal(placeCell.textContent, placeIdx === 2 ? "3rd" : "4th");
+        assert.equal(
+          findDeep(placeCell, (n) => hasClass(n, "medal")), undefined,
+          `${name}: no medal below 2nd`,
+        );
+      }
+      // TOTAL: the seat's match total with the muted /13 suffix,
+      // matching the scoreboard exactly.
+      const [numSpan, suffixSpan] = totalCell.children;
+      assert.equal(Number(numSpan.textContent), scoreValues()[seat], `${name}: total matches the scoreboard`);
+      assert.equal(suffixSpan.textContent, " /13");
+      assert.ok(hasClass(suffixSpan, "tsuffix"));
+      totals.push(Number(numSpan.textContent));
+      // ROUND: the signed gain, colored by sign.
+      assert.match(deltaCell.textContent, /^[+-]?\d+$/);
+      const delta = Number(deltaCell.textContent);
+      if (delta > 0) assert.ok(hasClass(deltaCell, "pos"), `${name}: positive gain is .pos`);
+      if (delta < 0) assert.ok(hasClass(deltaCell, "neg"), `${name}: negative gain is .neg`);
+    });
+    return { totals };
+  };
+
+  $("new-match-top").click();
+  driveToBanner();
+  const afterRound1 = checkBanner(1);
+  // Round 1: totals equal the gains by construction; the pinned
+  // distinction arrives at the round-2 banner.
+  $("continue-btn").click();
+  driveToBanner();
+  const afterRound2 = checkBanner(2);
+  const rows2 = dataRows();
+  const anyDifferent = rows2.some((tr) => {
+    const total = Number(tr.children[2].children[0].textContent);
+    const delta = Number(tr.children[3].textContent);
+    return total !== delta;
+  });
+  assert.ok(anyDifferent, "by round 2 the TOTAL column is visibly not the ROUND column");
+  assert.equal(afterRound2.totals.reduce((a, b) => a + b, 0), afterRound1.totals.reduce((a, b) => a + b, 0), "totals stay zero-sum across rounds");
+
+  // Penalty rows: play on until a banner carries one. The hunt
+  // drives the human PASSIVELY (pass whenever legal) — a passive
+  // player finishes holding cards, which is exactly how leftover
+  // 2s and unused bombs (the penalty causes) happen; hint-driven
+  // play sheds them and can go many rounds without one.
+  const passiveMove = (): void => {
+    // Pass only when facing a play: the leader's pass button is
+    // enabled but rejected, which would loop forever.
+    if (!$("pass-btn").disabled && $("to-beat").textContent.includes("To beat")) {
+      $("pass-btn").click();
+      return;
+    }
+    humanMove();
+  };
+  const driveToBannerPassive = (): void => {
+    for (let steps = 0; steps < 20000; steps++) {
+      const phase = settle();
+      if (phase === "banner") return;
+      passiveMove();
+    }
+    throw new Error("never reached a banner (passive)");
+  };
+  let attached = false;
+  for (let round = 3; round <= 14 && !attached; round++) {
+    if (isMatchEndBanner()) break;
+    $("continue-btn").click();
+    driveToBannerPassive();
+    const table = $("banner-body").children.find((c) => c.tagName === "TABLE");
+    assert.ok(table);
+    const kids = table.children;
+    for (let i = 0; i < kids.length; i++) {
+      if (!hasClass(kids[i], "penrowtr")) continue;
+      const cell = kids[i].children[0];
+      assert.equal(cell.getAttribute("colspan"), "4", "the note spans the table");
+      const note = cell.children[0];
+      assert.ok(hasClass(note, "penrow"), "the note keeps the penrow styling/animation hook");
+      const payer = /^Penalty: (\w+) pays? /.exec(note.textContent)?.[1];
+      assert.ok(payer, `note names its payer: ${note.textContent}`);
+      const above = kids[i - 1];
+      assert.ok(above && above.tagName === "TR" && !hasClass(above, "penrowtr"), "the note row follows a player row");
+      assert.equal(above.children[1].textContent, payer, "the note sits under its payer's row");
+      attached = true;
+    }
+  }
+  assert.ok(attached, "a penalty note row appeared and was verified attached under its payer");
+});
