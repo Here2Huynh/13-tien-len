@@ -1,9 +1,11 @@
 # TASK 031 — Persist match scores in local storage
 
-Status: ASSIGNED (builder) — Task 030 closed 2026-11-02; owner
-FR + pick locked 2026-11-02: SCORES ONLY, in local storage —
-survives refresh and tab close. Route: the Thirteen Builder
-chat (Switch #6).
+Status: ASSIGNED (verifier) — PR #30 open, branch
+task-031-score-persistence; built in the Builder chat (local
+commit eafa7d1, remote head e21f7f3: suite 105 -> 112, engine
+diff zero, persistent-context probe 14/14 claimed). Route: the
+Verifier chat (Switch #6).
+Checklist: tasks/VERIFY-031.md.
 Read `AGENTS.md` first; it governs how work flows in this repo.
 
 Owner's request, in his words: "Add game scoring caching into
