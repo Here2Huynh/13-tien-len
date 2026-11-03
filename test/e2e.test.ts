@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { inflateSync } from "node:zlib";
 import { createDeck, makeCard, type Card } from "../src/engine/cards.js";
 import { createTrickState, playCards, passTurn } from "../src/engine/trick.js";
 import { createMatch } from "../src/engine/match.js";
@@ -360,6 +362,18 @@ test("e2e: favicon links ship in the document head (TASK 020)", () => {
   }
 });
 
+// TASK 026 — the locked V4 icon set (card only, full frame, bigger
+// heart). Sizes and sha256 of the owner-approved masters.
+const LOCKED_ICONS: ReadonlyArray<{ file: string; bytes: number; sha256: string }> = [
+  { file: "favicon.svg", bytes: 773, sha256: "f44209786a4ec1fafc3e4d4bb6b4f16e223b1f172fe628bc7cd99108349cc680" },
+  { file: "favicon-32.png", bytes: 1230, sha256: "751a78224305f69c0cb7f9420d39b83dbecf3aa7a268e078a7705110d25a6e22" },
+  { file: "apple-touch-icon.png", bytes: 13120, sha256: "b4f224c45f452256edf50e09ae493b4271dfb44aa705692508d20035aeaef44c" },
+];
+
+function sha256Hex(data: Buffer): string {
+  return createHash("sha256").update(data).digest("hex");
+}
+
 test("e2e: build ships all three unchanged icon assets (TASK 020)", () => {
   const root = new URL("../../", import.meta.url);
   execFileSync(process.execPath, ["build.mjs"], { cwd: root, stdio: "inherit" });
@@ -367,6 +381,75 @@ test("e2e: build ships all three unchanged icon assets (TASK 020)", () => {
     const source = readFileSync(new URL(icon, root));
     assert.ok(source.length > 0, `${icon} must not be empty`);
     assert.deepEqual(readFileSync(new URL(`dist/${icon}`, root)), source);
+  }
+  // TASK 026: the dist copies are the locked V4 masters, byte for byte.
+  for (const { file, bytes, sha256 } of LOCKED_ICONS) {
+    const shipped = readFileSync(new URL(`dist/${file}`, root));
+    assert.equal(shipped.length, bytes, `dist/${file} size`);
+    assert.equal(sha256Hex(shipped), sha256, `dist/${file} sha256`);
+  }
+});
+
+test("e2e: icon sources are the locked V4 masters (TASK 026)", () => {
+  const root = new URL("../../", import.meta.url);
+  for (const { file, bytes, sha256 } of LOCKED_ICONS) {
+    const source = readFileSync(new URL(file, root));
+    assert.equal(source.length, bytes, `${file} size`);
+    assert.equal(sha256Hex(source), sha256, `${file} sha256`);
+  }
+  // favicon.svg is byte-identical to the SVG block printed in the task file.
+  const taskFile = readFileSync(new URL("tasks/TASK-026-favicon-v4.md", root), "utf8");
+  const block = taskFile.match(/```svg\n([\s\S]*?)\n```/)?.[1];
+  assert.ok(block, "task file must carry the locked SVG block");
+  assert.equal(readFileSync(new URL("favicon.svg", root), "utf8"), block);
+});
+
+test("e2e: shipped favicon.svg is card only — no tile, no gradient, transparent (TASK 026)", () => {
+  const svg = readFileSync(new URL("../../favicon.svg", import.meta.url), "utf8");
+  // No gradient anywhere (the Task 020 tile was a linearGradient fill).
+  assert.ok(!/gradient/i.test(svg), "no gradient element");
+  assert.ok(!svg.includes("url(#"), "no paint-server reference");
+  assert.ok(!svg.includes("<defs"), "no defs block");
+  // No tile rect: the only rect is the card face itself.
+  const rects = svg.match(/<rect\b[^>]*>/g) ?? [];
+  assert.equal(rects.length, 1, "exactly one rect — the card");
+  assert.ok(rects[0]?.includes('x="136" y="72" width="240" height="368"'), "the one rect is the card");
+  assert.ok(!/<rect\b[^>]*width="512"/.test(svg), "no full-canvas tile rect");
+  // Transparent background: the root <svg> paints nothing itself, and
+  // its first child is the card group (no backdrop drawn before it).
+  const rootTag = svg.match(/^<svg\b[^>]*>/)?.[0];
+  assert.ok(rootTag, "starts with the root svg tag");
+  assert.ok(!/\b(fill|style|background)\s*=/.test(rootTag), "root svg sets no fill/style/background");
+  assert.ok(svg.slice(rootTag.length).startsWith("<g "), "first child is the card group");
+  assert.ok(!/background/i.test(svg), "no background styling");
+  // V4: the card group is scaled 1.27 about the centre; big heart at 1.3.
+  assert.ok(svg.includes('transform="translate(256 256) scale(1.27) translate(-256 -256)"'));
+  assert.ok(svg.includes('transform="translate(238.0 275.0) scale(1.3)"'));
+});
+
+test("e2e: PNG icons are RGBA at their sizes with a transparent corner (TASK 026)", () => {
+  const root = new URL("../../", import.meta.url);
+  for (const [file, size] of [["favicon-32.png", 32], ["apple-touch-icon.png", 180]] as const) {
+    const png = readFileSync(new URL(file, root));
+    assert.deepEqual(png.subarray(0, 8), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), `${file} signature`);
+    assert.equal(png.toString("latin1", 12, 16), "IHDR");
+    assert.equal(png.readUInt32BE(16), size, `${file} width`);
+    assert.equal(png.readUInt32BE(20), size, `${file} height`);
+    assert.equal(png[24], 8, `${file} bit depth`);
+    assert.equal(png[25], 6, `${file} colour type RGBA`);
+    assert.equal(png[28], 0, `${file} not interlaced`);
+    // Gather IDAT data and inflate it. For pixel (0,0) every PNG filter
+    // predictor is zero, so its filtered bytes are the raw RGBA bytes.
+    const idat: Buffer[] = [];
+    for (let at = 8; at < png.length; ) {
+      const length = png.readUInt32BE(at);
+      const type = png.toString("latin1", at + 4, at + 8);
+      if (type === "IDAT") idat.push(png.subarray(at + 8, at + 8 + length));
+      at += 12 + length;
+    }
+    const raw = inflateSync(Buffer.concat(idat));
+    assert.equal(raw.length, size * (1 + size * 4), `${file} scanline data size`);
+    assert.equal(raw[4], 0, `${file} corner pixel is fully transparent`);
   }
 });
 
