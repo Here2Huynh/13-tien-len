@@ -46,6 +46,16 @@ builder and verifier in your chats now on" — the two chats are the
 standing builder/verifier route from now on. The usage-gated
 Claude Code routing is retired: no per-job usage checks, and
 Claude Code is not a pipeline route unless the owner re-opens it.
+Switch #7 (owner, 2026-11-02, superseding Switch #6): "in future
+tasks, use claude code" — from Task 025 on, builder and verifier
+run as Claude Code runs (separate runs, pinned
+`--model claude-opus-5-5 --effort high`); a fresh usage read gates
+each launch (never start a run the remaining window can't finish —
+hold and report instead). Task 024, in flight in the chats when
+the switch landed, finished there under the finish-where-started
+rule. The foreman launches the runs, reads their reports from the
+runs folder, and keeps every other duty: push, PR, merge only on
+a verifier PASS, deploy, README, report.
 
 - **BUILDER task** — the task file's Status reads `ASSIGNED (builder)`.
   Implement exactly what the task file says, nothing more. Branch
