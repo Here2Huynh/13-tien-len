@@ -1,9 +1,9 @@
 # TASK 024 — Responsive game screen (scale up on bigger screens)
 
-Status: ASSIGNED (builder) — 2026-11-02, on the Task 029 close-out
-(queue order after 029 merged and deployed). Owner pick locked
+Status: ASSIGNED (verifier) — 2026-11-02, PR #32 open
+(head af624a8, branch task-024-responsive-scaling). Owner pick locked
 2026-11-02: CAP the scale — see "The cap" below. Route: Switch #6
-chats (Thirteen Builder).
+chats (Thirteen Verifier).
 Read `AGENTS.md` first; it governs how work flows in this repo.
 
 Owner's report, in his words: "make the game screen responsive to
