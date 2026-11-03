@@ -1,6 +1,6 @@
 # TASK 029 — Medals for 1st and 2nd place (scoreboard badges)
 
-Status: ASSIGNED (builder) — Task 031 closed 2026-11-02; owner pick locked 2026-11-01: top two only. Route: the Builder chat (Switch #6). Branch `task-029-medals-top-two` off main; commit locally, do not push, report in the Builder chat. Use the ui-ux-pro-max skill for this UI work per standing instruction.
+Status: ASSIGNED (verifier) — built by the Builder chat (local commit 4b1eebb; pushed head f7af247), PR #31: https://github.com/Here2Huynh/13-tien-len/pull/31. Verify against `tasks/VERIFY-029.md`. Owner pick locked 2026-11-01: top two only. Route: Switch #6 chats.
 Read `AGENTS.md` first; it governs how work flows in this repo.
 
 Owner's report, with screenshot: the scoreboard's green finish
