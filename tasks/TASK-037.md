@@ -1,7 +1,8 @@
 # TASK-037: Phone one-screen layout — V3 "Compact everything"
 
-Status: ASSIGNED (builder) — TASK-036 merged 2026-11-04; this
-layout work sits on the split src/dom/ structure. Suite baseline: 122.
+Status: ASSIGNED (builder — fit fix round) — **John ruled A+B on
+2026-11-04** (see "Fit ruling" below); the fix applies on top of
+the first build (commit e8858fc). Suite baseline: 122.
 Source: Task 035 audit finding #2. Mockups produced 2026-11-04
 (~/workspace/13tl-mockups-phone/, measured at 360×640 on the real
 game); **John picked V3 on 2026-11-04 and picked the closer trade:
@@ -86,3 +87,25 @@ final DOM's game content are identical with the layout on or off.
 - The ☰ menu's three actions demonstrably work in the probe
   (open How to Play, open Bomb Odds, and New Match starts a
   fresh match).
+
+## Fit ruling (John, 2026-11-04) — A+B
+
+The first build (e8858fc) hit the STOP case above: with the
+207px pile kept, the reference state's action row ends at 721.
+John picked **A+B** from the builder's probe-measured options:
+
+- **A:** at ≤520px the pile height is **144px** (Task 015's
+  formula without the dropped "Before that:" line; still fixed,
+  still worst-case-sized). The locked-scope line "the pile keeps
+  the shipped fixed height" is amended to this value at ≤520px;
+  the fixed-height PRINCIPLE is unchanged.
+- **B:** the action row goes on **one line** at ≤520px (12.5px
+  type, 6px side padding, 4px gaps), every button staying
+  ≥44×44 (PASS is 44 wide — the floor).
+- Expected result (probe-measured): reference AND worst-case
+  states fit fully, action-row bottom 607. Round start still
+  overflows (3-row 13-card hand) — accepted as reported.
+- The CSS pin asserting "no .pile sizing in the phone block"
+  updates to pin the 144px value instead.
+- The ☰ MENU button stays 33px tall (John was offered the
+  spare-room raise to 44px and did not take it).
