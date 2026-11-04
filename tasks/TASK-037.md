@@ -1,7 +1,7 @@
 # TASK-037: Phone one-screen layout — V3 "Compact everything"
 
-Status: QUEUED (builds after TASK-036 merges — this layout work
-sits on the split src/dom/ structure). Suite baseline: 122.
+Status: ASSIGNED (builder) — TASK-036 merged 2026-11-04; this
+layout work sits on the split src/dom/ structure. Suite baseline: 122.
 Source: Task 035 audit finding #2. Mockups produced 2026-11-04
 (~/workspace/13tl-mockups-phone/, measured at 360×640 on the real
 game); **John picked V3 on 2026-11-04 and picked the closer trade:

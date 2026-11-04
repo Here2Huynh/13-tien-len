@@ -84,6 +84,8 @@ completion.
 | 032 | Round-over banner — labeled PLACE / PLAYER / TOTAL / ROUND columns + medals | #35 | ✅ Merged · Live |
 | 033 | Instant-win celebration beat — dedicated INSTANT WIN! beat before the banner, stretched banner timings | #36 | ✅ Merged · Live |
 | 034 | Bomb foil goes golden — rainbow sheen replaced with the owner-approved golds-only gradient (V1) | #37 | ✅ Merged · Live |
+| 035 | Full codebase + UI/UX audit (report only) — 29 findings, no rule defects; owner walk-through picked the fix batch | — | ✅ Complete |
+| 036 | Split src/main.ts into src/dom/ modules; explicit roundId/trickId replace object-identity checks (structure only, zero behavior change) | #38 | ✅ Merged · Live |
 
 ## Play
 

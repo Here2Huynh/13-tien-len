@@ -1,6 +1,7 @@
 # TASK-036: Split src/main.ts — structure refactor, zero behavior change
 
-Status: IN VERIFICATION (PR #38) — filed 2026-11-04. Suite baseline: 122.
+Status: COMPLETE — PR #38, merged 64cdaa7, deployment
+bd86aaf3-b2ce-4bbc-9bfc-4f44badf0b60. Suite 122 → 122.
 Source: Task 035 audit finding #17, picked by John 2026-11-04
 ("Build #17 — split main.ts now", over the foreman's defer
 recommendation). Sequenced FIRST among the audit-batch code tasks
