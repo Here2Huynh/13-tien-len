@@ -109,3 +109,10 @@ John picked **A+B** from the builder's probe-measured options:
   updates to pin the 144px value instead.
 - The ☰ MENU button stays 33px tall (John was offered the
   spare-room raise to 44px and did not take it).
+
+- **Spacing note (John, 2026-11-04, with the A+B pick):** in the
+  ≤520 layout, spacing and padding on all buttons and cards must
+  be even and matching — one shared gap/padding rhythm across
+  the action row, hand cards (both axes), strip cells, and
+  panels; the mockups looked "kind of off" to him. The fit
+  numbers (action row ≤640, buttons ≥44×44) still hold.
