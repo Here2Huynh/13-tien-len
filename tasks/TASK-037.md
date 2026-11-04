@@ -1,8 +1,11 @@
 # TASK-037: Phone one-screen layout — V3 "Compact everything"
 
-Status: ASSIGNED (builder — fit fix round) — **John ruled A+B on
-2026-11-04** (see "Fit ruling" below); the fix applies on top of
-the first build (commit e8858fc). Suite baseline: 122.
+Status: ASSIGNED (verifier) — PR #39, head 8c90225; checklist
+tasks/VERIFY-037.md. **John ruled A+B on 2026-11-04** (see "Fit
+ruling" below) and approved letter-spacing .2px; the fix landed
+on top of the first build (local commits e8858fc + 709e948) —
+measured fit: reference + worst-case action bottom 604, round
+start 695 (accepted overflow); suite 125/125 at pickup.
 Source: Task 035 audit finding #2. Mockups produced 2026-11-04
 (~/workspace/13tl-mockups-phone/, measured at 360×640 on the real
 game); **John picked V3 on 2026-11-04 and picked the closer trade:
