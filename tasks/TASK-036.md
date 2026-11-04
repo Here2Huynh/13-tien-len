@@ -1,6 +1,6 @@
 # TASK-036: Split src/main.ts — structure refactor, zero behavior change
 
-Status: ASSIGNED (builder) — filed 2026-11-04. Suite baseline: 122.
+Status: IN VERIFICATION (PR #38) — filed 2026-11-04. Suite baseline: 122.
 Source: Task 035 audit finding #17, picked by John 2026-11-04
 ("Build #17 — split main.ts now", over the foreman's defer
 recommendation). Sequenced FIRST among the audit-batch code tasks
@@ -68,3 +68,46 @@ once-only celebration beat.
   pixel-level, not eyeballed.
 - The build report states the new module map, what each module
   owns, and where roundId/trickId are produced and consumed.
+
+## VERIFY-036 — independent verification of PR #38, head `f30fc08`
+
+Tested head is the PUSHED head `f30fc08` (contents identical to the
+builder's local `a2a7560` — the API push re-created the commit).
+Reconstruct `src/`/`test/` from the PR diff before testing. The
+builder's evidence lives in ~/workspace/13tl-traces-036/ — re-derive
+spot checks from it, don't just read its outputs.
+
+1. **Suite and build, by your own run.** `npm test` (122+ expected)
+   and `npm run build` in a fresh reconstruction of the PR head;
+   report exact counts. Zero `any` in src/test; tsconfig strict
+   untouched; the styles.css diff is exactly the one added rule.
+2. **The split is real.** main.ts is composition-sized; the new
+   modules own what the map claims; no import cycles (type-only
+   imports don't count); no leftover dead code from the move
+   (search for functions defined but never called in the moved
+   code).
+3. **Identity.** roundId/trickId exist on the controller state,
+   increment where claimed (deal; trick clear), and every consumer
+   the report lists actually keys off them. Grep the adapter for
+   remaining object-identity round/trick checks — the only
+   survivors should be the disclosed ones (match-object float key,
+   DOM-node comparisons). Any undisclosed survivor fails here.
+4. **Equivalence, spot-re-derived.** Run the builder's
+   controller-level equivalence (or your own equivalent) on at
+   least 3 seeds INCLUDING 38, and one page-level seed if the
+   harness runs for you; confirm identical emits/logs/final scores.
+   Optionally re-run one negative control to confirm the harness
+   still bites.
+5. **Probe states.** Re-run or independently pixel-compare at
+   least 4 key states (start, seed-38 bombhot, an instant-win
+   beat, a banner) base vs PR head; computed opacity of the
+   "Before that" line is 0.65 on the PR build with no inline style.
+6. **Disclosures.** All 10 build-report disclosures check out
+   against the actual diff — in particular: no assertion changed
+   meaning (read every test hunk), the fixture freshIds() values
+   can't collide with real controller IDs, and nothing from
+   another audit finding crept in.
+
+PASS requires 1–6. Zero behavior difference is the bar: any
+observable divergence you can reproduce is a FAIL with the state
+and seed named.
