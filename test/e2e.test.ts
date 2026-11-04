@@ -756,7 +756,17 @@ test("e2e: the pile shows a muted 'Before that' line for the play the current on
   }
   assert.ok(seen, "a 'Before that' line should appear once plays chain in a trick");
   assert.match(seen.textContent, /^Before that: (You|Mina|Kenji|Rosa) — /);
-  assert.equal(seen.style.opacity, ".65");
+  // TASK 036: the muting moved from an inline style into CSS with
+  // the identical value — the line carries the rule's class, no
+  // inline opacity, and the rule sets exactly .65.
+  assert.ok(seen.className.split(/\s+/).includes("prior"), "the Before-that line carries the muted class");
+  assert.equal(seen.style.opacity, undefined, "no inline opacity remains");
+  const pileCss = readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "");
+  const muted = [...pileCss.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .find((m) => m[1].trim() === ".pile .leadline.prior");
+  assert.ok(muted, "the .pile .leadline.prior rule exists");
+  assert.equal(muted[2], "opacity:.65;");
 });
 
 // --- Drag-to-rearrange (TASK 010) -------------------------------------
@@ -1036,6 +1046,16 @@ test("e2e: lockout grey — a CPU lockout pass greys the seat until the round en
   }
 });
 
+// TASK 036: a ControllerState carries the controller's explicit
+// round/trick identity. Each synthetic fixture below is a freshly
+// dealt round (before TASK 036 that was signalled by its new trick
+// object), so it mints ids no controller-driven state ever uses.
+let fixtureIdSeq = 1_000_000;
+function freshIds(): { roundId: number; trickId: number } {
+  fixtureIdSeq += 1;
+  return { roundId: fixtureIdSeq, trickId: fixtureIdSeq };
+}
+
 test("e2e: LOCKED stamp plays once per lockout — stampplay only on the newly-locked render (TASK 028)", async () => {
   const { render } = await import("../src/main.js");
   // A trick where Mina (seat 1) has just passed: the human leads
@@ -1051,7 +1071,7 @@ test("e2e: LOCKED stamp plays once per lockout — stampplay only on the newly-l
     playCards(trick, 0, [makeCard("3", "spades")]);
     passTurn(trick, 1);
     return { phase: "playing", match: createMatch(), trick, message: "", log: [],
-      trickView: emptyTrickView(), roundSummary: null };
+      trickView: emptyTrickView(), roundSummary: null, ...freshIds() };
   };
   const seatClasses = (): string[] => $("seat-1").className.split(/\s+/);
 
@@ -1302,7 +1322,7 @@ function bombFixture(hand: Card[], target: Card[], leader = 3): ControllerState 
   const trick = createTrickState(hands, { leader, openingLead: false });
   if (target.length) playCards(trick, leader, target);
   return { phase: "playing", match: createMatch(), trick, message: "", log: [],
-    trickView: emptyTrickView(), roundSummary: null };
+    trickView: emptyTrickView(), roundSummary: null, ...freshIds() };
 }
 
 async function assertFlicker(state: ControllerState, expected: Card[]): Promise<void> {
@@ -1343,7 +1363,7 @@ function bombOnBombFixture(hand: Card[], bomb: Card[]): ControllerState {
   playCards(trick, 2, [makeCard("2", "spades")]);
   playCards(trick, 3, bomb);
   return { phase: "playing", match: createMatch(), trick, message: "", log: [],
-    trickView: emptyTrickView(), roundSummary: null };
+    trickView: emptyTrickView(), roundSummary: null, ...freshIds() };
 }
 
 test("e2e: playable bomb flicker vs a bomb — only the bombs that answer it (TASK 021)", async () => {
@@ -1864,9 +1884,12 @@ test("e2e: responsive stage zoom — capped factor, phone floor, compensated mot
   // The two in-stage rect->translate conversions divide by the
   // factor (the fx layer lives outside the stage in client
   // space and needs none).
-  const src = readFileSync(new URL("../../src/main.ts", import.meta.url), "utf8");
-  assert.match(src, /\(src\.left - dst\.left\) \/ stageScale\(\)/, "pile-mini FLIP compensates");
-  assert.match(src, /\(dragState\.x - dragState\.startX\) \/ stageScale\(\)/, "drag tracking compensates");
+  // (TASK 036: the two conversions now live in src/dom/fx.ts and
+  // src/dom/hand.ts, split out of src/main.ts.)
+  const fxSrc = readFileSync(new URL("../../src/dom/fx.ts", import.meta.url), "utf8");
+  const handSrc = readFileSync(new URL("../../src/dom/hand.ts", import.meta.url), "utf8");
+  assert.match(fxSrc, /\(src\.left - dst\.left\) \/ stageScale\(\)/, "pile-mini FLIP compensates");
+  assert.match(handSrc, /\(dragState\.x - dragState\.startX\) \/ stageScale\(\)/, "drag tracking compensates");
 });
 
 // TASK 025 helpers: parse the shipped CSS into rules (comments
@@ -2315,6 +2338,7 @@ test("e2e: instant-win celebration beat — withheld banner, skip, no replay, ti
     /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.iwbeat-card[^{}]*\{animation:none !important;/,
     "reduced motion stills the beat (text shows statically, timer still hands off)",
   );
-  const mainTs = readFileSync(new URL("../../src/main.ts", import.meta.url), "utf8");
-  assert.match(mainTs, /const BEAT_MS = 2800;/, "the beat's total duration is ~2.8s");
+  // (TASK 036: the beat moved from src/main.ts to src/dom/banner.ts.)
+  const bannerTs = readFileSync(new URL("../../src/dom/banner.ts", import.meta.url), "utf8");
+  assert.match(bannerTs, /const BEAT_MS = 2800;/, "the beat's total duration is ~2.8s");
 });

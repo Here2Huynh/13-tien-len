@@ -56,6 +56,17 @@ export interface ControllerState {
   log: string[];
   trickView: TrickView;
   roundSummary: RoundSummary | null;
+  /** Explicit round identity (TASK 036): 0 before the first deal,
+      +1 at every deal (instant-win rounds included), never reset —
+      monotonic across matches for the controller's lifetime. The
+      page keys per-round presentation (deal animation, drag order,
+      the once-only instant-win beat) off this, never off the
+      identity of the trick or summary objects. */
+  roundId: number;
+  /** Explicit trick identity (TASK 036): 0 before the first deal,
+      +1 at every deal and every time an action clears the trick
+      (exactly when the engine's trickNumber moves), never reset. */
+  trickId: number;
 }
 
 export interface ControllerOptions {
@@ -105,6 +116,8 @@ export function createController(options: ControllerOptions = {}): Controller {
     log: [],
     trickView: emptyTrickView(),
     roundSummary: null,
+    roundId: 0,
+    trickId: 0,
   };
 
   let cpuPending = false;
@@ -118,6 +131,9 @@ export function createController(options: ControllerOptions = {}): Controller {
   }
 
   function startRoundInternal(): void {
+    // A deal is a new round and a new trick context (TASK 036).
+    state.roundId += 1;
+    state.trickId += 1;
     state.trickView = emptyTrickView();
     state.roundSummary = null;
     state.message = "";
@@ -212,7 +228,9 @@ export function createController(options: ControllerOptions = {}): Controller {
       log(`${name(player)} passes — locked out.`);
     }
     if (trick.trickNumber !== trickNumberBefore) {
-      // The action cleared the trick; the new trick starts blank.
+      // The action cleared the trick; the new trick starts blank
+      // under a new trick identity (TASK 036).
+      state.trickId += 1;
       state.trickView = emptyTrickView();
     } else if (action.type === "play") {
       state.trickView = applyToTrickView(state.trickView, {
