@@ -1,6 +1,6 @@
 # TASK-034: Bomb foil — rainbow sheen becomes golden foil (V1)
 
-Status: ASSIGNED (builder) — filed 2026-11-04; John's pick locked (V1 "Golden foil", see below). Suite baseline: 121.
+Status: ASSIGNED (verifier) — built by a Claude Code builder run (Switch #9; local commit 7147702, branch pushed as f9db7a2), foreman re-run 122/122 + build clean; PR #37 open; VERIFY-034 below.
 
 ## Owner feedback
 
@@ -80,3 +80,42 @@ Everything else about the treatment is unchanged:
   or holds with pin updates only — count never drops, no weakened
   assertions.
 - Full suite + build green; zero `any` in src/ and test/.
+
+## VERIFY-034 (verifier: independent fresh clone of PR #37 head f9db7a2)
+
+1. In a fresh clone of head f9db7a2: `npm test` reports the FULL
+   suite (122 tests, 0 failures) and `npm run build` exits 0.
+   Re-derive the expected diff vs main yourself — exactly 2 files
+   (src/styles.css, test/e2e.test.ts) — and confirm engine and
+   markup diffs are zero and the styles diff contains nothing but
+   the gradient + comment hunks.
+2. The shipped gradient IS John's approved V1, value for value:
+   the `.hand .card.bombhot::after` background in the built CSS
+   equals the gradient printed in this task file; a computed-style
+   probe read finds NO pink/blue stop (every non-transparent stop
+   has r ≥ g ≥ b), and the old rainbow values
+   (255,120,200 / 120,220,255 / 255,235,150) appear nowhere in the
+   stylesheet.
+3. Nothing else about the treatment moved: `@keyframes foil`, the
+   1.6s sweep timing and `inset:-40%` geometry, the gold ring +
+   `bombglow`, the `bombflicker` slots, `.bombhot.sel`, the
+   reduced-motion rules, and ALL button rules are byte-identical
+   to main (show the evidence from the diff or targeted greps).
+   The word "holographic" no longer appears in styles.css.
+4. Live behavior on the built dist (Option C probe): reach a
+   .bombhot state (seed-38 comeback replay: START, human passes
+   once; four 4s bombhot against Rosa's played 2) and capture a
+   GIF or frame sequence showing the GOLD band sweeping the bomb
+   cards; the ring/glow pulse still runs; judge Disclosure 3
+   explicitly — at the band's peak the small top-left rank index
+   fades for about one frame: state whether faces remain
+   "readable" in the sense of the approved mockup (John approved
+   these exact values on the animated mockup), and give your
+   reasoning either way. A full autopilot match completes.
+5. Rules untouched: no engine edit exists to check beyond item 1;
+   confirm the new test is a pure addition (suite 121 → 122, no
+   existing assertion changed — diff the test file).
+
+Verdict format: post the verdict as a PR #37 comment ("PASS —
+VERIFY-034" or "FAIL — VERIFY-034", items 1–5 marked) AND write
+the same verdict to ~/workspace/13tl-runs/034/VERIFY-REPORT.md.
