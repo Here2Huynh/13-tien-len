@@ -240,6 +240,7 @@ button.small{padding:9px 14px;font-size:12.5px;border-radius:10px;}
 .pile .empty{color:#eaf7ef;font-size:17px;font-weight:800;}
 .pile .leadline{font-size:14.5px;font-weight:700;color:#cfe6da;line-height:1.25;}
 .pile .leadline b{color:#fff;}
+.pile .leadline.prior{opacity:.65;}
 /* The minicards row never wraps (TASK 015): minis overlap in a fan
    inside the pile only, so any play — up to the 12-card dragon
    straight — is exactly one row tall and fits the pile's width
