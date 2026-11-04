@@ -1,6 +1,6 @@
 # TASK-034: Bomb foil — rainbow sheen becomes golden foil (V1)
 
-Status: ASSIGNED (verifier) — built by a Claude Code builder run (Switch #9; local commit 7147702, branch pushed as f9db7a2), foreman re-run 122/122 + build clean; PR #37 open; VERIFY-034 below.
+Status: COMPLETE — PR #37 merged (8f80ab6), deployed d992814f-2d45-4ea1-9660-d474f373906f, live-verified 2026-11-04. Suite 121 → 122. Built + verified by Claude Code runs under Switch #9 routing; verifier PASS comment 6627597804 (all 5 items on head f9db7a2; Disclosure 3 judged readable in the approved-mockup sense — the shipped render is pixel-identical to the mockup the owner approved).
 
 ## Owner feedback
 
