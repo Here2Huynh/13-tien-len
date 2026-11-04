@@ -1423,6 +1423,51 @@ test("e2e: flicker leaves the same hand DOM and state under reduced motion", asy
   assert.ok(!/transform|box-shadow/.test(keyframes), "flicker leaves lift and foil geometry alone");
 });
 
+test("bomb foil: golden band, sweep and ring unchanged (TASK 034)", () => {
+  const rawCss = readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8");
+  // Strip comments before parsing rules: a comment above a rule would
+  // otherwise be captured as part of its selector text.
+  const css = rawCss.replace(/\/\*[\s\S]*?\*\//g, "");
+  const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .map((m) => ({ selector: m[1].trim(), body: m[2] }));
+  const foil = rules.find((r) => r.selector === ".hand .card.bombhot::after")!;
+  assert.ok(foil, ".hand .card.bombhot::after rule exists");
+  // The owner-approved V1 gradient, value for value: golds only,
+  // wide band, pale white-gold peak.
+  assert.ok(
+    foil.body.includes(
+      "background:linear-gradient(115deg, transparent 24%, rgba(184,119,0,.35) 37%, rgba(255,178,35,.72) 47%, rgba(255,246,200,.95) 54%, rgba(255,178,35,.72) 61%, rgba(184,119,0,.35) 70%, transparent 82%);",
+    ),
+    "the foil is the approved golden gradient",
+  );
+  // No rainbow stop survives: every rgba() in the foil is a gold.
+  const stops = [...foil.body.matchAll(/rgba\((\d+),(\d+),(\d+),[^)]*\)/g)]
+    .map((m) => [Number(m[1]), Number(m[2]), Number(m[3])]);
+  assert.equal(stops.length, 5);
+  for (const [r, g, b] of stops) {
+    assert.ok(r >= g && g >= b, `rgb(${r},${g},${b}) is a gold (r >= g >= b), not pink or blue`);
+  }
+  // Frozen: geometry, sweep animation, and its keyframes.
+  assert.match(foil.body, /content:"";position:absolute;inset:-40%;/);
+  assert.match(foil.body, /animation:foil 1\.6s ease-in-out infinite;/);
+  assert.match(foil.body, /pointer-events:none;/);
+  assert.match(
+    rawCss,
+    /@keyframes foil\{ 0%\{transform:translateX\(-55%\) rotate\(0\.001deg\);\} 55%\{transform:translateX\(45%\) rotate\(0\.001deg\);\} 100%\{transform:translateX\(45%\) rotate\(0\.001deg\);\} \}/,
+  );
+  // Frozen: the gold ring + glow and the animation slots.
+  const hot = rules.find((r) => r.selector === ".hand .card.bombhot")!;
+  assert.ok(hot, ".hand .card.bombhot rule exists");
+  assert.match(hot.body, /box-shadow:0 8px 16px rgba\(5,20,15,\.4\), 0 0 0 3px var\(--gold\), 0 0 22px rgba\(255,178,35,\.65\);/);
+  assert.match(hot.body, /animation:bombglow 1\.1s ease-in-out infinite alternate;/);
+  const both = rules.find((r) => r.selector === ".hand .card.bombhot.bombplayable")!;
+  assert.ok(both, ".hand .card.bombhot.bombplayable rule exists");
+  assert.equal(both.body, "animation:bombglow 1.1s ease-in-out infinite alternate, bombflicker 1.2s ease-in-out infinite;");
+  // The comment above the foil describes the gold, not a rainbow.
+  assert.ok(!/holographic/i.test(rawCss), "no stale holographic-sheen comment");
+  assert.match(rawCss, /\/\* Foil treatment for live jump-back bombs — golden foil/);
+});
+
 test("hand motion: shared transition and selected pose wins hover", () => {
   const css = readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8");
   const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
