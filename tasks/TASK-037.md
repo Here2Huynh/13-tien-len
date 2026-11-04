@@ -116,3 +116,10 @@ John picked **A+B** from the builder's probe-measured options:
   the action row, hand cards (both axes), strip cells, and
   panels; the mockups looked "kind of off" to him. The fit
   numbers (action row ≤640, buttons ≥44×44) still hold.
+
+- **Letter-spacing completion (John, 2026-11-04):** the A+B fix
+  as written landed at 655 — the original 607 measurement had
+  used a fourth value the report/ruling text omitted. John
+  approved adding it: phone action-row buttons get
+  `letter-spacing:.2px` (base is .4px), reproducing the approved
+  mockup exactly (one row, bottom 607, PASS 44 wide).
