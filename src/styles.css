@@ -131,6 +131,12 @@ button.small{padding:9px 14px;font-size:12.5px;border-radius:10px;}
    both take the gold button's dark ink (white on gold is 1.8:1). */
 #sort-btn{color:var(--gold-ink);}
 #sort-btn .sort-arrow{color:inherit;margin-left:5px;font-weight:900;}
+/* Phone header menu (TASK 037): above the phone breakpoint the ☰
+   button is not rendered and the panel is layout-transparent
+   (display:contents), so How to play / Bomb odds / New match stay
+   flex items of the match bar exactly as before. */
+#menu-btn{display:none;}
+.menu-panel{display:contents;}
 
 /* Scoreboard — Balatro sidebar boxes */
 .scores{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;}
@@ -585,4 +591,98 @@ tr.winline td:first-child{color:var(--gold-bright);}
   h1{text-shadow:2px 2px 0 var(--red), -1.5px -1.5px 0 var(--blue), 0 5px 10px rgba(0,0,0,.4);}
   .handzone{padding:11px 6px 9px;}
   .hand{gap:6px;}
+}
+
+/* Phone one-screen layout (TASK 037) — V3 "Compact everything",
+   John's pick 2026-11-04, layered on the <=640px rules above. Goal at
+   360x640: the play to beat, the whole hand, and the action row in
+   one screen during a normal turn. Presentation only: the DOM is the
+   same at every width; these rules only restyle it.
+   - Slim one-row header: "13" + Round N + the ☰ MENU button; How to
+     play / Bomb odds / New match live in the menu panel (menu.ts).
+   - The 2x2 scoreboard becomes a one-row strip of four single-line
+     cells, "YOU 0 · 8": name, score, cards left. The turn gold and
+     finished dimming are the base .score rules, unchanged; PASSED /
+     place pills and the 1st/2nd medals hang as a tab on the cell's
+     bottom edge. The 0-13 progress bar is not shown in the strip.
+   - Slimmer CPU seats, tighter table and hand paddings, ~42px hand
+     cards, the hand hint line hidden (as in the approved mockup).
+   - The "Before that:" line is not rendered here (John's closer
+     trade); desktop keeps it.
+   - The pile is 144px here (fit ruling A+B, John 2026-11-04):
+     Task 015's fixed-height formula minus the dropped Before
+     line; the <=640 band above keeps the shipped 207px.
+   - Fit fix (A+B + John's spacing pass, 2026-11-04): the action
+     row is one line — 12.5px type, 6px side padding, 4px gaps,
+     and letter-spacing .2px (base button tracking is .4px; the
+     .2px is the value the approved A+B measurement was taken
+     with). One spacing rhythm: 4px gaps (strip, hand cards,
+     action row) and even 6px panel paddings (hand panel, table,
+     strip cells — the hand panel's sides stay 6px, not 8px, so
+     the one-line action row keeps its width).
+   - Action buttons keep >=44px tall targets (audit #12). */
+@media (max-width:520px){
+  .wrap{padding:10px 10px 48px;}
+  header.top{flex-wrap:nowrap;gap:8px;padding:6px 12px;margin-bottom:8px;border-radius:16px;position:relative;}
+  h1{font-size:25px;}
+  h1 .sub{display:none;}
+  .matchbar{flex-wrap:nowrap;gap:6px;margin-left:auto;}
+  .chip{padding:6px 10px;font-size:13px;}
+  .chip.gold{display:none;}
+  #menu-btn{display:inline-block;}
+  .menu-panel{display:none;}
+  #menu-btn[aria-expanded="true"] + .menu-panel{
+    display:flex;flex-direction:column;gap:12px;
+    position:absolute;top:calc(100% + 6px);right:0;z-index:40;min-width:200px;
+    background:var(--teal-panel);border:2px solid var(--outline);border-radius:16px;
+    box-shadow:var(--shadow), inset 0 2px 0 rgba(255,255,255,.14);
+    padding:12px 12px 17px;
+  }
+  .menu-panel button{min-height:44px;font-size:13.5px;}
+
+  /* One row of four cells, each sized from its content (a two-digit
+     count or score widens its own cell, not every cell). */
+  .scores{display:flex;gap:4px;margin-bottom:10px;}
+  .score{flex:1 1 auto;min-width:0;display:flex;align-items:baseline;justify-content:center;gap:2px;padding:6px;border-radius:11px;overflow:visible;white-space:nowrap;}
+  .score::before{width:5px;border-radius:9px 0 0 9px;}
+  .score .nm{display:contents;font-size:9.5px;letter-spacing:0;}
+  .score .nm > span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;}
+  .score .pts{flex:none;font-size:15px;margin-top:0;text-shadow:0 2px 0 rgba(0,0,0,.3);}
+  .score .meta{display:none;}
+  .score .meta.live{display:block;flex:none;font-size:11px;font-weight:800;margin-top:0;}
+  .score .meta.live::before{content:"· " / "";}
+  .score .meta .u{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);}
+  .score .bar{display:none;}
+  .score .badge{position:absolute;left:50%;bottom:-8px;transform:translateX(-50%);z-index:1;font-size:8px;line-height:1.25;letter-spacing:.5px;padding:1px 6px;}
+  .score .medal{position:absolute;left:50%;bottom:-9px;margin-left:-8px;z-index:1;width:16px;height:16px;font-size:9px;}
+
+  .table{padding:6px;}
+  .tablegrid{grid-template-columns:56px 1fr 56px;gap:5px;}
+  .opp{padding:5px 1px 4px;border-radius:11px;}
+  .opp .who{font-size:9.5px;}
+  .opp .status{font-size:10.5px;}
+  .seat.side .back{width:16px;height:24px;margin-top:-15px;}
+  .seat.side .back:first-child{margin-top:0;}
+  .back{width:18px;height:27px;margin-left:-11px;}
+  .backs{min-height:28px;}
+  /* The top seat reads on one line: "Kenji · 7 cards · Passed this
+     trick" — the status sits inline after the name instead of on
+     its own reserved line (the narrow side seats keep the stack). */
+  .seat.top .opp .who, .seat.top .opp .status{display:inline;}
+  .seat.top .opp .status:not(:empty)::before{content:" · " / "";}
+  .seat.top .backs{margin-top:4px;}
+  .pile{height:144px;}
+  .pile .prior{display:none;}
+  .turnbanner{font-size:13.5px;margin-top:4px;min-height:19px;}
+
+  .handzone{padding:6px;margin-top:0;border-radius:15px;}
+  .handlabel{margin-bottom:4px;}
+  .handlabel .hintline{display:none;}
+  .hand{padding-top:8px;gap:4px;min-height:0;}
+  .hand .card{width:42px;height:60px;}
+  .hand .card .r{font-size:12px;}
+  .hand .card .big{font-size:22px;}
+  .selinfo{font-size:13.5px;min-height:18px;margin-top:6px;}
+  .controls{margin-top:6px;gap:4px;}
+  .controls button{min-height:44px;padding:6px 6px;font-size:12.5px;letter-spacing:.2px;}
 }

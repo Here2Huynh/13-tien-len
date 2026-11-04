@@ -14,6 +14,7 @@ import {
   toggleSort,
 } from "./dom/hand.js";
 import { renderBanner, setBannerHost } from "./dom/banner.js";
+import { wireMenu } from "./dom/menu.js";
 
 export { stageScale } from "./dom/fx.js";
 
@@ -28,6 +29,7 @@ export { stageScale } from "./dom/fx.js";
 //   pile.ts      the center pile and its play tracking
 //   hand.ts      hand rendering, selection, Sort, drag order
 //   banner.ts    round/match summaries + the instant-win beat
+//   menu.ts      the phone header menu (TASK 037)
 // — and this file creates the controller, owns the render pass (in
 // the original order), and wires the buttons and overlays.
 
@@ -154,6 +156,10 @@ els.oddsClose.addEventListener("click", () => setOdds(false));
 els.oddsOverlay.addEventListener("click", (event) => {
   if (event.target === els.oddsOverlay) setOdds(false);
 });
+
+// Phone header menu (TASK 037): holds the three header buttons
+// above at the phone breakpoint; their handlers are unchanged.
+wireMenu();
 
 els.sortBtn.addEventListener("click", () => {
   if (!controller.state.trick) return;
