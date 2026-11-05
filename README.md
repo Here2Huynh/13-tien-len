@@ -86,6 +86,7 @@ completion.
 | 034 | Bomb foil goes golden — rainbow sheen replaced with the owner-approved golds-only gradient (V1) | #37 | ✅ Merged · Live |
 | 035 | Full codebase + UI/UX audit (report only) — 29 findings, no rule defects; owner walk-through picked the fix batch | — | ✅ Complete |
 | 036 | Split src/main.ts into src/dom/ modules; explicit roundId/trickId replace object-identity checks (structure only, zero behavior change) | #38 | ✅ Merged · Live |
+| 037 | Phone one-screen layout V3: slim header + ☰ menu, one-row score strip, compact table; A+B fit fix (pile 144px, one-row action row) — reference turn fully in the first screen at 360×640 | #39 | ✅ Merged · Live |
 
 ## Play
 

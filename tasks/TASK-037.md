@@ -1,7 +1,8 @@
 # TASK-037: Phone one-screen layout — V3 "Compact everything"
 
-Status: ASSIGNED (verifier) — PR #39, head 8c90225; checklist
-tasks/VERIFY-037.md. **John ruled A+B on 2026-11-04** (see "Fit
+Status: COMPLETE — PR #39, merged 97cddb1, deployment
+b9fdddc7-94bc-486c-bc5a-42d3f42feb9e. Suite 122 → 125.
+**John ruled A+B on 2026-11-04** (see "Fit
 ruling" below) and approved letter-spacing .2px; the fix landed
 on top of the first build (local commits e8858fc + 709e948) —
 measured fit: reference + worst-case action bottom 604, round

@@ -1,6 +1,6 @@
 # TASK-038: No more dead comeback turns (audit #1)
 
-Status: QUEUED (files when TASK-037 closes). Suite baseline: 125.
+Status: ASSIGNED (builder) — TASK-037 closed 2026-11-04. Suite baseline: 125.
 Source: Task 035 audit finding #1 — the auditor's #1 pick and
 **John's first pick of the walk-through (2026-11-04, "Build
 it")**: auto-decline a comeback turn when no comeback-legal bomb
