@@ -9,7 +9,7 @@ import { newDeal, shuffle } from "../src/engine/deal.js";
 import {
   cardLabel, sortHand, validateSelection,
   emptyTrickView, applyToTrickView, describePlay, bombPenaltyLogLine, bombedBombLogLine,
-  comebackLogLine, penaltyLine,
+  comebackLogLine, penaltyLine, matchInProgress,
   roundResultRows, scoreRows,
   type SelectionCheck,
 } from "../src/ui/model.js";
@@ -432,6 +432,40 @@ test("controller: newMatch without a seed is a fresh 0-0 round 1 (TASK 031)", ()
   controller.newMatch();
   assert.deepEqual(controller.state.match!.scores, [0, 0, 0, 0]);
   assert.equal(controller.state.match!.roundNumber, 1);
+});
+
+test("model: matchInProgress — true only for a live, undecided match across every phase (TASK 040)", () => {
+  // Nothing to lose before the first deal.
+  assert.equal(matchInProgress(null), false);
+  // Drive a real match through every phase and check the predicate
+  // agrees with the phase at each step: idle → never; playing and
+  // roundEnd → in progress; matchEnd → not (the match is decided).
+  const controller = createController({ schedule: sync, dealHands: () => newDeal(seededRng(40)) });
+  assert.equal(controller.state.phase, "idle");
+  assert.equal(matchInProgress(controller.state.match), false);
+  controller.newMatch();
+  // Read through a function: the idle assertion above would
+  // otherwise narrow the phase for the rest of the test.
+  const live = (): ControllerState => controller.state;
+  const seen = new Set<string>();
+  for (let guard = 0; guard < 200000 && live().phase !== "matchEnd"; guard++) {
+    const { phase, match } = live();
+    seen.add(phase);
+    assert.equal(matchInProgress(match), true, `in progress during ${phase}`);
+    if (phase === "roundEnd") {
+      controller.continueRound();
+      continue;
+    }
+    const action = controller.hint();
+    if (!action || action.type === "pass") controller.humanPass();
+    else controller.humanPlay(action.cards);
+  }
+  assert.equal(live().phase, "matchEnd");
+  assert.ok(seen.has("playing") && seen.has("roundEnd"), "both live phases were checked");
+  assert.equal(matchInProgress(live().match), false, "a decided match has nothing to lose");
+  // A fresh New Match is in progress again.
+  controller.newMatch();
+  assert.equal(matchInProgress(controller.state.match), true);
 });
 
 test("controller: log — a four of a kind played against a single 2 is logged as a bomb", () => {

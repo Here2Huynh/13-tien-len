@@ -21,6 +21,15 @@ export function standingsText(scores: number[]): string {
 }
 export const HUMAN = 0;
 
+/** Is there a match in progress that New Match would wipe (TASK
+    040, audit #9)? A match exists and is undecided — mid-round or
+    on a round-over banner. Idle behind the start gate (no match)
+    and a decided match (winner set) have nothing to lose, so New
+    Match stays one tap there. */
+export function matchInProgress(match: { winner: number | null } | null): boolean {
+  return match !== null && match.winner === null;
+}
+
 const SUIT_GLYPHS: Record<Suit, string> = { spades: "♠", clubs: "♣", diamonds: "♦", hearts: "♥" };
 const RED_SUITS: ReadonlySet<Suit> = new Set(["diamonds", "hearts"]);
 

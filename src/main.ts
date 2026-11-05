@@ -1,5 +1,5 @@
 import { createController, type ControllerState } from "./ui/controller.js";
-import { HUMAN, describePlay, standingsText } from "./ui/model.js";
+import { HUMAN, describePlay, standingsText, matchInProgress } from "./ui/model.js";
 import { els, el } from "./dom/elements.js";
 import { beginFx, endFx } from "./dom/fx.js";
 import { loadScoreSave, clearScoreSave, persistScore } from "./dom/persist.js";
@@ -14,7 +14,8 @@ import {
   toggleSort,
 } from "./dom/hand.js";
 import { renderBanner, setBannerHost } from "./dom/banner.js";
-import { wireMenu } from "./dom/menu.js";
+import { wireMenu, menuOpen } from "./dom/menu.js";
+import { holdingSchedule, openConfirm, wireConfirm } from "./dom/confirm.js";
 
 export { stageScale } from "./dom/fx.js";
 
@@ -30,6 +31,7 @@ export { stageScale } from "./dom/fx.js";
 //   hand.ts      hand rendering, selection, Sort, drag order
 //   banner.ts    round/match summaries + the instant-win beat
 //   menu.ts      the phone header menu (TASK 037)
+//   confirm.ts   the New Match confirmation (TASK 040)
 // — and this file creates the controller, owns the render pass (in
 // the original order), and wires the buttons and overlays.
 
@@ -48,6 +50,10 @@ const controller = createController({
     render(state);
     persistScore(state);
   },
+  // TASK 040: CPU turns that come due while the New Match
+  // confirmation is up are held until it closes (a plain setTimeout
+  // pass-through otherwise).
+  schedule: holdingSchedule,
 });
 
 setHandHost({
@@ -142,18 +148,39 @@ els.continueBtn.addEventListener("click", () => controller.continueRound());
 // Every New Match entry point clears the score save first (TASK
 // 039): a fresh match must never leave a stale save behind for a
 // later visit to resume. Resume is the only seeded start.
-els.newMatchBtn.addEventListener("click", () => {
+function startFreshMatch(): void {
   clearScoreSave();
   controller.newMatch();
-});
-els.newMatchTop.addEventListener("click", () => {
-  clearScoreSave();
-  controller.newMatch();
-});
-els.startBtn.addEventListener("click", () => {
-  clearScoreSave();
-  controller.newMatch();
-});
+}
+// Every in-play New Match entry point — the header button (which is
+// also the phone ☰ menu item) and the banner's New Match — goes
+// through this gate (TASK 040, audit #9): with a match in progress — mid-round or on a round
+// banner — it asks first, and only a confirmed New Match wipes it
+// (startFreshMatch, unchanged). With nothing to lose — no match
+// yet, or the match decided (the match-over banner's New Match) —
+// it is one tap, exactly as before. `from` is where focus returns
+// when the dialog closes.
+function requestNewMatch(from: HTMLElement): void {
+  const match = controller.state.match;
+  if (!match || !matchInProgress(match)) {
+    startFreshMatch();
+    return;
+  }
+  openConfirm(`Round ${match.roundNumber} · ${standingsText(match.scores)}`, from);
+}
+els.newMatchBtn.addEventListener("click", () => requestNewMatch(els.newMatchBtn));
+// The header button is also the phone ☰ menu's item (TASK 037: the
+// panel holds this same button). Its click runs before the panel
+// closes the menu, so an open menu means a phone-menu tap — focus
+// then returns to the ☰ button, since the item hides with its panel.
+els.newMatchTop.addEventListener("click", () =>
+  requestNewMatch(menuOpen() ? els.menuBtn : els.newMatchTop),
+);
+// The start gate's button (Start Game / New Match beside Resume,
+// TASK 039) is shown only behind the idle gate, where no match is
+// in progress: one tap, unchanged — it never asks.
+els.startBtn.addEventListener("click", startFreshMatch);
+wireConfirm(startFreshMatch);
 els.resumeBtn.addEventListener("click", () => controller.newMatch(loadScoreSave() ?? undefined));
 
 // How-to-play overlay (TASK 017): pure presentation. It never calls
