@@ -3,11 +3,21 @@ import type { ControllerState } from "../ui/controller.js";
 // Score persistence (TASK 031): SCORES ONLY — the four seats'
 // points plus the round number, in localStorage under a versioned
 // key. The hand in progress never persists: a reload restores the
-// standings behind the start gate, and Start deals the saved round
-// fresh. Every access is failure-tolerant — storage that is
+// standings behind the start gate, and Resume deals the saved
+// round fresh. Every access is failure-tolerant — storage that is
 // missing or throws (private mode, quota) must never break a
 // render or a click, so each helper swallows its own exceptions.
 // (Moved out of main.ts unchanged in TASK 036.)
+//
+// TASK 039 (audit #10): the save is written ONLY when a round
+// lands (the round-end phase) — never mid-round. Task 031 wrote
+// on every score change, so a mid-round bomb penalty that took a
+// seat to 13 was written and then rejected by the parser's cap
+// on reload, silently losing the match; mid-round writes also
+// kept the round's penalties while re-dealing the round. With
+// round-end-only writes, a save the game writes is always a save
+// the game accepts back, and a mid-round reload returns to the
+// last completed round's standings.
 const SCORE_KEY = "thirteen.matchScore.v1";
 // Owner's validation band (pick A, 2026-11-02): points are
 // integers from -99 to 12. Real scores go negative every match
@@ -42,7 +52,7 @@ function writeScoreSave(save: ScoreSave): void {
   }
 }
 
-function clearScoreSave(): void {
+export function clearScoreSave(): void {
   lastScoreJson = null;
   const store = scoreStorage();
   if (!store) return;
@@ -93,10 +103,16 @@ export function loadScoreSave(): ScoreSave | null {
 }
 
 // Runs on every controller state change (selection-only redraws
-// don't emit, so this fires exactly when game state moved): write
-// the standings whenever they are worth keeping, clear them when
-// the match ends or the board is a fresh 0-0 round 1 (which writes
-// nothing — including the first render after New Match).
+// don't emit, so this fires exactly when game state moved) — but
+// it only ever WRITES at the round-end phase (TASK 039): the one
+// moment the standings are final for a completed round. At that
+// point match.roundNumber has already advanced (the engine
+// increments it as the round lands), so the save holds the round
+// Resume will deal. Mid-round states — bomb penalties included —
+// write nothing and leave any existing save untouched; a decided
+// match clears the save, so no resumable save remains. (Clearing
+// on New Match happens in the page's click handlers, which call
+// clearScoreSave directly.)
 export function persistScore(state: ControllerState): void {
   const match = state.match;
   if (!match) return; // idle behind the start gate: keep any save
@@ -104,9 +120,6 @@ export function persistScore(state: ControllerState): void {
     clearScoreSave();
     return;
   }
-  if (match.roundNumber === 1 && match.scores.every((s) => s === 0)) {
-    clearScoreSave();
-    return;
-  }
+  if (state.phase !== "roundEnd") return;
   writeScoreSave({ scores: [...match.scores], round: match.roundNumber });
 }

@@ -1655,12 +1655,12 @@ test("e2e: score persistence — nothing saved at 0-0 round 1; standings saved w
   assert.ok(saved.scores.some((s) => s !== 0), "the saved board is a real one");
 });
 
-test("e2e: score persistence — Start restores points and round; scoring accumulates on top (TASK 031)", async () => {
+test("e2e: score persistence — Resume restores points and round; scoring accumulates on top (TASK 031/039)", async () => {
   await import("../src/main.js");
   fakeStorage.clear();
   fakeStorage.throws = false;
   fakeStorage.setItem(SCORE_KEY, JSON.stringify({ scores: [5, -2, 3, 0], round: 4 }));
-  $("start-btn").click();
+  $("resume-btn").click();
   settle();
   assert.deepEqual(scoreValues(), [5, -2, 3, 0], "points restored exactly (negatives included)");
   assert.equal($("round-num").textContent, "4", "the saved round is the round dealt");
@@ -1682,12 +1682,12 @@ test("e2e: score persistence — Start restores points and round; scoring accumu
   assert.equal(saved.round, 5, "the restored match advanced from round 4 to round 5");
 });
 
-test("e2e: score persistence — New Match clears the save; match end clears it (TASK 031)", async () => {
+test("e2e: score persistence — New Match clears the save; match end clears it (TASK 031/039)", async () => {
   await import("../src/main.js");
   fakeStorage.clear();
   fakeStorage.throws = false;
   fakeStorage.setItem(SCORE_KEY, JSON.stringify({ scores: [5, -2, 3, 0], round: 4 }));
-  $("start-btn").click();
+  $("resume-btn").click();
   settle();
   assert.ok(fakeStorage.map.has(SCORE_KEY), "save present mid-match");
   $("new-match-top").click();
@@ -1763,7 +1763,7 @@ test("e2e: score persistence — corrupt and out-of-range saves are discarded (T
   // -99 shifted by an instant win), at round 9 (or 10 if the
   // restored deal itself instant-won).
   fakeStorage.setItem(SCORE_KEY, JSON.stringify({ scores: [12, -99, 0, 5], round: 9 }));
-  $("start-btn").click();
+  $("resume-btn").click();
   const edgeScores = scoreValues();
   const edgePill = $("round-num").textContent;
   assert.ok(edgePill === "9" || edgePill === "10", `band edges restore the round (got ${edgePill})`);
@@ -1795,6 +1795,71 @@ test("e2e: score persistence — storage that throws on every access never break
     fakeStorage.throws = false;
     fakeStorage.clear();
   }
+});
+
+test("e2e: start screen — Resume offered iff a save exists, labeled with round + scores; New Match starts fresh (TASK 039)", async () => {
+  const main = await import("../src/main.js");
+  fakeStorage.clear();
+  fakeStorage.throws = false;
+  const idle: ControllerState = {
+    phase: "idle", match: null, trick: null, message: "", log: [],
+    trickView: emptyTrickView(), roundSummary: null, roundId: 0, trickId: 0,
+  };
+  // No save: the gate is exactly as it always was — no Resume
+  // control, and the start button keeps its original label.
+  main.render(idle);
+  assert.equal($("resume-btn").hidden, true, "no save, no Resume control");
+  assert.equal($("start-btn").textContent, "Start Game");
+  // A save: Resume appears, labeled with the saved round and
+  // standings, and the start button becomes New Match.
+  fakeStorage.setItem(SCORE_KEY, JSON.stringify({ scores: [5, -2, 3, 0], round: 4 }));
+  main.render(idle);
+  assert.equal($("resume-btn").hidden, false, "a save offers Resume");
+  assert.equal(
+    $("resume-btn").textContent,
+    "Resume — Round 4 · You 5 · Mina -2 · Kenji 3 · Rosa 0",
+    "the Resume label carries the saved round and every seat's score",
+  );
+  assert.equal($("start-btn").textContent, "New Match");
+  // Choosing New Match at the gate: a fresh 0-0 round 1, and the
+  // save is gone.
+  $("start-btn").click();
+  settle();
+  assert.deepEqual(scoreValues(), [0, 0, 0, 0], "New Match starts at 0-0");
+  assert.equal($("round-num").textContent, "1", "New Match starts at round 1");
+  assert.equal(fakeStorage.map.has(SCORE_KEY), false, "New Match at the gate clears the save");
+});
+
+test("e2e: score persistence — the save never moves mid-round; it changes only when a round lands (TASK 039)", async () => {
+  await import("../src/main.js");
+  fakeStorage.clear();
+  fakeStorage.throws = false;
+  $("new-match-top").click();
+  settle();
+  driveToRoundBanner031();
+  const landed = fakeStorage.map.get(SCORE_KEY);
+  assert.ok(landed, "the round-end save exists at the banner");
+  $("continue-btn").click();
+  // Play the whole next round one move at a time: whatever the
+  // board does mid-round — bomb penalties moving points included
+  // — the stored save must stay byte-identical until the round
+  // lands, then hold the landed board and the advanced round.
+  for (let steps = 0; steps < 20000; steps++) {
+    const phase = settle();
+    if (phase === "banner") {
+      assert.ok(!isMatchEndBanner(), "round two of a fresh match cannot end the match");
+      const next = JSON.parse(fakeStorage.map.get(SCORE_KEY)!) as { scores: number[]; round: number };
+      assert.deepEqual(next.scores, scoreValues(), "the new save holds the landed board");
+      assert.equal(next.round, 3, "the save advanced to the next round");
+      return;
+    }
+    assert.equal(
+      fakeStorage.map.get(SCORE_KEY), landed,
+      "the save did not move mid-round",
+    );
+    humanMove();
+  }
+  throw new Error("never reached the next round banner");
 });
 
 test("e2e: finish medals — 1st gold, 2nd silver, 3rd/4th keep the green pill (TASK 029)", async () => {

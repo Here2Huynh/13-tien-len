@@ -1,8 +1,8 @@
 import { createController, type ControllerState } from "./ui/controller.js";
-import { HUMAN, describePlay } from "./ui/model.js";
+import { HUMAN, describePlay, standingsText } from "./ui/model.js";
 import { els, el } from "./dom/elements.js";
 import { beginFx, endFx } from "./dom/fx.js";
-import { loadScoreSave, persistScore } from "./dom/persist.js";
+import { loadScoreSave, clearScoreSave, persistScore } from "./dom/persist.js";
 import { renderScoreboard, renderSeat } from "./dom/board.js";
 import { renderPile, resetPileRound, pilePlays } from "./dom/pile.js";
 import {
@@ -95,6 +95,19 @@ export function render(state: ControllerState): void {
   // Start gate: the start screen covers the table until the first
   // match is started; it never comes back (New Match goes straight in).
   els.startScreen.hidden = state.phase !== "idle";
+  if (state.phase === "idle") {
+    // Resume signpost (TASK 039, audit #28): when a score save
+    // exists, the gate offers Resume — labeled with the saved
+    // round and standings — next to the start button, which then
+    // reads New Match (it starts fresh and clears the save). With
+    // no save the gate is exactly as it always was.
+    const save = loadScoreSave();
+    els.resumeBtn.hidden = save === null;
+    if (save) {
+      els.resumeBtn.textContent = `Resume — Round ${save.round} · ${standingsText(save.scores)}`;
+    }
+    els.startBtn.textContent = save ? "New Match" : "Start Game";
+  }
 
   updateSortButton();
 
@@ -126,9 +139,22 @@ els.hintBtn.addEventListener("click", () => {
 });
 
 els.continueBtn.addEventListener("click", () => controller.continueRound());
-els.newMatchBtn.addEventListener("click", () => controller.newMatch());
-els.newMatchTop.addEventListener("click", () => controller.newMatch());
-els.startBtn.addEventListener("click", () => controller.newMatch(loadScoreSave() ?? undefined));
+// Every New Match entry point clears the score save first (TASK
+// 039): a fresh match must never leave a stale save behind for a
+// later visit to resume. Resume is the only seeded start.
+els.newMatchBtn.addEventListener("click", () => {
+  clearScoreSave();
+  controller.newMatch();
+});
+els.newMatchTop.addEventListener("click", () => {
+  clearScoreSave();
+  controller.newMatch();
+});
+els.startBtn.addEventListener("click", () => {
+  clearScoreSave();
+  controller.newMatch();
+});
+els.resumeBtn.addEventListener("click", () => controller.newMatch(loadScoreSave() ?? undefined));
 
 // How-to-play overlay (TASK 017): pure presentation. It never calls
 // the controller and never renders, so a game in progress resumes

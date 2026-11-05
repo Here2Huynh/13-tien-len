@@ -16,6 +16,7 @@ import {
   emptyTrickView,
   applyToTrickView,
   describePlay,
+  standingsText,
   bombPenaltyLogLine,
   bombedBombLogLine,
   comebackLogLine,
@@ -310,7 +311,15 @@ export function createController(options: ControllerOptions = {}): Controller {
         state.match.roundNumber = seed.round;
       }
       state.log = [];
-      log("New match — first to 13.");
+      // A seeded start is a RESUMED match (TASK 039): the opening
+      // line says so, with the round and standings being restored
+      // — it must not claim a new match. An unseeded start keeps
+      // the original line.
+      log(
+        seed
+          ? `Match resumed — Round ${seed.round} · ${standingsText(seed.scores)}.`
+          : "New match — first to 13.",
+      );
       startRoundInternal();
     },
     continueRound() {
