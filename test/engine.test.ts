@@ -6,7 +6,9 @@ import {
 import { shuffle, deal } from "../src/engine/deal.js";
 import { detectCombination } from "../src/engine/combinations.js";
 import { beats } from "../src/engine/plays.js";
-import { createTrickState, playCards, passTurn } from "../src/engine/trick.js";
+import { createTrickState, playCards, passTurn, hasComebackTurn, type TrickState } from "../src/engine/trick.js";
+import { comebackAnswers, hasLiveComebackTurn, isDeadComebackTurn } from "../src/engine/comeback.js";
+import { chooseAction } from "../src/engine/ai.js";
 import { detectBomb, bombBeats, bombOnBombBeats, isComebackBomb } from "../src/engine/bombs.js";
 import { detectInstantWin } from "../src/engine/instantWin.js";
 import { scoreRound, scoreInstantWin, leftoverPenalty, countUnusedBombs, unusedBombs } from "../src/engine/scoring.js";
@@ -400,6 +402,123 @@ test("trick bombs: comeback against a bomb — only the comeback kinds (TASK 021
   const quadAnswer = build([...quad("9"), c("8", "clubs")]);
   toBomb(quadAnswer);
   assert.throws(() => playCards(quadAnswer, 1, quad("9")), /comeback/i);
+});
+
+// ---------- live vs dead comeback turns (TASK 038) ----------
+
+const ofRank = (rank: Rank, suits: Suit[]) => suits.map((suit) => c(rank, suit));
+const pairsOf = (ranks: Rank[], suits: [Suit, Suit]) => ranks.flatMap((rank) => ofRank(rank, suits));
+const ALL_SUITS: Suit[] = ["spades", "clubs", "diamonds", "hearts"];
+
+// Seat 1 passes on seat 0's low lead, seat 2 drops `target` (a 2 /
+// pair of 2s / triple 2s of the lead's shape), seats 3 and 0 pass:
+// the turn is seat 1's, against the target, on the comeback gate.
+function comebackOn2s(p1Hand: Card[], lead: Card[], target: Card[]): TrickState {
+  const state = createTrickState(
+    [[...lead, c("K", "diamonds")], p1Hand, [...target, c("Q", "spades")], [c("J", "spades"), c("5", "diamonds")]],
+    { leader: 0, openingLead: false },
+  );
+  playCards(state, 0, lead);
+  passTurn(state, 1);
+  playCards(state, 2, target);
+  passTurn(state, 3);
+  passTurn(state, 0);
+  assert.equal(state.currentPlayer, 1);
+  assert.equal(hasComebackTurn(state, 1), true, "the shape gate is open");
+  return state;
+}
+
+// Seat 1 passes on 3♠, seat 2 plays 2♥, seat 3 bombs it with `bomb`,
+// seat 0 passes: seat 1's comeback turn faces the bomb.
+function comebackOnBomb(p1Hand: Card[], bomb: Card[]): TrickState {
+  const state = createTrickState(
+    [[c("3", "spades"), c("K", "diamonds")], p1Hand, [c("2", "hearts"), c("Q", "spades")], [...bomb, c("J", "spades")]],
+    { leader: 0, openingLead: false },
+  );
+  playCards(state, 0, [c("3", "spades")]);
+  passTurn(state, 1);
+  playCards(state, 2, [c("2", "hearts")]);
+  playCards(state, 3, bomb);
+  passTurn(state, 0);
+  assert.equal(state.currentPlayer, 1);
+  assert.equal(hasComebackTurn(state, 1), true, "the shape gate is open");
+  return state;
+}
+
+// Live <=> a comeback-legal play exists. Checked against the engine
+// itself: every listed answer is accepted by playCards, the AI's
+// comeback decision agrees, and a dead turn's only exit is a pass.
+function assertComeback(state: TrickState, live: boolean, label: string): void {
+  const answers = comebackAnswers(state, 1);
+  assert.equal(hasLiveComebackTurn(state, 1), live, `${label}: live`);
+  assert.equal(isDeadComebackTurn(state, 1), !live, `${label}: dead`);
+  assert.equal(answers.length > 0, live, `${label}: answers`);
+  assert.equal(chooseAction(state, 1).type === "pass", !live, `${label}: AI agrees`);
+  for (const answer of answers) {
+    const copy = structuredClone(state);
+    playCards(copy, 1, answer); // throws if the engine disagrees
+    assert.equal(copy.currentPlay?.player, 1, `${label}: answer lands`);
+  }
+  const passed = structuredClone(state);
+  passTurn(passed, 1); // the decline is always legal
+}
+
+test("comeback turns: against a single 2 or a pair of 2s, live only with a comeback bomb that beats it (TASK 038)", () => {
+  const quad9 = ofRank("9", ALL_SUITS);
+  const run4 = pairsOf(["5", "6", "7", "8"], ["clubs", "hearts"]);
+  const run3 = pairsOf(["4", "5", "6"], ["clubs", "diamonds"]);
+  const single = { lead: [c("3", "spades")], target: [c("2", "hearts")] };
+  assertComeback(comebackOn2s([...quad9, c("4", "clubs")], single.lead, single.target), true, "quad vs 2");
+  assertComeback(comebackOn2s([...run4, c("A", "clubs")], single.lead, single.target), true, "4-run vs 2");
+  assertComeback(comebackOn2s([...run3, c("A", "clubs")], single.lead, single.target), false, "3-run vs 2");
+  assertComeback(comebackOn2s([c("4", "clubs"), c("9", "hearts")], single.lead, single.target), false, "no bomb vs 2");
+  const pair = { lead: [c("3", "spades"), c("3", "hearts")], target: [c("2", "diamonds"), c("2", "hearts")] };
+  assertComeback(comebackOn2s([...quad9, c("4", "clubs")], pair.lead, pair.target), true, "quad vs 2s");
+  assertComeback(comebackOn2s([...run4, c("A", "clubs")], pair.lead, pair.target), true, "4-run vs 2s");
+  assertComeback(comebackOn2s([...run3, c("A", "clubs")], pair.lead, pair.target), false, "3-run vs 2s");
+});
+
+test("comeback turns: triple 2s are dead for every hand — quad and 4-pair run included (TASK 038)", () => {
+  const strongest = [...ofRank("A", ALL_SUITS), ...pairsOf(["5", "6", "7", "8"], ["clubs", "hearts"]), c("4", "clubs")];
+  const state = comebackOn2s(
+    strongest,
+    [c("3", "spades"), c("3", "hearts"), c("3", "diamonds")],
+    [c("2", "clubs"), c("2", "diamonds"), c("2", "hearts")],
+  );
+  assertComeback(state, false, "triple 2s");
+});
+
+test("comeback turns: against a bomb, live only under the bomb-on-bomb ladder (TASK 038)", () => {
+  const run3low = pairsOf(["3", "4", "5"], ["clubs", "diamonds"]);
+  const run4low = pairsOf(["4", "5", "6", "7"], ["diamonds", "hearts"]);
+  const run4high = pairsOf(["8", "9", "10", "J"], ["clubs", "hearts"]);
+  const run4lower = pairsOf(["4", "5", "6", "7"], ["spades", "clubs"]); // same ranks, lower top card
+  const quadK = ofRank("K", ALL_SUITS);
+  const quad7 = ofRank("7", ALL_SUITS);
+  const quad6 = ofRank("6", ALL_SUITS);
+  // A four of a kind on the table: a higher quad or any 4-pair run answers.
+  assertComeback(comebackOnBomb([...quadK, c("4", "spades")], quad7), true, "higher quad vs quad");
+  assertComeback(comebackOnBomb([...quad6, c("4", "spades")], quad7), false, "lower quad vs quad");
+  assertComeback(comebackOnBomb([...run4high, c("4", "spades")], quad7), true, "4-run vs quad");
+  // A 3-pair run on the table: four of a kind never answers a pair run.
+  assertComeback(comebackOnBomb([...quadK, c("10", "spades")], run3low), false, "quad vs 3-run");
+  assertComeback(comebackOnBomb([...run4high, c("4", "spades")], run3low), true, "4-run vs 3-run");
+  assertComeback(comebackOnBomb([...pairsOf(["8", "9", "10"], ["clubs", "hearts"]), c("4", "spades")], run3low), false, "higher 3-run is no comeback bomb");
+  // A 4-pair run on the table: only a higher 4-pair run.
+  assertComeback(comebackOnBomb([...run4high, c("A", "spades")], run4low), true, "higher 4-run vs 4-run");
+  assertComeback(comebackOnBomb([...run4lower, c("A", "spades")], run4low), false, "lower 4-run vs 4-run");
+  assertComeback(comebackOnBomb([...quadK, c("A", "spades")], run4low), false, "quad vs 4-run");
+});
+
+test("comeback turns: no gate, no comeback — a live follower and a decided passer are neither live nor dead (TASK 038)", () => {
+  const state = comebackOn2s([...ofRank("9", ALL_SUITS), c("4", "clubs")], [c("3", "spades")], [c("2", "hearts")]);
+  // Seat 0 passed this play normally earlier; it is not a candidate.
+  assert.equal(hasComebackTurn(state, 0), false);
+  assert.equal(isDeadComebackTurn(state, 0), false);
+  assert.deepEqual(comebackAnswers(state, 0), []);
+  passTurn(state, 1); // seat 1 declines its live comeback
+  assert.equal(hasLiveComebackTurn(state, 1), false, "a declined comeback is spent");
+  assert.equal(isDeadComebackTurn(state, 1), false);
 });
 
 // ---------- instant wins ----------
