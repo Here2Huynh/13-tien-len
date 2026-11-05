@@ -49,6 +49,7 @@ type FakeListener = (ev: FakeEvent) => void;
 
 class FakeElement {
   tagName: string;
+  nodeType = 1;
   children: FakeElement[] = [];
   disabled = false;
   hidden = false;
@@ -202,6 +203,7 @@ class FakeElement {
 }
 
 class FakeText extends FakeElement {
+  override nodeType = 3;
   constructor(text: string) {
     super("#text");
     this._text = text;
@@ -2868,6 +2870,169 @@ test("e2e: New Match confirm — a round-over banner is still a match in progres
   $("confirm-cancel").click();
   assert.deepEqual(gameDom040(), frozen, "the banner is exactly as it was");
   assert.equal(fakeStorage.map.get(SCORE_KEY), save);
+});
+
+// TASK 040 fix (VERIFY-040 FAIL): over a round-over banner, the
+// banner's Continue lives OUTSIDE #app — keyboard focus reached it
+// behind the dialog and Enter dealt the next round. The dialog must
+// make every top-level <body> child but itself inert (late arrivals
+// too) and release exactly that on close.
+test("e2e: New Match confirm — over a round-over banner, everything behind the dialog is inert (Continue unreachable); cancel restores it exactly (TASK 040 fix)", async () => {
+  await import("../src/main.js");
+  // Own seeded deals, restored after: the shared Math.random stream
+  // the later tests deal from is left exactly where it was.
+  const sharedRandom = Math.random;
+  Math.random = seededRng(4040);
+  fakeStorage.clear();
+  newMatchTop();
+  driveToRoundBanner031();
+  assert.equal($("banner").hidden, false, "a round-over banner is up");
+  assert.equal($("banner-title").textContent, "Round over");
+
+  // Mirror index.html's top-level <body> children into the fake body
+  // (the fake has no markup parser), read from the real markup.
+  const html = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
+  const bodyHtml = html.slice(html.indexOf("<body>"), html.indexOf("</body>"));
+  const topIds = [...bodyHtml.matchAll(/^    <div [^>]*id="([^"]+)"/gm)].map((m) => m[1]);
+  assert.deepEqual(topIds, ["app", "start-screen", "banner", "help-overlay", "odds-overlay", "confirm-overlay"]);
+  const body = fakeDocument.body;
+  const bodyBefore = [...body.children];
+  for (const id of topIds) body.appendChild($(id));
+  // The banner's actions sit inside its modal; the dialog's buttons
+  // inside the dialog overlay.
+  const bannerModal = new FakeElement("div");
+  $("banner").appendChild(bannerModal);
+  bannerModal.append($("continue-btn"), $("new-match-btn"));
+  $("confirm-overlay").append($("confirm-cancel"), $("confirm-new"));
+
+  // A fake MutationObserver: late <body> arrivals are fed to it by hand.
+  const observers = new Set<{ cb: (records: { addedNodes: FakeElement[] }[]) => void }>();
+  class FakeObserver {
+    cb: (records: { addedNodes: FakeElement[] }[]) => void;
+    constructor(cb: (records: { addedNodes: FakeElement[] }[]) => void) {
+      this.cb = cb;
+    }
+    observe(target: FakeElement): void {
+      assert.equal(target, body, "watches <body>");
+      observers.add(this);
+    }
+    disconnect(): void {
+      observers.delete(this);
+    }
+  }
+  const g = globalThis as { MutationObserver?: unknown };
+  const priorObserver = g.MutationObserver;
+  g.MutationObserver = FakeObserver;
+  const lateNode = new FakeElement("div");
+  lateNode.className = "overlay iwbeat";
+  const lateText = new FakeText("stray");
+
+  const inertOf = (node: FakeElement): boolean => (node as unknown as { inert?: boolean }).inert === true;
+  const behindInert = (node: FakeElement): boolean => {
+    for (let at: FakeElement | null = node; at; at = at.parent) if (inertOf(at)) return true;
+    return false;
+  };
+  const inertMap = (): Record<string, boolean> => {
+    const map: Record<string, boolean> = {};
+    for (const id of [...registry.keys()].sort()) map[id] = inertOf(registry.get(id)!);
+    body.children.forEach((child, i) => { map[`body[${i}]`] = inertOf(child); });
+    map.late = inertOf(lateNode);
+    return map;
+  };
+
+  try {
+    const save = fakeStorage.map.get(SCORE_KEY);
+    const frozen = gameDom040();
+    const log = logLines040();
+    const timers = timerQueue.length;
+    const inertBefore = inertMap();
+    assert.ok(Object.values(inertBefore).every((v) => v === false), "nothing inert before the dialog opens");
+
+    // Keyboard path (the verifier's scenario R): focus the header
+    // New match and activate it — the dialog opens over the banner.
+    $("new-match-top").focus();
+    $("new-match-top").click();
+    assert.equal($("confirm-overlay").hidden, false, "it asks over the round-over banner");
+    assert.equal(fakeDocument.activeElement, $("confirm-cancel"));
+
+    // Every top-level <body> child but the dialog is inert: the
+    // banner (so its Continue and New Match), help, odds, the start
+    // gate, the table — and anything already in <body> before.
+    for (const child of body.children) {
+      assert.equal(inertOf(child), child !== $("confirm-overlay"), `body child ${child.className || child.tagName} inert iff not the dialog`);
+    }
+    assert.equal(inertOf($("banner")), true, "the round banner is inert");
+    assert.equal(behindInert($("continue-btn")), true, "Continue is unreachable behind the dialog");
+    assert.equal(behindInert($("new-match-btn")), true, "the banner's New Match is unreachable too");
+    assert.equal(inertOf($("app")), true, "the table is inert");
+    assert.equal(behindInert($("confirm-cancel")), false, "Keep playing stays live");
+    assert.equal(behindInert($("confirm-new")), false, "Confirm stays live");
+
+    // A late arrival (e.g. the lazily-appended instant-win beat
+    // overlay) is frozen as it lands; text nodes are ignored.
+    assert.equal(observers.size, 1, "one watcher while open");
+    body.append(lateNode, lateText);
+    for (const o of observers) o.cb([{ addedNodes: [lateNode, lateText] }]);
+    assert.equal(inertOf(lateNode), true, "a late overlay is inert too");
+    assert.equal(inertOf(lateText), false, "text nodes are left alone");
+    lateText.remove();
+
+    // Nothing moved behind the dialog.
+    assert.deepEqual(gameDom040(), frozen, "the banner and table are untouched while open");
+    assert.deepEqual(logLines040(), log);
+
+    // Cancel: exact restore — every inert flag back to its pre-open
+    // value (the late node, added while open, is released too).
+    $("confirm-cancel").click();
+    assert.equal($("confirm-overlay").hidden, true);
+    assert.equal(observers.size, 0, "the watcher is disconnected on close");
+    const inertAfter = inertMap();
+    assert.deepEqual(inertAfter, { ...inertBefore, [`body[${body.children.length - 1}]`]: false }, "inert released everywhere it was added");
+    assert.ok(Object.values(inertAfter).every((v) => v === false));
+    assert.deepEqual(gameDom040(), frozen, "the round-over banner is exactly as it was");
+    assert.deepEqual(logLines040(), log);
+    assert.equal(timerQueue.length, timers);
+    assert.equal(fakeStorage.map.get(SCORE_KEY), save, "save bytes untouched");
+    assert.equal(fakeDocument.activeElement, $("new-match-top"), "focus returns to the opener");
+
+    // Escape cancels the same way.
+    $("new-match-top").click();
+    assert.equal(inertOf($("banner")), true);
+    docKey040("Escape");
+    assert.equal($("confirm-overlay").hidden, true);
+    assert.ok(Object.values(inertMap()).every((v) => v === false), "Escape releases everything");
+    assert.deepEqual(gameDom040(), frozen);
+
+    // The banner works again once released: Continue deals round 2.
+    $("continue-btn").click();
+    assert.equal($("banner").hidden, true, "Continue works after the dialog closes");
+    assert.equal($("round-num").textContent, "2");
+
+    // Confirm releases everything too, then deals fresh.
+    settleToYourTurn();
+    $("new-match-top").click();
+    assert.equal($("confirm-overlay").hidden, false);
+    assert.equal(inertOf($("banner")), true);
+    $("confirm-new").click();
+    assert.equal($("confirm-overlay").hidden, true);
+    assert.ok(Object.values(inertMap()).every((v) => v === false), "Confirm releases everything");
+    assert.equal(observers.size, 0);
+    assert.equal($("round-num").textContent, "1");
+    assert.equal(fakeStorage.map.has(SCORE_KEY), false);
+  } finally {
+    lateNode.remove();
+    lateText.remove();
+    $("continue-btn").remove();
+    $("new-match-btn").remove();
+    bannerModal.remove();
+    $("confirm-cancel").remove();
+    $("confirm-new").remove();
+    for (const id of topIds) $(id).remove();
+    assert.deepEqual(body.children, bodyBefore, "fake body restored");
+    if (priorObserver === undefined) delete g.MutationObserver;
+    else g.MutationObserver = priorObserver;
+    Math.random = sharedRandom;
+  }
 });
 
 test("e2e: New Match confirm — the phone ☰ menu item asks too; focus returns to ☰ (TASK 037/040)", async () => {
