@@ -89,6 +89,7 @@ completion.
 | 037 | Phone one-screen layout V3: slim header + ☰ menu, one-row score strip, compact table; A+B fit fix (pile 144px, one-row action row) — reference turn fully in the first screen at 360×640 | #39 | ✅ Merged · Live |
 | 038 | No more dead comeback turns — comeback turns offered only when a comeback-legal bomb answer is in hand; dead turns auto-decline (no log line, no pause), zero outcome change | #40 | ✅ Merged · Live |
 | 039 | Save only at round end (mid-round reload restarts the round at the last completed standings) + Resume button naming the round and all four scores on the start gate | #41 | ✅ Merged · Live |
+| 040 | New Match asks first — confirm dialog (standing line + Keep playing / New Match) freezes the whole page incl. the round-over banner; CPU timers hold and re-arm; start gate and match-over stay one tap | #42 | ✅ Merged · Live |
 
 ## Play
 

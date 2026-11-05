@@ -1,7 +1,9 @@
 # TASK-040: Confirm before New Match wipes a match (audit #9)
 
-Status: ASSIGNED (verifier) — PR #42; checklist
-tasks/VERIFY-040.md. Suite baseline: 142.
+Status: COMPLETE — PR #42 merged b822f42 on 2026-11-04 (verifier PASS on head
+dc39b0a after the freeze fix; first verification FAILED on the banner keyboard
+leak, fixed by freezing every top-level body child), deployed 09e3c3b7.
+Suite 142 → 151.
 Source: Task 035 audit finding #9 — **John's pick in the
 2026-11-04 walk-through: "Build."**
 
