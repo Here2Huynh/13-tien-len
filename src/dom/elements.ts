@@ -42,6 +42,13 @@ export const els = {
   // match). Desktop hides the button and lays the panel out flat.
   menuBtn: $btn("menu-btn"),
   menuPanel: $("menu-panel"),
+  // TASK 040: the page behind the overlays (made inert while the
+  // New Match confirmation is up) and the confirmation dialog.
+  app: $("app"),
+  confirmOverlay: $("confirm-overlay"),
+  confirmStanding: $("confirm-standing"),
+  confirmCancel: $btn("confirm-cancel"),
+  confirmNew: $btn("confirm-new"),
 };
 
 export function el(tag: string, className?: string | null, text?: string): HTMLElement {

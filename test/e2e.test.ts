@@ -223,6 +223,7 @@ const ELEMENT_IDS = [
   "help-btn-top", "help-btn-start", "help-overlay", "help-close",
   "odds-btn-top", "odds-overlay", "odds-close",
   "menu-btn", "menu-panel",
+  "app", "confirm-overlay", "confirm-standing", "confirm-cancel", "confirm-new",
 ];
 
 const registry = new Map<string, FakeElement>();
@@ -365,6 +366,14 @@ function humanMove() {
     !/Select at least|not in your hand|does not beat|must include|not a valid/i.test(message),
     `hint-driven move was rejected: ${message}`,
   );
+}
+
+// New match from the header (TASK 040): with a match in progress
+// the button asks first; this confirms. With nothing to lose (no
+// match yet, or the match decided) it is one tap and no dialog opens.
+function newMatchTop(): void {
+  $("new-match-top").click();
+  if (!$("confirm-overlay").hidden) $("confirm-new").click();
 }
 
 // ---------- the tests ----------
@@ -934,7 +943,7 @@ test("e2e: how-to-play overlay mid-game — header button, close leaves the game
 
   // Fresh match from the header, then play to the human's turn
   // (clicking through any round banner on the way).
-  $("new-match-top").click();
+  newMatchTop();
   for (let i = 0; i < 50 && settle() === "banner"; i++) {
     if (!$("new-match-btn").hidden) $("new-match-btn").click();
     else $("continue-btn").click();
@@ -963,7 +972,7 @@ test("e2e: how-to-play overlay mid-game — header button, close leaves the game
 test("e2e: bomb odds card mid-game with CPU timers pending — open/close leaves the game byte-identical (TASK 022)", async () => {
   await import("../src/main.js"); // already booted by the earlier tests
 
-  $("new-match-top").click();
+  newMatchTop();
   // Play human moves until CPU turns are queued behind the timer.
   let pending = false;
   for (let steps = 0; steps < 200 && !pending; steps++) {
@@ -1000,7 +1009,7 @@ function pileMinis(): FakeElement[] {
 
 test("e2e: a played card FLIPs into the pile (TASK 014)", async () => {
   await import("../src/main.js"); // already booted by the earlier tests
-  $("new-match-top").click();
+  newMatchTop();
   // Reach a turn where you lead (pile empty). Your hinted lead play
   // is then the latest render — CPU timers have not run yet — so the
   // pile's minis are exactly the cards you just played.
@@ -1022,7 +1031,7 @@ test("e2e: a played card FLIPs into the pile (TASK 014)", async () => {
 
 test("e2e: lockout grey — a CPU lockout pass greys the seat until the round ends (TASK 014)", async () => {
   await import("../src/main.js");
-  $("new-match-top").click();
+  newMatchTop();
   const seatIds: Record<string, string> = { Mina: "seat-1", Kenji: "seat-2", Rosa: "seat-3" };
   let greySeat: string | null = null;
   for (let steps = 0; steps < 20000 && greySeat === null; steps++) {
@@ -1142,7 +1151,7 @@ test("locked stamp: stampIn hangs on the stampplay gate only, look unchanged (TA
 test("e2e: animations on vs reduced-motion — identical final state, zero calls when reduced (TASK 014)", async () => {
   await import("../src/main.js");
   const playOutMatch = (): { scores: number[]; title: string } => {
-    $("new-match-top").click();
+    newMatchTop();
     for (let steps = 0; steps < 20000; steps++) {
       const phase = settle();
       if (phase === "banner") {
@@ -1216,7 +1225,7 @@ test("e2e: bomb-penalty float — none on a New match reset, exactly one per gen
   // retry instead of clicking through.
   let resetChecked = false;
   for (let attempt = 0; attempt < 8 && !resetChecked; attempt++) {
-    $("new-match-top").click();
+    newMatchTop();
     let armed = false;
     for (let steps = 0; steps < 20000 && !armed; steps++) {
       const phase = settle();
@@ -1235,7 +1244,7 @@ test("e2e: bomb-penalty float — none on a New match reset, exactly one per gen
     assert.ok(armed, "never reached a chopped two-box score state");
 
     const floatsBeforeReset = floatCount();
-    $("new-match-top").click();
+    newMatchTop();
     if (!$("banner").hidden || !scoreValues().every((s) => s === 0)) {
       continue; // instant-win open: tracker laundered — re-arm
     }
@@ -1279,7 +1288,7 @@ test("e2e: bomb-penalty float — none on a New match reset, exactly one per gen
 
 test("e2e: hand settle keys on layout, not pose — selection redraw animates nothing and reuses buttons (TASK 023)", async () => {
   await import("../src/main.js");
-  $("new-match-top").click();
+  newMatchTop();
   settleToYourTurn();
   const handBtns = (): FakeElement[] => Array.from($("hand").children);
   const before = handBtns();
@@ -1639,7 +1648,7 @@ test("e2e: score persistence — nothing saved at 0-0 round 1; standings saved w
   await import("../src/main.js");
   fakeStorage.clear();
   fakeStorage.throws = false;
-  $("new-match-top").click();
+  newMatchTop();
   settle();
   assert.deepEqual(scoreValues(), [0, 0, 0, 0]);
   assert.equal(
@@ -1690,7 +1699,7 @@ test("e2e: score persistence — New Match clears the save; match end clears it 
   $("resume-btn").click();
   settle();
   assert.ok(fakeStorage.map.has(SCORE_KEY), "save present mid-match");
-  $("new-match-top").click();
+  newMatchTop();
   settle();
   assert.equal(fakeStorage.map.has(SCORE_KEY), false, "New Match clears the save");
   assert.deepEqual(scoreValues(), [0, 0, 0, 0]);
@@ -1855,7 +1864,7 @@ test("e2e: score persistence — the save never moves mid-round; it changes only
   await import("../src/main.js");
   fakeStorage.clear();
   fakeStorage.throws = false;
-  $("new-match-top").click();
+  newMatchTop();
   settle();
   driveToRoundBanner031();
   const landed = fakeStorage.map.get(SCORE_KEY);
@@ -1888,7 +1897,7 @@ test("e2e: finish medals — 1st gold, 2nd silver, 3rd/4th keep the green pill (
   fakeStorage.clear();
   // Play a full round: at the round banner every seat has a
   // finish place.
-  $("new-match-top").click();
+  newMatchTop();
   for (let steps = 0; steps < 20000; steps++) {
     const phase = settle();
     if (phase === "banner") {
@@ -2237,7 +2246,7 @@ test("e2e: round-over banner — subline, PLACE/PLAYER/TOTAL/ROUND columns, meda
     return { totals };
   };
 
-  $("new-match-top").click();
+  newMatchTop();
   driveToBanner();
   const afterRound1 = checkBanner(1);
   // Round 1: totals equal the gains by construction; the pinned
@@ -2338,7 +2347,7 @@ test("e2e: instant-win celebration beat — withheld banner, skip, no replay, ti
   // --- the beat: banner withheld, content pinned ---
   pumpTimers();
   Math.random = seededRng(seed);
-  $("new-match-top").click();
+  newMatchTop();
   const beat = findBeat();
   assert.ok(beat, "the beat overlay was created");
   assert.equal(beat.hidden, false, "the beat is showing");
@@ -2392,7 +2401,7 @@ test("e2e: instant-win celebration beat — withheld banner, skip, no replay, ti
 
   // --- the timed handoff: a fresh instant win, left to run ---
   Math.random = seededRng(seed);
-  $("new-match-top").click();
+  newMatchTop();
   assert.equal(findBeat(), beat, "the same overlay element is reused");
   assert.equal(beat.hidden, false, "a new instant-win summary plays the beat again");
   assert.equal($("banner").hidden, true, "the banner is withheld again");
@@ -2417,7 +2426,7 @@ test("e2e: instant-win celebration beat — withheld banner, skip, no replay, ti
   }
   assert.ok(plainSeed > 0, "a seed with a plain first deal exists");
   Math.random = seededRng(plainSeed);
-  $("new-match-top").click();
+  newMatchTop();
   assert.equal(beat.hidden, true, "no beat for a plain deal");
   driveToRoundBanner031();
   assert.equal($("banner-title").textContent, "Round over", "a plain round-over banner");
@@ -2491,8 +2500,11 @@ test("e2e: phone menu — the ☰ panel holds the three header buttons themselve
     assert.equal($(id).listeners.click?.length, 1, `#${id} has its single original handler`);
   }
 
-  // Fresh match, mid-round, at the human's turn.
+  // Fresh match, mid-round, at the human's turn. (TASK 040: an
+  // earlier test may have left a match in progress — then the tap
+  // asks first, and this confirms.)
   tap($("new-match-top"));
+  if (!$("confirm-overlay").hidden) $("confirm-new").click();
   settleToYourTurn();
   humanMove();
   settleToYourTurn();
@@ -2549,6 +2561,12 @@ test("e2e: phone menu — the ☰ panel holds the three header buttons themselve
   tap($("menu-btn"));
   tap($("new-match-top"));
   assert.equal(expanded(), "false");
+  // TASK 040: mid-match, the menu item asks first — nothing has
+  // moved yet; confirming wipes the match.
+  assert.equal($("confirm-overlay").hidden, false, "the menu's New match asks first mid-match");
+  assert.equal($("round-num").textContent, "2", "nothing reset before confirming");
+  tap($("confirm-new"));
+  assert.equal($("confirm-overlay").hidden, true);
   assert.equal($("round-num").textContent, "1", "back to round 1");
   assert.deepEqual(scoreValues(), [0, 0, 0, 0], "scores reset");
   settle();
@@ -2653,4 +2671,300 @@ test("css: phone layout V3 lives in a <=520px block; desktop and the 521-640 ban
     assert.ok(!/#play-btn|#pass-btn|\.ghost|\.myturn/.test(r.selector), `${r.selector} leaves locked buttons/panel alone`);
     assert.ok(!/background|animation|transition/.test(r.body) || r.selector.includes("menu-panel"), `${r.selector}: no paint or motion change`);
   }
+});
+
+// ---------- TASK 040: confirm before New Match wipes a match ----------
+
+// Reach a live mid-round state in round 2+ with a round-end save on
+// disk and a CPU turn pending behind the timer — the richest state a
+// mis-tapped New match could wipe.
+function armMidMatch040(): void {
+  fakeStorage.clear();
+  fakeStorage.throws = false;
+  newMatchTop();
+  driveToRoundBanner031();
+  assert.ok(fakeStorage.map.has(SCORE_KEY), "a round-end save exists");
+  $("continue-btn").click();
+  for (let steps = 0; steps < 400; steps++) {
+    settleToYourTurn();
+    humanMove();
+    if (timerQueue.length > 0 && $("banner").hidden) return;
+  }
+  throw new Error("never reached a pending CPU turn mid-round");
+}
+
+const logLines040 = (): string[] => $("log").children.map((li) => li.textContent);
+
+// The page minus the dialog's own surface: what "the game" is.
+function gameDom040(): Record<string, DomSnapshot> {
+  const { dom } = pageSnapshot();
+  for (const id of ["confirm-overlay", "confirm-standing", "confirm-cancel", "confirm-new", "app"]) delete dom[id];
+  return dom;
+}
+
+const docKey040 = (key: string): void => {
+  for (const fn of fakeDocument.listeners.keydown ?? []) fn({ key });
+};
+
+const appInert040 = (): unknown => (registry.get("app") as unknown as { inert?: boolean }).inert;
+
+test("e2e: New Match confirm — markup is a dialog in the overlay family; ships hidden; no motion, no chop (TASK 040)", () => {
+  const html = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
+  const block = html.slice(html.indexOf('<div class="overlay" id="confirm-overlay"'), html.indexOf("<script"));
+  assert.ok(block.startsWith('<div class="overlay" id="confirm-overlay" hidden>'), "the shared .overlay shell, hidden at rest");
+  assert.match(block, /<div class="modal confirm" role="dialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-standing confirm-note">/);
+  assert.match(block, /<h2 id="confirm-title">Start a new match\?<\/h2>/);
+  assert.match(block, /<button id="confirm-cancel" type="button">Keep playing<\/button>/);
+  assert.match(block, /<button id="confirm-new" class="danger" type="button">New Match<\/button>/);
+  assert.ok(block.indexOf("confirm-cancel") < block.indexOf("confirm-new"), "Keep playing comes first");
+  assert.ok(!/chop/i.test(block), "no chop vocabulary");
+  // The page behind is the inert target.
+  assert.ok(html.includes('<div class="wrap" id="app">'));
+  for (const id of ["app", "confirm-overlay", "confirm-cancel", "confirm-new"]) {
+    assert.equal(html.split(`id="${id}"`).length, 2, `#${id} appears exactly once`);
+  }
+  const css = readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter((m) => /\.confirm/.test(m[1]));
+  assert.ok(rules.length > 0, "the dialog is styled");
+  for (const rule of rules) assert.ok(!/animation|transition/.test(rule[2]), `no motion on ${rule[1].trim()}`);
+});
+
+test("e2e: New Match confirm — mid-match the header asks first; the game is frozen behind it; Keep playing resumes exactly (TASK 040)", async () => {
+  await import("../src/main.js");
+  armMidMatch040();
+  const before = pageSnapshot();
+  const saveBefore = fakeStorage.map.get(SCORE_KEY);
+  const logBefore = logLines040();
+  const scoresBefore = scoreValues();
+  const roundBefore = $("round-num").textContent;
+  const handBefore = handOrder();
+  assert.ok(saveBefore, "a save is on disk");
+
+  $("new-match-top").click();
+  // The dialog is up, labelled with what would be lost; focus is on
+  // the safe choice and the page behind is inert.
+  assert.equal($("confirm-overlay").hidden, false, "mid-match New match asks first");
+  assert.equal(
+    $("confirm-standing").textContent,
+    `Round ${roundBefore} · You ${scoresBefore[0]} · Mina ${scoresBefore[1]} · Kenji ${scoresBefore[2]} · Rosa ${scoresBefore[3]}`,
+  );
+  assert.equal(fakeDocument.activeElement, $("confirm-cancel"), "focus starts on Keep playing");
+  assert.equal(appInert040(), true, "the table behind is inert");
+  // Opening touched nothing but the dialog: no render, no reset, the
+  // same pending timers, the same save bytes.
+  const open = pageSnapshot();
+  assert.deepEqual(gameDom040(), (() => {
+    const dom = { ...before.dom };
+    for (const id of ["confirm-overlay", "confirm-standing", "confirm-cancel", "confirm-new", "app"]) delete dom[id];
+    return dom;
+  })(), "opening touches nothing but the dialog");
+  assert.equal(open.timers, before.timers);
+  assert.equal(fakeStorage.map.get(SCORE_KEY), saveBefore);
+
+  // Frozen: the pending CPU turn comes due while the dialog is up —
+  // it is HELD, not played. Nothing on the table moves.
+  const frozen = gameDom040();
+  pumpTimers();
+  assert.equal(timerQueue.length, 0, "every due timer fired");
+  assert.deepEqual(gameDom040(), frozen, "no CPU move ran behind the dialog");
+  assert.deepEqual(logLines040(), logBefore);
+  assert.equal(fakeStorage.map.get(SCORE_KEY), saveBefore);
+  assert.equal($("confirm-overlay").hidden, false, "still asking");
+
+  // Keep playing: everything is exactly where it was — scores, round,
+  // hand, log, the stored save bytes — and the held CPU turn is
+  // re-armed (one timer), not lost.
+  $("confirm-cancel").click();
+  assert.equal($("confirm-overlay").hidden, true);
+  assert.equal(appInert040(), false, "the table is live again");
+  assert.equal(fakeDocument.activeElement, $("new-match-top"), "focus returns to New match");
+  assert.deepEqual(gameDom040(), frozen, "cancel changes nothing on the table");
+  assert.deepEqual(scoreValues(), scoresBefore);
+  assert.equal($("round-num").textContent, roundBefore);
+  assert.deepEqual(handOrder(), handBefore);
+  assert.deepEqual(logLines040(), logBefore);
+  assert.equal(fakeStorage.map.get(SCORE_KEY), saveBefore, "the save bytes are untouched");
+  assert.equal(timerQueue.length, 1, "the held CPU turn is re-armed");
+  // Play resumes: the CPU sequence picks up where it paused.
+  const result = settle();
+  assert.ok(result === "your-turn" || result === "banner");
+  // (The log keeps its last 60 lines, so compare content, not length.)
+  assert.notDeepEqual(logLines040(), logBefore, "the CPU moved after the dialog closed");
+});
+
+test("e2e: New Match confirm — Escape and the backdrop cancel; a tap inside the card does not (TASK 040)", async () => {
+  await import("../src/main.js");
+  armMidMatch040();
+  const saveBefore = fakeStorage.map.get(SCORE_KEY);
+  const frozen = gameDom040();
+  // Escape cancels.
+  $("new-match-top").click();
+  assert.equal($("confirm-overlay").hidden, false);
+  pumpTimers();
+  docKey040("Enter");
+  assert.equal($("confirm-overlay").hidden, false, "other keys leave it open");
+  docKey040("Escape");
+  assert.equal($("confirm-overlay").hidden, true, "Escape cancels");
+  assert.equal(appInert040(), false);
+  assert.deepEqual(gameDom040(), frozen);
+  assert.equal(fakeStorage.map.get(SCORE_KEY), saveBefore);
+  assert.equal(timerQueue.length, 1, "the held CPU turn is re-armed");
+  // Escape with the dialog closed does nothing to the game.
+  docKey040("Escape");
+  assert.deepEqual(gameDom040(), frozen);
+  // The backdrop cancels; a click whose target is inside the card
+  // (here its standing line) does not.
+  $("new-match-top").click();
+  for (const fn of $("confirm-overlay").listeners.click ?? []) fn({ target: $("confirm-standing") });
+  assert.equal($("confirm-overlay").hidden, false, "a tap inside the card is not the backdrop");
+  $("confirm-overlay").click();
+  assert.equal($("confirm-overlay").hidden, true, "the backdrop cancels");
+  assert.deepEqual(gameDom040(), frozen);
+  assert.equal(fakeStorage.map.get(SCORE_KEY), saveBefore);
+  // A stray Confirm click with the dialog closed is inert.
+  $("confirm-new").click();
+  assert.deepEqual(gameDom040(), frozen, "Confirm does nothing unless the dialog is up");
+  const result = settle();
+  assert.ok(result === "your-turn" || result === "banner", "play resumes");
+});
+
+test("e2e: New Match confirm — confirming clears the save and deals a fresh 0-0 round 1; play runs on (TASK 040)", async () => {
+  await import("../src/main.js");
+  armMidMatch040();
+  assert.ok(fakeStorage.map.has(SCORE_KEY));
+  $("new-match-top").click();
+  pumpTimers(); // the pending CPU turn comes due and is held
+  assert.equal(timerQueue.length, 0);
+  $("confirm-new").click();
+  // The confirmed New Match is today's New Match exactly.
+  assert.equal($("confirm-overlay").hidden, true);
+  assert.equal(appInert040(), false);
+  assert.equal(fakeStorage.map.has(SCORE_KEY), false, "the save is cleared");
+  assert.equal(logLines040()[0], "New match — first to 13.");
+  const pill = $("round-num").textContent;
+  const scores = scoreValues();
+  const freshQuiet = pill === "1" && scores.every((s) => s === 0);
+  const freshInstant = pill === "2" && [...scores].sort((a, b) => a - b).join(",") === "-2,-2,-2,6";
+  assert.ok(freshQuiet || freshInstant, `a fresh match (got ${scores.join("/")} at round ${pill})`);
+  // The held CPU turn was re-armed, so a CPU-led fresh round still
+  // runs — the page never hangs waiting on it.
+  const result = settle();
+  assert.ok(result === "your-turn" || result === "banner");
+  if (freshQuiet) {
+    assert.equal(fakeStorage.map.has(SCORE_KEY), false, "a fresh 0-0 round-1 board writes no save");
+  }
+});
+
+test("e2e: New Match confirm — a round-over banner is still a match in progress: it asks (TASK 040)", async () => {
+  await import("../src/main.js");
+  fakeStorage.clear();
+  newMatchTop();
+  driveToRoundBanner031();
+  const save = fakeStorage.map.get(SCORE_KEY);
+  const frozen = gameDom040();
+  $("new-match-top").click();
+  assert.equal($("confirm-overlay").hidden, false, "standings are on the line between rounds too");
+  assert.match($("confirm-standing").textContent, /^Round 2 · You -?\d+ · Mina -?\d+ · Kenji -?\d+ · Rosa -?\d+$/);
+  $("confirm-cancel").click();
+  assert.deepEqual(gameDom040(), frozen, "the banner is exactly as it was");
+  assert.equal(fakeStorage.map.get(SCORE_KEY), save);
+});
+
+test("e2e: New Match confirm — the phone ☰ menu item asks too; focus returns to ☰ (TASK 037/040)", async () => {
+  await import("../src/main.js");
+  // Mirror the panel's children (the fake has no markup parser) so a
+  // tap bubbles item -> panel -> document as in the page.
+  for (const id of ["help-btn-top", "odds-btn-top", "new-match-top"]) $("menu-panel").appendChild($(id));
+  const tap = (node: FakeElement): void => {
+    const ev = { target: node };
+    for (let at: FakeElement | null = node; at; at = at.parent) {
+      for (const fn of at.listeners.click ?? []) fn(ev);
+    }
+    for (const fn of fakeDocument.listeners.click ?? []) fn(ev);
+  };
+  armMidMatch040();
+  const saveBefore = fakeStorage.map.get(SCORE_KEY);
+  const frozen = gameDom040();
+  tap($("menu-btn"));
+  assert.equal($("menu-btn").getAttribute("aria-expanded"), "true");
+  tap($("new-match-top"));
+  assert.equal($("menu-btn").getAttribute("aria-expanded"), "false", "the menu closes behind the dialog");
+  assert.equal($("confirm-overlay").hidden, false, "the menu's New match asks first");
+  // Frozen behind it: the pending CPU turn comes due and is held.
+  // (The ☰ button's aria-expanded is the only table-side change —
+  // the menu closed, as any item tap closes it.)
+  pumpTimers();
+  const frozenMenuClosed = gameDom040();
+  delete frozenMenuClosed["menu-btn"];
+  const frozenNoMenu = { ...frozen };
+  delete frozenNoMenu["menu-btn"];
+  assert.deepEqual(frozenMenuClosed, frozenNoMenu, "no CPU move ran behind the dialog");
+  // Cancel from the phone: the game is untouched; focus goes to the
+  // ☰ button (the item itself hides with its closed panel).
+  docKey040("Escape");
+  assert.equal($("confirm-overlay").hidden, true);
+  assert.equal(fakeDocument.activeElement, $("menu-btn"), "focus returns to ☰");
+  assert.deepEqual(gameDom040(), frozen, "cancel from the menu changes nothing");
+  assert.equal(fakeStorage.map.get(SCORE_KEY), saveBefore);
+  // Confirm from the phone: today's New Match.
+  tap($("menu-btn"));
+  tap($("new-match-top"));
+  assert.equal($("confirm-overlay").hidden, false);
+  tap($("confirm-new"));
+  assert.equal($("confirm-overlay").hidden, true);
+  assert.equal(fakeStorage.map.has(SCORE_KEY), false, "the save is cleared");
+  assert.equal(logLines040()[0], "New match — first to 13.");
+  const result = settle();
+  assert.ok(result === "your-turn" || result === "banner");
+});
+
+test("e2e: New Match confirm — nothing to lose stays one tap: match-over banner, header at match end, start gate (TASK 040)", async () => {
+  const main = await import("../src/main.js");
+  const playToMatchEnd = (): void => {
+    for (let steps = 0; steps < 40000; steps++) {
+      const phase = settle();
+      if (phase === "banner") {
+        if (isMatchEndBanner()) return;
+        $("continue-btn").click();
+        continue;
+      }
+      humanMove();
+    }
+    throw new Error("match never ended");
+  };
+  const assertFresh = (label: string): void => {
+    assert.equal($("confirm-overlay").hidden, true, `${label}: no dialog`);
+    assert.equal(logLines040()[0], "New match — first to 13.", `${label}: a fresh match`);
+    const pill = $("round-num").textContent;
+    const scores = scoreValues();
+    assert.ok(
+      (pill === "1" && scores.every((s) => s === 0)) ||
+        (pill === "2" && [...scores].sort((a, b) => a - b).join(",") === "-2,-2,-2,6"),
+      `${label}: fresh board (got ${scores.join("/")} at round ${pill})`,
+    );
+    assert.equal(fakeStorage.map.has(SCORE_KEY), false, `${label}: no save`);
+  };
+  fakeStorage.clear();
+  // The match-over banner's New Match: one tap.
+  newMatchTop();
+  playToMatchEnd();
+  assert.equal($("new-match-btn").hidden, false);
+  $("new-match-btn").click();
+  assertFresh("match-over banner");
+  // The header button once the match is decided: one tap too.
+  playToMatchEnd();
+  $("new-match-top").click();
+  assertFresh("header at match end");
+  // The start gate's New Match beside Resume (TASK 039): one tap,
+  // unchanged — it never asks, whatever the controller holds.
+  settle();
+  fakeStorage.setItem(SCORE_KEY, JSON.stringify({ scores: [5, -2, 3, 0], round: 4 }));
+  main.render({
+    phase: "idle", match: null, trick: null, message: "", log: [],
+    trickView: emptyTrickView(), roundSummary: null, roundId: 0, trickId: 0,
+  });
+  assert.equal($("start-btn").textContent, "New Match");
+  $("start-btn").click();
+  assertFresh("start gate");
+  settle();
 });

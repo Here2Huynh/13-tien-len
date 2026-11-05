@@ -14,7 +14,7 @@
     <link rel="stylesheet" href="./src/styles.css" />
   </head>
   <body>
-    <div class="wrap">
+    <div class="wrap" id="app">
       <header class="top">
         <h1>13<span class="sub">Tiến Lên · Nam Rules · 1P vs CPU</span></h1>
         <div class="matchbar">
@@ -151,6 +151,18 @@
         <p class="odds-note">A deal that fits two instant wins counts once, as the one the game awards.</p>
         <div class="banner-actions">
           <button id="odds-close" type="button">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="overlay" id="confirm-overlay" hidden>
+      <div class="modal confirm" role="dialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-standing confirm-note">
+        <h2 id="confirm-title">Start a new match?</h2>
+        <div class="sub2" id="confirm-standing"></div>
+        <p class="note" id="confirm-note">This match ends here and its scores are cleared.</p>
+        <div class="banner-actions">
+          <button id="confirm-cancel" type="button">Keep playing</button>
+          <button id="confirm-new" class="danger" type="button">New Match</button>
         </div>
       </div>
     </div>
