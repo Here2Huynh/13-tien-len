@@ -1714,7 +1714,11 @@ test("e2e: score persistence — New Match clears the save; match end clears it 
 });
 
 test("e2e: score persistence — corrupt and out-of-range saves are discarded (TASK 031)", async () => {
-  await import("../src/main.js");
+  const main = await import("../src/main.js");
+  const idle: ControllerState = {
+    phase: "idle", match: null, trick: null, message: "", log: [],
+    trickView: emptyTrickView(), roundSummary: null, roundId: 0, trickId: 0,
+  };
   const badPayloads = [
     "not json at all",
     JSON.stringify({ scores: [1, 2, 3], round: 2 }), // three seats
@@ -1730,8 +1734,22 @@ test("e2e: score persistence — corrupt and out-of-range saves are discarded (T
   for (const payload of badPayloads) {
     fakeStorage.clear();
     fakeStorage.throws = false;
+    // TASK 039: Start clears the save unconditionally, so it never
+    // reaches the parser — each bad payload is judged through the
+    // two paths that DO parse it. First the start gate (what a
+    // reload shows): the parser rejects the payload, so the gate
+    // offers no Resume, the start button keeps its no-save label,
+    // and the bad save is removed from storage.
     fakeStorage.setItem(SCORE_KEY, payload);
-    $("start-btn").click();
+    main.render(idle);
+    assert.equal($("resume-btn").hidden, true, `gate offers no Resume: ${payload}`);
+    assert.equal($("start-btn").textContent, "Start Game", `gate reads Start Game: ${payload}`);
+    assert.equal(fakeStorage.map.has(SCORE_KEY), false, `gate removed the bad save: ${payload}`);
+    // Then the Resume click itself, with the payload back in
+    // storage: the parser rejects it again and the match starts
+    // fresh rather than restoring it.
+    fakeStorage.setItem(SCORE_KEY, payload);
+    $("resume-btn").click();
     // Judge the restore decision on the immediate post-click
     // render, before any pumped CPU chain can move points. A
     // discarded save starts a FRESH match, which shows exactly
@@ -1763,6 +1781,9 @@ test("e2e: score persistence — corrupt and out-of-range saves are discarded (T
   // -99 shifted by an instant win), at round 9 (or 10 if the
   // restored deal itself instant-won).
   fakeStorage.setItem(SCORE_KEY, JSON.stringify({ scores: [12, -99, 0, 5], round: 9 }));
+  main.render(idle);
+  assert.equal($("resume-btn").hidden, false, "band edges: the gate offers Resume");
+  assert.equal($("start-btn").textContent, "New Match", "band edges: the gate reads New Match");
   $("resume-btn").click();
   const edgeScores = scoreValues();
   const edgePill = $("round-num").textContent;
