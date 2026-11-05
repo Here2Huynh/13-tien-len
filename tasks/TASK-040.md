@@ -1,6 +1,7 @@
 # TASK-040: Confirm before New Match wipes a match (audit #9)
 
-Status: ASSIGNED (builder) — TASK-039 closed 2026-11-04. Suite baseline: 142.
+Status: ASSIGNED (verifier) — PR #42; checklist
+tasks/VERIFY-040.md. Suite baseline: 142.
 Source: Task 035 audit finding #9 — **John's pick in the
 2026-11-04 walk-through: "Build."**
 
