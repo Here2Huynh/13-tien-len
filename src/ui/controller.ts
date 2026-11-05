@@ -5,6 +5,7 @@ import {
 } from "../engine/match.js";
 import { playCards, passTurn, hasComebackTurn, type TrickState } from "../engine/trick.js";
 import { chooseAction, type Action } from "../engine/ai.js";
+import { isDeadComebackTurn } from "../engine/comeback.js";
 import { detectBomb, bombOnBombBeats, bombTarget } from "../engine/bombs.js";
 import type { Card } from "../engine/cards.js";
 import type { Penalty } from "../engine/scoring.js";
@@ -241,6 +242,7 @@ export function createController(options: ControllerOptions = {}): Controller {
     } else {
       state.trickView = applyToTrickView(state.trickView, { type: "pass", player });
     }
+    declineDeadComebacks(trick);
     if (trick.roundOver) {
       const result = finishRound(match, trick);
       state.roundSummary = {
@@ -260,6 +262,29 @@ export function createController(options: ControllerOptions = {}): Controller {
     emit();
     maybeCpu();
     return true;
+  }
+
+  // Dead comeback turns (TASK 038): when the turn lands on a player
+  // whose comeback gate is open but who holds no comeback-legal
+  // answer (engine: comeback.isDeadComebackTurn — e.g. anything
+  // against triple 2s), Pass is the only legal action, so it is
+  // declined for them right here: the same engine pass and the same
+  // trick bookkeeping the old forced Pass made, but no log line, no
+  // CPU delay and no emit — the turn is never offered, so nobody is
+  // shown "your turn" for it. Live comeback turns are untouched. A
+  // pass never ends a round, and a finished round offers no turns.
+  function declineDeadComebacks(trick: TrickState): void {
+    while (!trick.roundOver && isDeadComebackTurn(trick, trick.currentPlayer)) {
+      const player = trick.currentPlayer;
+      const trickNumberBefore = trick.trickNumber;
+      passTurn(trick, player);
+      if (trick.trickNumber !== trickNumberBefore) {
+        state.trickId += 1;
+        state.trickView = emptyTrickView();
+      } else {
+        state.trickView = applyToTrickView(state.trickView, { type: "pass", player });
+      }
+    }
   }
 
   function maybeCpu(): void {

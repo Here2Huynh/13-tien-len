@@ -13,7 +13,14 @@ import {
   roundResultRows, scoreRows,
   type SelectionCheck,
 } from "../src/ui/model.js";
-import { createController, type RoundSummary } from "../src/ui/controller.js";
+import { createController, type RoundSummary, type ControllerState } from "../src/ui/controller.js";
+import { hasLiveComebackTurn, isDeadComebackTurn } from "../src/engine/comeback.js";
+
+// Seeds whose hint-autopilot matches include live human AND CPU
+// comeback turns, plus seeds 23 and 39 whose round 1 held a dead
+// human comeback stop in the old build (on a 2, on a 3-pair-run
+// bomb) — TASK 038 sweep, ~/workspace/13tl-traces-038/.
+const SEEDED_LIVE_SEEDS = [53, 149, 23, 39];
 
 // Consolidated app suite: CPU policy, match runner, UI view-model,
 // and the DOM-free controller. One file by design — the per-module
@@ -634,8 +641,11 @@ test("controller: log — a pass locks you out, and a comeback bomb logs the ret
 });
 
 test("controller: log — a pass that closes the trick makes no lockout claim (TASK 016)", () => {
+  // TASK 038: your hand carries four 9s, so the comeback turn below
+  // is LIVE (a dead one is now declined for you and never offered).
+  const quad9 = [c("9", "spades"), c("9", "clubs"), c("9", "diamonds"), c("9", "hearts")];
   const hands = [
-    [c("4", "clubs"), c("7", "diamonds"), c("9", "spades")],
+    [c("4", "clubs"), c("7", "diamonds"), ...quad9],
     [c("3", "spades"), c("K", "diamonds")],
     [c("2", "clubs"), c("6", "spades"), c("8", "spades")],
     [c("5", "diamonds"), c("J", "clubs")],
@@ -653,7 +663,176 @@ test("controller: log — a pass that closes the trick makes no lockout claim (T
   // Mina plays K♦ (going out), Kenji answers with the 2♣, Rosa
   // passes. Mina is finished and Kenji holds the play, so your
   // comeback-decline pass closes the trick: plain line, no claim.
+  assert.equal(s.trick!.currentPlayer, 0);
+  assert.equal(hasLiveComebackTurn(s.trick!, 0), true, "your comeback turn is live");
+  const trickBefore = s.trick!.trickNumber;
   const before = s.log.length;
   assert.equal(controller.humanPass(), true);
   assert.equal(s.log[before], "You passes.");
+  assert.equal(s.trick!.trickNumber, trickBefore + 1, "the decline closed the trick");
+});
+
+// ---------- dead comeback turns (TASK 038) ----------
+
+// Every state the controller emits while a round is in play, cloned.
+function recordEmits(dealHands: () => Card[][]) {
+  const emitted: ControllerState[] = [];
+  const controller = createController({
+    schedule: sync,
+    dealHands,
+    onChange: (state) => emitted.push(structuredClone(state)),
+  });
+  return { controller, emitted };
+}
+
+// Prompt honesty: an emitted playing state never hands the turn to a
+// locked-out seat unless that seat holds a comeback-legal answer.
+function assertNoDeadTurnOffered(emitted: ControllerState[]): void {
+  for (const state of emitted) {
+    if (state.phase !== "playing" || !state.trick) continue;
+    const player = state.trick.currentPlayer;
+    assert.equal(isDeadComebackTurn(state.trick, player), false, `dead turn offered to seat ${player}`);
+    if (state.trick.passed.includes(player)) {
+      assert.equal(hasLiveComebackTurn(state.trick, player), true, `locked-out seat ${player} prompted without a live answer`);
+    }
+  }
+}
+
+test("controller: a dead human comeback turn is declined for you — no stop, no pass line, same outcome (TASK 038)", () => {
+  // The TASK 016 fixture with no bomb in your hand: Kenji's 2♣
+  // opens your comeback gate, but nothing you hold can come back.
+  const hands = [
+    [c("4", "clubs"), c("7", "diamonds"), c("9", "spades")],
+    [c("3", "spades"), c("K", "diamonds")],
+    [c("2", "clubs"), c("6", "spades"), c("8", "spades")],
+    [c("5", "diamonds"), c("J", "clubs")],
+  ];
+  const { controller, emitted } = recordEmits(() => hands);
+  controller.newMatch();
+  const s = controller.state;
+  assert.equal(controller.humanPass(), true); // the live lockout pass on J♣
+  // Old build: the turn stopped on you after Rosa's pass (only Pass
+  // legal) and logged "You passes." New: that forced pass is made
+  // for you unseen, the trick clears to Kenji exactly as it did
+  // then, and he leads his last card.
+  const from = s.log.indexOf("Kenji plays single 2♣.");
+  assert.ok(from >= 0, s.log.join(" | "));
+  assert.deepEqual(s.log.slice(from), [
+    "Kenji plays single 2♣.",
+    "Rosa passes — locked out.",
+    "Kenji plays single 8♠.",
+    "Rosa passes — locked out.",
+  ]);
+  assert.equal(s.trick!.trickNumber, 2, "the auto-decline cleared trick 1");
+  assert.equal(s.trick!.leader, 2, "the 2♣'s owner leads next, as after the old forced pass");
+  assert.equal(s.trick!.currentPlayer, 0);
+  assert.equal(s.trick!.passed.includes(0), false, "your turn is a normal one");
+  assertNoDeadTurnOffered(emitted);
+});
+
+test("controller: triple 2s never open a turn — even holding four of a kind (TASK 038)", () => {
+  // You lead triple 3s; Mina, Kenji, Rosa raise; you pass (holding
+  // four aces); Mina drops triple 2s. Your comeback gate opens on
+  // shape alone, but nothing beats triple 2s: dead, declined unseen.
+  const hands = [
+    [c("3", "spades"), c("3", "hearts"), c("3", "diamonds"),
+      c("A", "spades"), c("A", "clubs"), c("A", "diamonds"), c("A", "hearts"), c("K", "hearts")],
+    [c("5", "spades"), c("5", "clubs"), c("5", "diamonds"), c("2", "clubs"), c("2", "diamonds"), c("2", "hearts"), c("K", "spades")],
+    [c("6", "spades"), c("6", "clubs"), c("6", "diamonds"), c("Q", "spades")],
+    [c("7", "spades"), c("7", "clubs"), c("7", "diamonds"), c("J", "spades")],
+  ];
+  const { controller, emitted } = recordEmits(() => hands);
+  controller.newMatch();
+  const s = controller.state;
+  assert.equal(controller.humanPlay([c("3", "spades"), c("3", "hearts"), c("3", "diamonds")]), true);
+  assert.equal(s.trick!.currentPlayer, 0, "back to you after three raises");
+  assert.equal(controller.humanPass(), true);
+  const from = s.log.indexOf("Mina plays a triple, high card 2♥.");
+  assert.ok(from >= 0, s.log.join(" | "));
+  // Old build: "You passes." (the forced decline that closed the
+  // trick) sat between Rosa's pass and Mina's lead.
+  assert.deepEqual(s.log.slice(from, from + 4), [
+    "Mina plays a triple, high card 2♥.",
+    "Kenji passes — locked out.",
+    "Rosa passes — locked out.",
+    "Mina plays single K♠.",
+  ]);
+  assert.equal(s.trick!.trickNumber, 2);
+  assert.equal(s.trick!.leader, 1, "triple 2s won the trick for Mina");
+  assertNoDeadTurnOffered(emitted);
+});
+
+test("controller: live comebacks are still offered — four of a kind and the 4-pair run (TASK 038)", () => {
+  const run4 = (["5", "6", "7", "8"] as const).flatMap((r) => [c(r, "clubs"), c(r, "hearts")]);
+  const quad9 = [c("9", "spades"), c("9", "clubs"), c("9", "diamonds"), c("9", "hearts")];
+  for (const [label, bomb] of [["four of a kind", quad9], ["4-pair run", run4]] as const) {
+    // Mina leads 3♠, Kenji and Rosa raise, you pass, Mina tops it
+    // with the 2♥: your comeback is live, so the turn stops on you.
+    const hands = [
+      [...bomb, c("K", "clubs")],
+      [c("3", "spades"), c("2", "hearts"), c("5", "spades")],
+      [c("4", "diamonds"), c("J", "spades")],
+      [c("6", "diamonds"), c("Q", "diamonds")],
+    ];
+    const { controller, emitted } = recordEmits(() => hands);
+    controller.newMatch();
+    const s = controller.state;
+    assert.equal(s.trick!.currentPlayer, 0, label);
+    assert.equal(controller.humanPass(), true, label);
+    assert.equal(s.trick!.currentPlayer, 0, `${label}: stops on your comeback`);
+    assert.ok(s.trick!.passed.includes(0), `${label}: you are a passer`);
+    assert.equal(s.trick!.currentPlay!.cards[0].id, "2-hearts", label);
+    assert.equal(hasLiveComebackTurn(s.trick!, 0), true, label);
+    assert.deepEqual(ids(cardsOf(controller.hint()!)), ids([...bomb]), `${label}: Hint offers the bomb`);
+    assert.equal(controller.humanPlay([...bomb]), true, label);
+    assert.ok(s.log.includes("You are back in the trick."), label);
+    assert.ok(s.log.includes("Bomb penalty: Mina pays 1 to You — her 2 was bombed."), label);
+    assertNoDeadTurnOffered(emitted);
+  }
+});
+
+test("controller: seed 38 replay — the live four-4s comeback still stops and offers the bomb (TASK 038)", () => {
+  const rng = seededRng(38);
+  const { controller, emitted } = recordEmits(() => newDeal(rng));
+  controller.newMatch();
+  const s = controller.state;
+  assert.equal(controller.humanPass(), true); // pass once, as the audit's replay did
+  assert.equal(s.trick!.currentPlayer, 0, "the turn stops on your comeback");
+  assert.ok(s.trick!.passed.includes(0));
+  assert.deepEqual(s.trick!.currentPlay!.cards.map((card) => card.id), ["2-spades"]);
+  assert.equal(s.log[s.log.length - 1], "Rosa plays single 2♠.");
+  const fours = ["4-clubs", "4-diamonds", "4-hearts", "4-spades"];
+  assert.deepEqual(ids(cardsOf(controller.hint()!)), fours, "Hint offers four 4s");
+  assert.equal(controller.humanPlay(cardsOf(controller.hint()!)), true);
+  assert.ok(s.log.includes("You are back in the trick."));
+  assert.ok(s.log.includes("Bomb penalty: Rosa pays 1 to You — her 2 was bombed."));
+  assertNoDeadTurnOffered(emitted);
+});
+
+test("controller: seeded autopilot matches never offer a dead turn; live comebacks still stop (TASK 038)", () => {
+  let humanLive = 0;
+  let cpuLive = 0;
+  for (const seed of SEEDED_LIVE_SEEDS) {
+    const rng = seededRng(seed);
+    const { controller, emitted } = recordEmits(() => newDeal(rng));
+    controller.newMatch();
+    const s = controller.state;
+    for (let steps = 0; s.phase !== "matchEnd"; steps++) {
+      assert.ok(steps < 20000, "match did not finish");
+      if (s.phase === "roundEnd") {
+        controller.continueRound();
+        continue;
+      }
+      if (hasLiveComebackTurn(s.trick!, 0)) humanLive++;
+      const action = controller.hint()!;
+      assert.ok(action.type === "pass" ? controller.humanPass() : controller.humanPlay(action.cards));
+    }
+    // With a synchronous schedule every CPU turn is emitted before
+    // the CPU acts, so a live CPU comeback shows up here.
+    cpuLive += emitted.filter((st) => st.phase === "playing" && st.trick !== null &&
+      st.trick.currentPlayer !== 0 && hasLiveComebackTurn(st.trick, st.trick.currentPlayer)).length;
+    assertNoDeadTurnOffered(emitted);
+  }
+  assert.ok(humanLive > 0, "a live human comeback still stops for you");
+  assert.ok(cpuLive > 0, "live CPU comebacks still happen");
 });
