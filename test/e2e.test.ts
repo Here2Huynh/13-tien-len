@@ -42,6 +42,7 @@ interface FakeEvent {
   clientX?: number;
   clientY?: number;
   target?: unknown;
+  key?: string;
 }
 
 type FakeListener = (ev: FakeEvent) => void;
@@ -163,6 +164,15 @@ class FakeElement {
   addEventListener(type: string, fn: FakeListener): void {
     (this.listeners[type] ??= []).push(fn);
   }
+  // TASK 037: the phone menu's outside-click test and Escape focus
+  // return. contains() walks the parent chain the fake tracks.
+  contains(node: FakeElement | null): boolean {
+    for (let at = node; at; at = at.parent) if (at === this) return true;
+    return false;
+  }
+  focus(): void {
+    fakeDocument.activeElement = this;
+  }
   setPointerCapture(_pointerId: number): void {
     // No capture in the fake; drag handlers tolerate its absence.
   }
@@ -212,6 +222,7 @@ const ELEMENT_IDS = [
   "round-num", "new-match-top", "sort-btn", "clear-btn",
   "help-btn-top", "help-btn-start", "help-overlay", "help-close",
   "odds-btn-top", "odds-overlay", "odds-close",
+  "menu-btn", "menu-panel",
 ];
 
 const registry = new Map<string, FakeElement>();
@@ -225,6 +236,13 @@ const fakeDocument = {
   // A body so the adapter's fx layer (bomb-penalty floats) has
   // somewhere to live and tests can count what it spawns.
   body: new FakeElement("body"),
+  // TASK 037: document-level listeners (the phone menu closes on an
+  // outside click and on Escape) and the focused element.
+  listeners: {} as Record<string, FakeListener[]>,
+  addEventListener(type: string, fn: FakeListener): void {
+    (this.listeners[type] ??= []).push(fn);
+  },
+  activeElement: null as FakeElement | null,
 };
 (globalThis as { document: unknown }).document = fakeDocument;
 
@@ -1926,16 +1944,17 @@ function task025Hsl(hex: string): { h: number; s: number; l: number } {
 }
 
 test("utility buttons: the button.ghost family is warm gold from the trim, with dark legible ink (TASK 025)", () => {
-  // Inventory, pinned on the shipped markup: eight button.ghost
-  // elements — the controls row, the header's .ghost.small trio,
-  // and the start screen's How to play.
+  // Inventory, pinned on the shipped markup: nine button.ghost
+  // elements — the header's .ghost.small set (TASK 037 adds the
+  // phone ☰ Menu button ahead of the trio it holds), the controls
+  // row, and the start screen's How to play.
   const html = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
   const ghostIds = [...html.matchAll(/<button\b[^>]*>/g)]
     .map((m) => m[0])
     .filter((tag) => /class="[^"]*\bghost\b[^"]*"/.test(tag))
     .map((tag) => tag.match(/id="([^"]+)"/)?.[1]);
   assert.deepEqual(ghostIds, [
-    "help-btn-top", "odds-btn-top", "new-match-top",
+    "menu-btn", "help-btn-top", "odds-btn-top", "new-match-top",
     "pass-btn", "hint-btn", "sort-btn", "clear-btn",
     "help-btn-start",
   ]);
@@ -2341,4 +2360,211 @@ test("e2e: instant-win celebration beat — withheld banner, skip, no replay, ti
   // (TASK 036: the beat moved from src/main.ts to src/dom/banner.ts.)
   const bannerTs = readFileSync(new URL("../../src/dom/banner.ts", import.meta.url), "utf8");
   assert.match(bannerTs, /const BEAT_MS = 2800;/, "the beat's total duration is ~2.8s");
+});
+
+// ---------- TASK 037: phone one-screen layout (V3) ----------
+
+test("e2e: phone menu — the ☰ panel holds the three header buttons themselves; item, outside tap and Escape close it (TASK 037)", async () => {
+  // Markup: one ☰ Menu button (a disclosure, closed at rest) and a
+  // panel holding exactly How to play / Bomb odds / New match — the
+  // same three header buttons, moved, never duplicated.
+  const html = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
+  const header = html.slice(html.indexOf('<header class="top">'), html.indexOf("</header>"));
+  assert.match(
+    header,
+    /<button class="ghost small" id="menu-btn" type="button" aria-expanded="false" aria-controls="menu-panel"><span aria-hidden="true">☰<\/span> Menu<\/button>/,
+  );
+  const panel = header.match(/<div class="menu-panel" id="menu-panel">([\s\S]*?)<\/div>/)?.[1] ?? "";
+  assert.deepEqual(
+    [...panel.matchAll(/<button\b[^>]*id="([^"]+)"/g)].map((m) => m[1]),
+    ["help-btn-top", "odds-btn-top", "new-match-top"],
+  );
+  for (const id of ["menu-btn", "menu-panel", "help-btn-top", "odds-btn-top", "new-match-top"]) {
+    assert.equal(html.split(`id="${id}"`).length, 2, `#${id} appears exactly once`);
+  }
+
+  await import("../src/main.js");
+  // The fake has no markup parser: mirror the panel's children so
+  // a click can bubble the way it does in the page (item -> panel ->
+  // document).
+  for (const id of ["help-btn-top", "odds-btn-top", "new-match-top"]) $("menu-panel").appendChild($(id));
+  const docFire = (type: string, ev: FakeEvent): void => {
+    for (const fn of fakeDocument.listeners[type] ?? []) fn(ev);
+  };
+  const tap = (node: FakeElement): void => {
+    const ev = { target: node };
+    for (let at: FakeElement | null = node; at; at = at.parent) {
+      for (const fn of at.listeners.click ?? []) fn(ev);
+    }
+    docFire("click", ev);
+  };
+  const expanded = (): string | null => $("menu-btn").getAttribute("aria-expanded");
+  // Same handlers, not copies: each item carries exactly the one
+  // click handler the header button always had.
+  for (const id of ["help-btn-top", "odds-btn-top", "new-match-top"]) {
+    assert.equal($(id).listeners.click?.length, 1, `#${id} has its single original handler`);
+  }
+
+  // Fresh match, mid-round, at the human's turn.
+  tap($("new-match-top"));
+  settleToYourTurn();
+  humanMove();
+  settleToYourTurn();
+  const midGame = pageSnapshot();
+  assert.ok(handCount() < 13, "the human has played");
+
+  // ☰ toggles; How to play opens and the menu closes behind it.
+  tap($("menu-btn"));
+  assert.equal(expanded(), "true");
+  tap($("menu-btn"));
+  assert.equal(expanded(), "false", "a second tap closes");
+  tap($("menu-btn"));
+  tap($("help-btn-top"));
+  assert.equal($("help-overlay").hidden, false, "How to play opens from the menu");
+  assert.equal(expanded(), "false", "the menu closes after an item");
+  $("help-close").click();
+  // Bomb odds, the same way.
+  tap($("menu-btn"));
+  tap($("odds-btn-top"));
+  assert.equal($("odds-overlay").hidden, false, "Bomb odds opens from the menu");
+  assert.equal(expanded(), "false");
+  $("odds-close").click();
+  // An outside tap closes; a tap inside the panel's own box does not
+  // count as outside.
+  tap($("menu-btn"));
+  docFire("click", { target: $("menu-panel") });
+  assert.equal(expanded(), "true", "a tap on the panel itself is inside");
+  tap($("hand"));
+  assert.equal(expanded(), "false", "an outside tap closes");
+  // Escape closes and returns focus to the ☰ button; other keys and
+  // a closed menu are left alone.
+  tap($("menu-btn"));
+  docFire("keydown", { key: "Enter" });
+  assert.equal(expanded(), "true");
+  docFire("keydown", { key: "Escape" });
+  assert.equal(expanded(), "false");
+  assert.equal(fakeDocument.activeElement, $("menu-btn"));
+  fakeDocument.activeElement = null;
+  docFire("keydown", { key: "Escape" });
+  assert.equal(fakeDocument.activeElement, null, "Escape on a closed menu does nothing");
+  // The menu is presentation: the game is exactly where it was.
+  const now = pageSnapshot();
+  delete now.dom["menu-btn"];
+  delete midGame.dom["menu-btn"];
+  assert.deepEqual(now, midGame, "menu use leaves the game untouched");
+
+  // New match from the menu starts a fresh match: play the round out
+  // so the board has moved, continue, then New match.
+  driveToRoundBanner031();
+  $("continue-btn").click();
+  settle();
+  assert.equal($("round-num").textContent, "2");
+  assert.notDeepEqual(scoreValues(), [0, 0, 0, 0], "points moved in round 1");
+  tap($("menu-btn"));
+  tap($("new-match-top"));
+  assert.equal(expanded(), "false");
+  assert.equal($("round-num").textContent, "1", "back to round 1");
+  assert.deepEqual(scoreValues(), [0, 0, 0, 0], "scores reset");
+  settle();
+  assert.equal($("banner").hidden, true);
+});
+
+test("e2e: score strip data — the live count line is number + unit, same text (TASK 037)", async () => {
+  const { render } = await import("../src/main.js");
+  const metaOf = (box: FakeElement): FakeElement =>
+    box.children.find((c) => (c.className ?? "").split(/\s+/).includes("meta"))!;
+  // Not dealt: the whole line, no live split (the strip hides it).
+  render({ phase: "idle", match: null, trick: null, message: "", log: [],
+    trickView: emptyTrickView(), roundSummary: null, ...freshIds() });
+  for (const box of $("scores").children) {
+    const meta = metaOf(box);
+    assert.equal(meta.className, "meta");
+    assert.equal(meta.textContent, "Not dealt yet");
+  }
+  // In play: <span class="n">count</span><span class="u"> cards left</span>
+  // — the desktop line reads exactly as before.
+  const hands = [
+    [makeCard("3", "spades"), makeCard("9", "clubs")],
+    [makeCard("5", "hearts"), makeCard("6", "hearts"), makeCard("7", "clubs")],
+    [makeCard("7", "hearts")],
+    [makeCard("8", "hearts"), makeCard("8", "clubs")],
+  ];
+  const trick = createTrickState(hands, { leader: 0, openingLead: true });
+  render({ phase: "playing", match: createMatch(), trick, message: "", log: [],
+    trickView: emptyTrickView(), roundSummary: null, ...freshIds() });
+  const counts = [2, 3, 1, 2];
+  $("scores").children.forEach((box, p) => {
+    const meta = metaOf(box);
+    assert.equal(meta.className, "meta live");
+    assert.equal(meta.textContent, `${counts[p]} cards left`);
+    assert.deepEqual(meta.children.map((c) => [c.className, c.textContent]), [
+      ["n", `${counts[p]}`],
+      ["u", " cards left"],
+    ]);
+  });
+});
+
+test("css: phone layout V3 lives in a <=520px block; desktop and the 521-640 band are untouched (TASK 037)", () => {
+  const raw = readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8");
+  const css = raw.replace(/\/\*[\s\S]*?\*\//g, "");
+  const at640 = css.indexOf("@media (max-width:640px){");
+  const at520 = css.indexOf("@media (max-width:520px){");
+  assert.ok(at640 >= 0 && at520 > at640, "the 520 block layers after the 640 block");
+  assert.equal(css.split("@media (max-width:520px){").length, 2, "one phone-layout block");
+  const end520 = css.indexOf("\n}", at520);
+  const block = css.slice(at520, end520);
+  const outside = css.slice(0, at520) + css.slice(end520);
+  const rulesIn = (text: string): { selector: string; body: string }[] =>
+    [...text.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({
+      selector: m[1].replace(/^[\s\S]*\{/, "").trim(),
+      body: m[2].trim(),
+    }));
+  const phone = rulesIn(block.slice(block.indexOf("{") + 1));
+  const ruleOf = (selector: string): string => {
+    const r = phone.find((x) => x.selector === selector);
+    assert.ok(r, `${selector} rule in the phone block`);
+    return r.body;
+  };
+  // Above the breakpoint the ☰ button is not rendered and the panel
+  // is layout-transparent: the header renders as before.
+  assert.ok(outside.includes("#menu-btn{display:none;}"));
+  assert.ok(outside.includes(".menu-panel{display:contents;}"));
+  assert.equal(ruleOf("#menu-btn"), "display:inline-block;");
+  assert.equal(ruleOf(".menu-panel"), "display:none;");
+  assert.match(ruleOf('#menu-btn[aria-expanded="true"] + .menu-panel'), /display:flex;/);
+  assert.match(ruleOf(".menu-panel button"), /min-height:44px;/);
+  // Slim header: subtitle and the First-to-13 chip are not shown.
+  assert.equal(ruleOf("h1 .sub"), "display:none;");
+  assert.equal(ruleOf(".chip.gold"), "display:none;");
+  // The strip: one row of four content-sized cells (never wraps),
+  // no progress bar.
+  assert.match(ruleOf(".scores"), /display:flex;/);
+  assert.ok(!/flex-wrap:wrap/.test(ruleOf(".scores")), "the strip is one row");
+  assert.match(ruleOf(".score"), /white-space:nowrap;/);
+  assert.equal(ruleOf(".score .bar"), "display:none;");
+  // John's closer trade: no Before-that line on the phone — and
+  // only there.
+  assert.equal(ruleOf(".pile .prior"), "display:none;");
+  assert.ok(!/\.prior\{display:none/.test(outside), "desktop keeps the Before-that line");
+  // Fit ruling A (John, 2026-11-04): the phone block DOES size the
+  // pile — 144px, Task 015's formula without the dropped
+  // Before-that line — overriding the 640 block's 207px here only.
+  assert.equal(ruleOf(".pile"), "height:144px;");
+  // Hand cards ~42px; action buttons keep >=44px tall targets.
+  assert.equal(ruleOf(".hand .card"), "width:42px;height:60px;");
+  assert.match(ruleOf(".controls button"), /min-height:44px;/);
+  // Fit ruling B (same ruling): the action row fits on one line —
+  // 12.5px type, 6px side padding, 4px gaps.
+  assert.equal(ruleOf(".controls"), "margin-top:6px;gap:4px;");
+  assert.equal(
+    ruleOf(".controls button"),
+    "min-height:44px;padding:6px 6px;font-size:12.5px;letter-spacing:.2px;",
+  );
+  // Locked designs are not restyled here: no rule touches PLAY /
+  // PASS / the ghost family / the turn panel / the felt's paint, and
+  // nothing animates.
+  for (const r of phone) {
+    assert.ok(!/#play-btn|#pass-btn|\.ghost|\.myturn/.test(r.selector), `${r.selector} leaves locked buttons/panel alone`);
+    assert.ok(!/background|animation|transition/.test(r.body) || r.selector.includes("menu-panel"), `${r.selector}: no paint or motion change`);
+  }
 });

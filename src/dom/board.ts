@@ -77,12 +77,23 @@ export function renderScoreboard(state: ControllerState): void {
       nm.append(el("span", "badge pass", "Passed"));
     box.append(nm);
     box.append(el("div", "pts", `${scores[player]}`));
-    const meta = !trick
-      ? "Not dealt yet"
-      : finishIdx >= 0
-        ? `Finished ${ORDINALS[finishIdx]}`
-        : `${trick.hands[player].length} cards left`;
-    box.append(el("div", "meta", meta));
+    // TASK 037: the in-play count line is split into the number and
+    // its unit — same text, same desktop rendering — so the phone
+    // score strip can show the bare count ("YOU 0 · 8"); the unit
+    // stays in the accessibility tree there (visually hidden). The
+    // other two lines ("Not dealt yet", "Finished 1st") are whole;
+    // the strip hides them (the finish marker carries the place).
+    const meta = el("div", "meta");
+    if (!trick) meta.textContent = "Not dealt yet";
+    else if (finishIdx >= 0) meta.textContent = `Finished ${ORDINALS[finishIdx]}`;
+    else {
+      meta.classList.add("live");
+      meta.append(
+        el("span", "n", `${trick.hands[player].length}`),
+        el("span", "u", " cards left"),
+      );
+    }
+    box.append(meta);
     const bar = el("div", "bar");
     const fill = el("i");
     fill.style.width = `${Math.max(0, Math.min(100, (scores[player] / 13) * 100))}%`;

@@ -36,6 +36,11 @@ export const els = {
   oddsTop: $btn("odds-btn-top"),
   oddsOverlay: $("odds-overlay"),
   oddsClose: $btn("odds-close"),
+  // TASK 037: the phone header's menu button and the panel that
+  // holds the three header actions (How to play, Bomb odds, New
+  // match). Desktop hides the button and lays the panel out flat.
+  menuBtn: $btn("menu-btn"),
+  menuPanel: $("menu-panel"),
 };
 
 export function el(tag: string, className?: string | null, text?: string): HTMLElement {
