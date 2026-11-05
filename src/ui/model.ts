@@ -11,6 +11,14 @@ import type { Penalty, UnusedBomb } from "../engine/scoring.js";
 // engine's own error when a play is rejected.
 
 export const SEAT_NAMES = ["You", "Mina", "Kenji", "Rosa"];
+
+/** The four seats' standings as one line — "You 5 · Mina -2 ·
+    Kenji 3 · Rosa 0" (TASK 039: the Resume button's label and
+    the resumed match's opening log line share this text so the
+    two signposts can never drift apart). */
+export function standingsText(scores: number[]): string {
+  return SEAT_NAMES.map((seat, i) => `${seat} ${scores[i]}`).join(" · ");
+}
 export const HUMAN = 0;
 
 const SUIT_GLYPHS: Record<Suit, string> = { spades: "♠", clubs: "♣", diamonds: "♦", hearts: "♥" };

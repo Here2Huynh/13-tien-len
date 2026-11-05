@@ -25,6 +25,7 @@ export const els = {
   newMatchBtn: $btn("new-match-btn"),
   startScreen: $("start-screen"),
   startBtn: $btn("start-btn"),
+  resumeBtn: $btn("resume-btn"),
   roundNum: $("round-num"),
   newMatchTop: $btn("new-match-top"),
   sortBtn: $btn("sort-btn"),

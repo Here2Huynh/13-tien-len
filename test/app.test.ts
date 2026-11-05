@@ -413,6 +413,19 @@ test("controller: newMatch seed restores points and round (TASK 031)", () => {
   );
 });
 
+test("controller: a seeded start logs the resume line; an unseeded start logs the new-match line (TASK 039)", () => {
+  const resumed = createController({ schedule: sync, dealHands: () => newDeal(seededRng(11)) });
+  resumed.newMatch({ scores: [5, -2, 3, 0], round: 4 });
+  assert.equal(
+    resumed.state.log[0],
+    "Match resumed — Round 4 · You 5 · Mina -2 · Kenji 3 · Rosa 0.",
+    "the restored match opens with the resume line, not the new-match line",
+  );
+  const fresh = createController({ schedule: sync, dealHands: () => newDeal(seededRng(11)) });
+  fresh.newMatch();
+  assert.equal(fresh.state.log[0], "New match — first to 13.");
+});
+
 test("controller: newMatch without a seed is a fresh 0-0 round 1 (TASK 031)", () => {
   const controller = createController({ schedule: sync, dealHands: () => newDeal(seededRng(11)) });
   controller.newMatch({ scores: [5, -2, 3, 0], round: 4 });
