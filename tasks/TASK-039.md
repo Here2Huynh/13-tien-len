@@ -1,6 +1,7 @@
 # TASK-039: Save only at round end + Resume signpost (audit #10 + #28)
 
-Status: ASSIGNED (builder) — Builder chat route (Switch #9
+Status: ASSIGNED (verifier) — PR #41, head c6a2d3d; checklist
+tasks/VERIFY-039.md. Built by the Builder chat (Switch #9
 fallback: fresh usage gate at assignment 2026-11-04 ~19:00 PT
 showed the Claude 5h window at 100% used, resetting 20:09 PT,
 so the build runs in the Thirteen Builder chat; the Claude
