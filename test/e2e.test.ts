@@ -335,11 +335,12 @@ function sortArrow(): FakeElement {
   return $("sort-btn").children.find((child) => child.className === "sort-arrow")!;
 }
 
-// A match can end on a normal round ("… wins the match!") or on
-// an instant-win round ("Match over!") — both are match ends.
+// A match can end on a normal round ("… wins the match!" — "You
+// win the match!" for the human seat since TASK 041) or on an
+// instant-win round ("Match over!") — both are match ends.
 function isMatchEndBanner(): boolean {
   const title = $("banner-title").textContent;
-  return /wins the match/.test(title) || title === "Match over!";
+  return /(?:wins|You win) the match/.test(title) || title === "Match over!";
 }
 
 // Click through any round banners until it is the human's move.
@@ -364,10 +365,14 @@ function humanMove() {
     $("play-btn").click();
   }
   const message = $("message").textContent;
+  // TASK 041: rejections now show player copy ("Beat … — or Pass.",
+  // "Those cards don't make a set…") in the error style; the old
+  // engine phrases stay in the list for the unmapped fallback.
   assert.ok(
-    !/Select at least|not in your hand|does not beat|must include|not a valid/i.test(message),
+    !/Select at least|not in your hand|does not beat|must include|not a valid|^Beat |don't make a set|can't lead|can't pass|brings you back/i.test(message),
     `hint-driven move was rejected: ${message}`,
   );
+  assert.ok(!$("message")._classes.has("error"), `hint-driven move was rejected: ${message}`);
 }
 
 // New match from the header (TASK 040): with a match in progress
@@ -719,7 +724,7 @@ test("e2e: a full match plays end to end through the real UI", async () => {
   for (let steps = 0; steps < 20000; steps++) {
     const phase = settle();
     if (phase === "banner") {
-      if (/wins the match/.test($("banner-title").textContent)) {
+      if (/(?:wins|You win) the match/.test($("banner-title").textContent)) {
         // Match end: winner banner, a score at 13+, New Match offered.
         assert.ok(
           scoreValues().some((score) => score >= 13),
@@ -2041,10 +2046,11 @@ function task025Hsl(hex: string): { h: number; s: number; l: number } {
 }
 
 test("utility buttons: the button.ghost family is warm gold from the trim, with dark legible ink (TASK 025)", () => {
-  // Inventory, pinned on the shipped markup: nine button.ghost
+  // Inventory, pinned on the shipped markup: ten button.ghost
   // elements — the header's .ghost.small set (TASK 037 adds the
   // phone ☰ Menu button ahead of the trio it holds), the controls
-  // row, and the start screen's How to play.
+  // row, the start screen's How to play, and (TASK 041) How to
+  // play's own top close control.
   const html = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
   const ghostIds = [...html.matchAll(/<button\b[^>]*>/g)]
     .map((m) => m[0])
@@ -2053,7 +2059,7 @@ test("utility buttons: the button.ghost family is warm gold from the trim, with 
   assert.deepEqual(ghostIds, [
     "menu-btn", "help-btn-top", "odds-btn-top", "new-match-top",
     "pass-btn", "hint-btn", "sort-btn", "clear-btn",
-    "help-btn-start",
+    "help-btn-start", "help-close-top",
   ]);
   const { css, rules } = task025Rules();
   // The gold family is derived from the trim: --gold is still the
@@ -2383,7 +2389,7 @@ test("e2e: instant-win celebration beat — withheld banner, skip, no replay, ti
   const note = $("banner-body").children.find((c) => c.tagName === "P");
   assert.equal(
     note?.textContent,
-    `${SEAT_NAMES[winner]} was dealt an instant-win hand (${kindWords}). Everyone else pays 2.`,
+    `${SEAT_NAMES[winner]} ${winner === 0 ? "were" : "was"} dealt an instant-win hand (${kindWords}). Everyone else pays 2.`,
     "the banner note is unchanged",
   );
   const table = $("banner-body").children.find((c) => c.tagName === "TABLE");
@@ -3132,4 +3138,255 @@ test("e2e: New Match confirm — nothing to lose stays one tap: match-over banne
   $("start-btn").click();
   assertFresh("start gate");
   settle();
+});
+
+// ---------- TASK 041: copy bundle + accessibility details ----------
+
+const html041 = (): string => readFileSync(new URL("../../index.html", import.meta.url), "utf8");
+const inert041 = (id: string): boolean => (registry.get(id) as unknown as { inert?: boolean }).inert === true;
+// The page minus one overlay's own surface (its open/closed flag).
+function domWithout041(...ids: string[]): Record<string, DomSnapshot> {
+  const { dom } = pageSnapshot();
+  for (const id of ids) delete dom[id];
+  return dom;
+}
+
+test("e2e: How to play agrees with the engine — sets, pair runs bomb-only, leftover last→1st, consecutive naming (TASK 041, audit #8)", () => {
+  const html = html041();
+  const help = html.slice(html.indexOf('<div class="overlay" id="help-overlay"'), html.indexOf('<div class="overlay" id="odds-overlay"'));
+  const odds = html.slice(html.indexOf('<div class="overlay" id="odds-overlay"'), html.indexOf('<div class="overlay" id="confirm-overlay"'));
+  // Pair runs are not a leadable/followable set: the sets list names
+  // the five combinations, and the double run is called bomb-only.
+  assert.ok(help.includes(
+    "<p>3 is low, 2 is high; suits run ♠ &lt; ♣ &lt; ♦ &lt; ♥, so 2♥ is the biggest card in the game. Sets you lead and beat with: singles, pairs, triples, straights, and four of a kind. A double run (consecutive pairs) is not a set — it plays only as a bomb.</p>",
+  ));
+  assert.ok(!/Sets:[^<]*pair runs/.test(help), "pair runs are no longer listed among the sets");
+  assert.ok(help.includes(
+    "<p>A 3-pair double run bombs a single 2; a 4-pair double run bombs a pair of 2s; four of a kind bombs either. Already passed? Only four of a kind and the 4-pair double run can bring you back in.</p>",
+  ));
+  // Leftover points: last place pays 1st (scoring.ts), not "the
+  // player above you".
+  assert.ok(help.includes(
+    "<p>1st +2, 2nd +1, 3rd pays 1 to 2nd, last pays 2 to 1st. Last place also pays 1st 1 point for each 2 and each unused bomb still in hand when the round ends.</p>",
+  ));
+  assert.ok(!help.includes("player above you"));
+  // Naming: the sheet and the odds card agree.
+  assert.ok(help.includes(
+    "<p>Four 2s · six pairs · five consecutive pairs · dragon straight 3–A · three consecutive triples. Everyone pays you 2 and the round ends.</p>",
+  ));
+  assert.ok(!/straight pairs|straight triples/.test(help));
+  assert.ok(odds.includes("<td>Five consecutive pairs</td>") && odds.includes("<td>Three consecutive triples</td>"));
+  // Locked copy elsewhere untouched; never "chop".
+  assert.ok(help.includes("<p>Bomb a 2 and its owner pays you 1 point per 2 — instantly.</p>"));
+  assert.ok(!/chop/i.test(html));
+});
+
+test("e2e: overlay dialog semantics — How to play and Bomb odds are labelled modal dialogs; top close sits above the title (TASK 041, audit #8/#18)", () => {
+  const html = html041();
+  assert.match(html, /<div class="modal help" role="dialog" aria-modal="true" aria-labelledby="help-title">\n {8}<div class="help-top">\n {10}<button id="help-close-top" class="ghost small" type="button" aria-label="Close How to play"><span aria-hidden="true">✕<\/span> Close<\/button>\n {8}<\/div>\n {8}<h2 id="help-title">How to play<\/h2>/);
+  assert.ok(html.indexOf('id="help-close-top"') < html.indexOf('id="help-close"'), "the top close comes first");
+  assert.ok(html.includes('<button id="help-close" type="button">Close</button>'), "the bottom Close stays");
+  assert.ok(html.includes('<div class="modal oddscard" role="dialog" aria-modal="true" aria-labelledby="odds-title" aria-describedby="odds-frame">'));
+  assert.ok(html.includes('<h2 id="odds-title">Bomb odds</h2>'));
+  assert.ok(html.includes('<p class="odds-frame" id="odds-frame">'));
+  // The Task 040 dialog keeps its own markup.
+  assert.ok(html.includes('<div class="modal confirm" role="dialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-standing confirm-note">'));
+  for (const id of ["help-title", "help-close-top", "odds-title", "odds-frame"]) {
+    assert.equal(html.split(`id="${id}"`).length, 2, `#${id} appears exactly once`);
+  }
+  // The log announces new entries; the message line keeps role=status.
+  assert.ok(html.includes('<ol class="log" id="log" aria-live="polite"></ol>'));
+  assert.ok(html.includes('<div class="selinfo" id="message" role="status"></div>'));
+  // The close row is styled without motion.
+  const { rules } = task025Rules();
+  const top = rules.filter((r) => r.selector.includes("help-top"));
+  assert.equal(top.length, 1);
+  assert.ok(!/animation|transition/.test(top[0].body));
+});
+
+test("e2e: How to play — focus moves in, Escape / top Close / bottom Close / backdrop close it, focus returns to the opener; the game is untouched (TASK 041)", async () => {
+  await import("../src/main.js");
+  newMatchTop();
+  settleToYourTurn();
+  const before = domWithout041("help-overlay");
+  const timers = timerQueue.length;
+  $("help-close-top"); // registered (the fake creates on first lookup)
+
+  // Header opener, Escape.
+  $("help-btn-top").focus();
+  $("help-btn-top").click();
+  assert.equal($("help-overlay").hidden, false);
+  assert.equal(fakeDocument.activeElement, $("help-close-top"), "focus moves to the top close control");
+  assert.equal(inert041("app"), true, "the table behind is inert while the sheet is open");
+  docKey040("Enter");
+  assert.equal($("help-overlay").hidden, false, "other keys leave it open");
+  docKey040("Escape");
+  assert.equal($("help-overlay").hidden, true, "Escape closes the sheet");
+  assert.equal(inert041("app"), false, "the table is live again");
+  assert.equal(fakeDocument.activeElement, $("help-btn-top"), "focus returns to the opener");
+
+  // Top close.
+  $("help-btn-top").click();
+  $("help-close-top").click();
+  assert.equal($("help-overlay").hidden, true, "the top close control closes it");
+  assert.equal(fakeDocument.activeElement, $("help-btn-top"));
+  // Bottom close and the backdrop still work.
+  $("help-btn-top").click();
+  $("help-close").click();
+  assert.equal($("help-overlay").hidden, true);
+  assert.equal(fakeDocument.activeElement, $("help-btn-top"));
+  $("help-btn-top").click();
+  for (const fn of $("help-overlay").listeners.click ?? []) fn({ target: new FakeElement("p") });
+  assert.equal($("help-overlay").hidden, false, "a tap inside the sheet is not the backdrop");
+  $("help-overlay").click();
+  assert.equal($("help-overlay").hidden, true);
+  assert.equal(inert041("app"), false);
+
+  // The start screen's opener gets focus back too.
+  $("help-btn-start").click();
+  assert.equal(fakeDocument.activeElement, $("help-close-top"));
+  docKey040("Escape");
+  assert.equal(fakeDocument.activeElement, $("help-btn-start"));
+
+  // From the phone ☰ menu (open menu = a menu-item tap): focus goes
+  // back to ☰, since the item hides with its panel.
+  $("menu-btn").setAttribute("aria-expanded", "true");
+  $("help-btn-top").click();
+  $("menu-btn").setAttribute("aria-expanded", "false");
+  docKey040("Escape");
+  assert.equal($("help-overlay").hidden, true);
+  assert.equal(fakeDocument.activeElement, $("menu-btn"));
+
+  // Escape with nothing open does nothing; nothing in the game moved.
+  docKey040("Escape");
+  assert.deepEqual(domWithout041("help-overlay"), before, "open/close cycles leave the game exactly as it was");
+  assert.equal(timerQueue.length, timers);
+  assert.equal($("play-btn").disabled, false, "still your turn");
+});
+
+test("e2e: Bomb odds — focus moves to Close, Escape closes, focus returns; the confirm dialog is unregressed alongside (TASK 041)", async () => {
+  await import("../src/main.js");
+  armMidMatch040();
+  const before = domWithout041("odds-overlay");
+  $("odds-btn-top").click();
+  assert.equal($("odds-overlay").hidden, false);
+  assert.equal(fakeDocument.activeElement, $("odds-close"), "focus moves into the card");
+  assert.equal(inert041("app"), true);
+  docKey040("Escape");
+  assert.equal($("odds-overlay").hidden, true, "Escape closes the card");
+  assert.equal(inert041("app"), false);
+  assert.equal(fakeDocument.activeElement, $("odds-btn-top"), "focus returns to Bomb odds");
+  $("odds-btn-top").click();
+  $("odds-close").click();
+  assert.equal(fakeDocument.activeElement, $("odds-btn-top"));
+  assert.deepEqual(domWithout041("odds-overlay"), before, "the game is untouched");
+
+  // Task 040 behavior on the same shared plumbing: opens, freezes
+  // the CPU turn, Escape cancels, focus returns, the turn re-arms.
+  const frozen = gameDom040();
+  $("new-match-top").click();
+  assert.equal($("confirm-overlay").hidden, false);
+  assert.equal(fakeDocument.activeElement, $("confirm-cancel"));
+  pumpTimers();
+  assert.deepEqual(gameDom040(), frozen, "no CPU move behind the dialog");
+  docKey040("Escape");
+  assert.equal($("confirm-overlay").hidden, true);
+  assert.equal($("odds-overlay").hidden, true, "Escape closed only the open dialog");
+  assert.equal(fakeDocument.activeElement, $("new-match-top"));
+  assert.equal(timerQueue.length, 1, "the held CPU turn is re-armed");
+  const result = settle();
+  assert.ok(result === "your-turn" || result === "banner");
+});
+
+test("e2e: Sort aria-label names the direction a tap goes, both ways (TASK 041, audit #18)", async () => {
+  await import("../src/main.js");
+  newMatchTop();
+  settleToYourTurn();
+  assert.equal($("sort-btn").getAttribute("aria-label"), "Sort hand low to high ascending, tap to sort high to low descending");
+  $("sort-btn").click();
+  assert.equal($("sort-btn").getAttribute("aria-label"), "Sort hand high to low descending, tap to sort low to high ascending");
+  assert.equal($("sort-btn").title, "Sorted high to low (descending) — tap to sort low to high (ascending)");
+  $("sort-btn").click();
+  assert.equal($("sort-btn").getAttribute("aria-label"), "Sort hand low to high ascending, tap to sort high to low descending");
+  assert.equal($("sort-btn").title, "Sorted low to high (ascending) — tap to sort high to low (descending)");
+});
+
+test("e2e: a rejected play shows mapped guidance in the error style; a hint does not (TASK 041, audit #7)", async () => {
+  await import("../src/main.js");
+  newMatchTop();
+  const hasError = (): boolean => $("message")._classes.has("error");
+  // Nothing selected: guidance, error style.
+  settleToYourTurn();
+  $("clear-btn").click();
+  $("play-btn").click();
+  assert.match($("message").textContent, /^Select at least one card first — (or Pass|tap cards in your hand, then Play)\.$/);
+  assert.equal(hasError(), true, "an error wears the error style");
+  // A hint is not an error.
+  $("hint-btn").click();
+  assert.match($("message").textContent, /^Hint: /);
+  assert.equal(hasError(), false, "a hint keeps the plain line");
+  // Play your lowest single into the table until one is rejected for
+  // not beating it: the copy names the table and what beats it.
+  let seen = "";
+  for (let steps = 0; steps < 400 && !seen; steps++) {
+    const phase = settle();
+    if (phase === "banner") {
+      if (!$("new-match-btn").hidden) $("new-match-btn").click();
+      else $("continue-btn").click();
+      continue;
+    }
+    $("clear-btn").click();
+    $("hand").children[0].click();
+    $("play-btn").click();
+    const text = $("message").textContent;
+    if (/^Beat /.test(text) || /^Nothing beats/.test(text)) seen = text;
+    else if (text) humanMove(); // a legal lead or a guidance line: move on with the hint
+  }
+  assert.ok(seen, "an engine rejection was shown");
+  assert.match(seen, /^(Beat (single|a pair|a triple|a \d-card straight|four of a kind|a \d-pair double run).* — or Pass\.|Nothing beats triple 2s — Pass\.)$/);
+  assert.ok(!/does not beat the current trick play/.test(seen), "not the engine's raw string");
+  assert.equal(hasError(), true);
+  // The style is its own rule: the error line differs from the plain
+  // line and from the hint, and does not animate.
+  const { rules } = task025Rules();
+  const err = rules.filter((r) => r.selector === ".selinfo.error");
+  assert.equal(err.length, 1);
+  assert.match(err[0].body, /color:#ffb3ab;/);
+  assert.ok(rules.some((r) => r.selector === ".selinfo.error::before" && /content:/.test(r.body)), "a non-color marker too");
+  for (const r of rules.filter((x) => x.selector.startsWith(".selinfo.error"))) assert.ok(!/animation|transition/.test(r.body));
+  // A legal move clears it.
+  humanMove();
+  assert.equal(hasError(), false);
+});
+
+test("e2e: the live log appends new lines in place — painted lines are kept, never re-announced (TASK 041, audit #18)", async () => {
+  await import("../src/main.js");
+  newMatchTop();
+  settleToYourTurn();
+  const first = [...$("log").children];
+  assert.ok(first.length > 0);
+  // A re-render with no new lines touches no log node.
+  $("clear-btn").click();
+  assert.deepEqual($("log").children, first, "same nodes, same order");
+  // Moves add lines: the old nodes stay (until the 60-line cap drops
+  // them from the top) and only new ones are appended.
+  for (let i = 0; i < 30; i++) {
+    const before = [...$("log").children];
+    if (settle() === "banner") {
+      if (!$("new-match-btn").hidden) $("new-match-btn").click();
+      else $("continue-btn").click();
+      continue;
+    }
+    humanMove();
+    settle();
+    const after = $("log").children;
+    const kept = after.filter((li) => before.includes(li));
+    const k = before.indexOf(kept[0]);
+    assert.ok(kept.length > 0, "painted lines are kept");
+    assert.deepEqual(kept, before.slice(k), "the kept lines are the old tail, in order");
+    assert.deepEqual(after.slice(0, kept.length), kept, "new lines only append after them");
+  }
+  // A new match repaints from its first line.
+  newMatchTop();
+  assert.equal(logLines040()[0], "New match — first to 13.");
 });

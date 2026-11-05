@@ -11,10 +11,12 @@ import {
   emptyTrickView, applyToTrickView, describePlay, bombPenaltyLogLine, bombedBombLogLine,
   comebackLogLine, penaltyLine, matchInProgress,
   roundResultRows, scoreRows,
+  conjugate, seatVerb, playerErrorText, ENGINE_ERRORS, NO_SELECTION,
   type SelectionCheck,
 } from "../src/ui/model.js";
 import { createController, type RoundSummary, type ControllerState } from "../src/ui/controller.js";
 import { hasLiveComebackTurn, isDeadComebackTurn } from "../src/engine/comeback.js";
+import { detectInstantWin } from "../src/engine/instantWin.js";
 
 // Seeds whose hint-autopilot matches include live human AND CPU
 // comeback turns, plus seeds 23 and 39 whose round 1 held a dead
@@ -389,10 +391,10 @@ test("controller: illegal selections surface the engine error and change nothing
   assert.equal(controller.humanPlay([c("A", "hearts")]), false);
   assert.match(s.message, /not in your hand/);
   assert.equal(controller.humanPlay([c("K", "spades")]), false);
-  assert.match(s.message, /3 of spades/);
+  assert.match(s.message, /must include the 3♠/);
   assert.equal(s.trick!.hands[0].length, 13);
   assert.equal(controller.humanPass(), false);
-  assert.match(s.message, /must play, not pass/);
+  assert.match(s.message, /can't pass — play any set/);
   const hint = controller.hint();
   assert.ok(hint);
   assert.ok(cardsOf(hint).some((card) => card.id === "3-spades"));
@@ -600,7 +602,7 @@ test("controller: log — a play that clears the trick is logged like any other 
   assert.equal(controller.humanPlay([c("3", "spades"), c("3", "hearts")]), true);
   assert.equal(controller.humanPlay([c("K", "clubs"), c("K", "diamonds")]), true);
   assert.ok(
-    s.log.some((line) => line === "You plays a pair, high card K♦."),
+    s.log.some((line) => line === "You play a pair, high card K♦."),
     `expected the clearing play in the log, got: ${s.log.join(" | ")}`,
   );
   assert.ok(s.trick!.trickNumber >= 2, "the trick should have cleared");
@@ -666,7 +668,7 @@ test("controller: log — a pass locks you out, and a comeback bomb logs the ret
   // you pass while the trick is still live: locked out.
   assert.equal(controller.humanPass(), true);
   assert.ok(
-    s.log.some((line) => line === "You passes — locked out."),
+    s.log.some((line) => line === "You pass — locked out."),
     `expected your lockout line, got: ${s.log.join(" | ")}`,
   );
   // The chain ran on: Mina's 2 landed, Kenji and Rosa passed (locked
@@ -681,7 +683,7 @@ test("controller: log — a pass locks you out, and a comeback bomb logs the ret
     s.log.filter((line) => line.includes("back in the trick")),
     ["You are back in the trick."],
   );
-  const playAt = s.log.indexOf("You plays a BOMB — four of a kind.");
+  const playAt = s.log.indexOf("You play a BOMB — four of a kind.");
   assert.ok(playAt >= 0, `expected the bomb play line, got: ${s.log.join(" | ")}`);
   assert.equal(s.log[playAt + 1], "You are back in the trick.");
   assert.equal(s.log[playAt + 2], "Bomb penalty: Mina pays 1 to You — her 2 was bombed.");
@@ -704,7 +706,7 @@ test("controller: log — a pass that closes the trick makes no lockout claim (T
   // You pass with Mina still live behind you (K♦): locked out.
   assert.equal(controller.humanPass(), true);
   assert.ok(
-    s.log.some((line) => line === "You passes — locked out."),
+    s.log.some((line) => line === "You pass — locked out."),
     `expected your lockout line, got: ${s.log.join(" | ")}`,
   );
   // Mina plays K♦ (going out), Kenji answers with the 2♣, Rosa
@@ -715,7 +717,7 @@ test("controller: log — a pass that closes the trick makes no lockout claim (T
   const trickBefore = s.trick!.trickNumber;
   const before = s.log.length;
   assert.equal(controller.humanPass(), true);
-  assert.equal(s.log[before], "You passes.");
+  assert.equal(s.log[before], "You pass.");
   assert.equal(s.trick!.trickNumber, trickBefore + 1, "the decline closed the trick");
 });
 
@@ -882,4 +884,284 @@ test("controller: seeded autopilot matches never offer a dead turn; live comebac
   }
   assert.ok(humanLive > 0, "a live human comeback still stops for you");
   assert.ok(cpuLive > 0, "live CPU comebacks still happen");
+});
+
+// ---------- TASK 041: copy bundle (audit #5 + #7) ----------
+
+test("model: one conjugation helper — the human seat is second person, CPU seats third (TASK 041)", () => {
+  assert.equal(conjugate(0, "play", "plays"), "play");
+  for (const cpu of [1, 2, 3]) assert.equal(conjugate(cpu, "play", "plays"), "plays");
+  assert.equal(seatVerb(0, "were", "was"), "You were");
+  assert.equal(seatVerb(1, "were", "was"), "Mina was");
+  assert.equal(seatVerb(2, "take", "takes"), "Kenji takes");
+  assert.equal(seatVerb(3, "lead", "leads"), "Rosa leads");
+  // The pre-existing human-seat lines run through the same helper and
+  // read exactly as before.
+  assert.equal(comebackLogLine(0), "You are back in the trick.");
+  assert.equal(comebackLogLine(2), "Kenji is back in the trick.");
+  assert.equal(bombPenaltyLogLine({ payer: 0, payee: 1, points: 1 }), "Bomb penalty: You pay 1 to Mina — your 2 was bombed.");
+  assert.equal(bombedBombLogLine({ payer: 3, payee: 0, points: 1 }), "Bomb penalty: Rosa pays 1 to You — her bomb was bombed.");
+});
+
+test("controller: human-seat log lines conjugate — You lead / play / pass / take it; CPU lines unchanged (TASK 041)", () => {
+  // You hold the 3♠ (you lead round 1) and go out first; Mina, Kenji
+  // and Rosa answer in turn.
+  const hands = [
+    [c("3", "spades"), c("9", "hearts")],
+    [c("4", "clubs"), c("K", "spades"), c("5", "clubs")],
+    [c("6", "clubs"), c("A", "spades"), c("7", "clubs")],
+    [c("8", "clubs"), c("2", "spades"), c("10", "clubs")],
+  ];
+  const controller = createController({ schedule: sync, dealHands: () => hands });
+  controller.newMatch();
+  const s = controller.state;
+  assert.equal(s.log[1], "Round 1: You lead.");
+  assert.equal(controller.humanPlay([c("3", "spades")]), true);
+  assert.equal(s.log[2], "You play single 3♠.");
+  assert.equal(s.log[3], "Mina plays single 4♣.");
+  assert.equal(s.log[4], "Kenji plays single 6♣.");
+  assert.equal(s.log[5], "Rosa plays single 8♣.");
+  // You pass while the trick is live: locked out.
+  assert.equal(controller.humanPass(), true);
+  assert.ok(s.log.includes("You pass — locked out."), s.log.join(" | "));
+  assert.ok(!s.log.some((line) => /^You (plays|passes|leads|takes)\b/.test(line)), s.log.join(" | "));
+
+  // A round you win: You take it.
+  const winHands = [
+    [c("3", "spades")],
+    [c("4", "clubs"), c("5", "clubs")],
+    [c("6", "clubs"), c("7", "clubs")],
+    [c("8", "clubs"), c("9", "clubs")],
+  ];
+  const won = createController({ schedule: sync, dealHands: () => winHands });
+  won.newMatch();
+  // You go out on your only card; the CPU seats play the round down.
+  assert.equal(won.humanPlay([c("3", "spades")]), true);
+  assert.equal(won.state.phase, "roundEnd");
+  assert.equal(won.state.roundSummary?.finishOrder[0], 0);
+  assert.ok(won.state.log.includes("Round over. You take it."), won.state.log.join(" | "));
+});
+
+test("controller: an instant win by the human seat logs \"You win round 1 instantly…\" (TASK 041)", () => {
+  // Four 2s for you; the first seed whose CPU hands hold no instant
+  // win of their own.
+  const twos = createDeck().filter((card) => card.rank === "2");
+  let hands: Card[][] = [];
+  for (let seed = 41; seed < 500; seed++) {
+    const rest = shuffle(createDeck().filter((card) => card.rank !== "2"), seededRng(seed));
+    hands = [[...twos, ...rest.slice(0, 9)], rest.slice(9, 22), rest.slice(22, 35), rest.slice(35, 48)];
+    if (hands.slice(1).every((hand) => detectInstantWin(hand) === null)) break;
+  }
+  const controller = createController({ schedule: sync, dealHands: () => hands });
+  controller.newMatch();
+  const s = controller.state;
+  assert.equal(s.roundSummary?.instantWin?.winner, 0, "you hold four 2s");
+  assert.match(s.log[1], /^You win round 1 instantly with /);
+});
+
+// The engine's own strings, read off real rejections — so the mapping
+// can never silently drift from what the engine throws.
+const thrown = (fn: () => void): string => {
+  try {
+    fn();
+  } catch (error) {
+    return (error as Error).message;
+  }
+  return assert.fail("expected the engine to reject");
+};
+
+test("model: the mapped engine strings are exactly what the engine throws (TASK 041)", () => {
+  const onTable = (cards: Card[]) => actingState(
+    [c("4", "spades"), c("4", "clubs"), c("5", "spades"), c("5", "clubs"), c("6", "spades"), c("6", "clubs"), c("3", "hearts")],
+    { player: 3, cards, type: "single" },
+  );
+  assert.equal(thrown(() => playCards(onTable([c("9", "hearts")]), 0, [c("3", "hearts")])), ENGINE_ERRORS.doesNotBeat);
+  const lead = actingState([c("4", "spades"), c("4", "clubs"), c("5", "spades"), c("5", "clubs"), c("6", "spades"), c("6", "clubs")]);
+  assert.equal(thrown(() => playCards(lead, 0, [...lead.hands[0]])), ENGINE_ERRORS.bombLead);
+  assert.equal(thrown(() => passTurn(lead, 0)), ENGINE_ERRORS.leaderPass);
+  assert.equal(thrown(() => playCards(lead, 0, [c("4", "spades"), c("6", "clubs")])), ENGINE_ERRORS.notACombination);
+  const opening = createTrickState([
+    [c("3", "spades"), c("K", "hearts")], [c("4", "spades")], [c("5", "spades")], [c("6", "spades")],
+  ]);
+  assert.equal(thrown(() => playCards(opening, 0, [c("K", "hearts")])), ENGINE_ERRORS.openingLead);
+  // Comeback: seat 0 passed, then a 2 landed; a 3-pair run cannot
+  // bring it back.
+  const hands: Card[][] = [
+    [c("4", "spades"), c("4", "clubs"), c("5", "spades"), c("5", "clubs"), c("6", "spades"), c("6", "clubs"), c("K", "hearts")],
+    [c("2", "hearts"), c("9", "clubs")],
+    [c("J", "clubs"), c("Q", "clubs")],
+    [c("3", "clubs"), c("8", "clubs")],
+  ];
+  const cb = createTrickState(hands, { leader: 3, openingLead: false });
+  playCards(cb, 3, [c("3", "clubs")]);
+  passTurn(cb, 0);
+  playCards(cb, 1, [c("2", "hearts")]);
+  passTurn(cb, 2);
+  passTurn(cb, 3);
+  assert.equal(cb.currentPlayer, 0, "seat 0's comeback turn");
+  assert.equal(thrown(() => playCards(cb, 0, hands[0].slice(0, 6))), ENGINE_ERRORS.comeback);
+  assert.equal(errOf(validateSelection(lead, 0, [])), NO_SELECTION);
+});
+
+test("model: rejection copy names the table and says what beats it — full stops throughout (TASK 041)", () => {
+  const at = (cards: Card[]) => actingState([c("3", "hearts")], { player: 3, cards, type: "single" });
+  const beat = (cards: Card[]) => playerErrorText(ENGINE_ERRORS.doesNotBeat, at(cards));
+  // The audit's own example.
+  assert.equal(beat([c("3", "spades")]), "Beat single 3♠ with a higher single — or Pass.");
+  assert.equal(beat([c("K", "spades"), c("K", "diamonds")]), "Beat a pair, high card K♦, with a higher pair — or Pass.");
+  assert.equal(beat([c("7", "spades"), c("7", "clubs"), c("7", "hearts")]), "Beat a triple, high card 7♥, with a higher triple — or Pass.");
+  assert.equal(
+    beat([c("5", "spades"), c("6", "clubs"), c("7", "hearts"), c("8", "spades"), c("9", "diamonds")]),
+    "Beat a 5-card straight, high card 9♦, with a higher 5-card straight — or Pass.",
+  );
+  // 2s: the bombs that answer them, per the locked ladder.
+  assert.equal(beat([c("2", "spades")]), "Beat single 2♠ with a higher single or a bomb — or Pass.");
+  assert.equal(
+    beat([c("2", "spades"), c("2", "clubs")]),
+    "Beat a pair, high card 2♣, with a higher pair, four of a kind, or a 4-pair double run — or Pass.",
+  );
+  assert.equal(beat([c("2", "spades"), c("2", "clubs"), c("2", "hearts")]), "Nothing beats triple 2s — Pass.");
+  // Bombs on the table: what answers each.
+  assert.equal(
+    beat([c("9", "spades"), c("9", "clubs"), c("9", "diamonds"), c("9", "hearts")]),
+    "Beat four of a kind, high card 9♥, with a higher four of a kind or a 4-pair double run — or Pass.",
+  );
+  assert.equal(
+    beat([c("4", "spades"), c("4", "clubs"), c("5", "spades"), c("5", "clubs"), c("6", "spades"), c("6", "clubs")]),
+    "Beat a 3-pair double run, high card 6♣, with a higher 3-pair double run or a 4-pair double run — or Pass.",
+  );
+  assert.equal(
+    beat([c("4", "spades"), c("4", "clubs"), c("5", "spades"), c("5", "clubs"), c("6", "spades"), c("6", "clubs"), c("7", "spades"), c("7", "clubs")]),
+    "Beat a 4-pair double run, high card 7♣, with a higher 4-pair double run — or Pass.",
+  );
+  const lead = actingState([c("3", "hearts")]);
+  assert.equal(
+    playerErrorText(ENGINE_ERRORS.bombLead, lead),
+    "A double run can't lead — it plays only as a bomb. Lead a single, pair, triple, straight, or four of a kind.",
+  );
+  assert.equal(
+    playerErrorText(ENGINE_ERRORS.comeback, at([c("2", "hearts")])),
+    "You passed this trick, so only four of a kind or a 4-pair double run that beats single 2♥ brings you back — or Pass.",
+  );
+  assert.equal(
+    playerErrorText(ENGINE_ERRORS.comeback, at([c("2", "spades"), c("2", "hearts")])),
+    "You passed this trick, so only four of a kind or a 4-pair double run that beats a pair, high card 2♥, brings you back — or Pass.",
+  );
+  assert.equal(playerErrorText(ENGINE_ERRORS.openingLead, lead), "The first play of the match must include the 3♠.");
+  assert.equal(playerErrorText(ENGINE_ERRORS.leaderPass, lead), "You lead this trick, so you can't pass — play any set.");
+  assert.equal(
+    playerErrorText(ENGINE_ERRORS.notACombination, lead),
+    "Those cards don't make a set. Play a single, pair, triple, straight, or four of a kind — or a double run as a bomb.",
+  );
+  assert.equal(playerErrorText(NO_SELECTION, lead), "Select at least one card first — tap cards in your hand, then Play.");
+  assert.equal(playerErrorText(NO_SELECTION, at([c("3", "spades")])), "Select at least one card first — or Pass.");
+  // Every mapped line ends in a full stop.
+  for (const raw of [...Object.values(ENGINE_ERRORS), NO_SELECTION]) {
+    for (const state of [lead, at([c("3", "spades")])]) {
+      const text = playerErrorText(raw, state);
+      if (text !== raw) assert.match(text, /\.$/, `full stop: ${text}`);
+    }
+  }
+});
+
+test("model: an unmapped rejection falls back to its own text, verbatim (TASK 041)", () => {
+  const lead = actingState([c("3", "hearts")]);
+  for (const raw of ["Player 0 already passed this trick", "Not player 0's turn", "Something new", "It is not your turn.", "Those cards are not in your hand.", ""]) {
+    assert.equal(playerErrorText(raw, lead), raw);
+    assert.equal(playerErrorText(raw, null), raw);
+  }
+  // A table-naming line with no table to name keeps the engine text.
+  assert.equal(playerErrorText(ENGINE_ERRORS.doesNotBeat, null), ENGINE_ERRORS.doesNotBeat);
+  assert.equal(playerErrorText(ENGINE_ERRORS.doesNotBeat, lead), ENGINE_ERRORS.doesNotBeat);
+});
+
+test("controller: rejections show mapped copy in the error tone; hints are hints; a legal move clears it; unmapped falls back (TASK 041)", () => {
+  const hands = [
+    [c("4", "hearts"), c("9", "hearts"), c("6", "clubs"), c("7", "diamonds")],
+    [c("3", "spades"), c("K", "spades"), c("5", "clubs")],
+    [c("J", "clubs"), c("A", "spades"), c("8", "clubs")],
+    [c("10", "clubs"), c("2", "spades"), c("Q", "clubs")],
+  ];
+  const controller = createController({ schedule: sync, dealHands: () => hands });
+  controller.newMatch();
+  const s = controller.state;
+  // Mina led 3♠, Kenji 8♣, Rosa 10♣ — your turn against the 10♣.
+  assert.equal(s.trick!.currentPlayer, 0);
+  assert.equal(s.messageTone, "");
+  const trickBefore = JSON.stringify(s.trick);
+  const logBefore = [...s.log];
+  assert.equal(controller.humanPlay([c("4", "hearts")]), false);
+  assert.equal(s.message, "Beat single 10♣ with a higher single — or Pass.");
+  assert.equal(s.messageTone, "error");
+  assert.equal(controller.humanPlay([]), false);
+  assert.equal(s.message, "Select at least one card first — or Pass.");
+  assert.equal(s.messageTone, "error");
+  assert.equal(JSON.stringify(s.trick), trickBefore, "rejections change nothing");
+  assert.deepEqual(s.log, logBefore);
+  controller.setMessage("Hint: pass — nothing beats it.", "hint");
+  assert.equal(s.messageTone, "hint");
+  // Unmapped engine error: you are (artificially) already a passer
+  // with no comeback chance — the engine's own words come through.
+  s.trick!.passed.push(0);
+  assert.equal(controller.humanPass(), false);
+  assert.equal(s.message, "Player 0 already passed this trick");
+  assert.equal(s.messageTone, "error");
+  s.trick!.passed.pop();
+  // A legal move clears the line and its tone.
+  assert.equal(controller.humanPass(), true);
+  assert.equal(s.message, "");
+  assert.equal(s.messageTone, "");
+});
+
+test("controller: seeded equivalence — the error-copy path changes no play, score or outcome (TASK 041)", () => {
+  // Two autopilot matches from the same seed; in B every human turn
+  // first draws two rejections (empty selection, a non-set), so the
+  // new copy and error tone are exercised all match long. The game
+  // record — every emitted state minus its message line — is
+  // identical, and so are the final log, scores and winner.
+  const run = (withRejections: boolean) => {
+    const rng = seededRng(4141);
+    const record: string[] = [];
+    const controller = createController({
+      schedule: sync,
+      dealHands: () => newDeal(rng),
+      onChange: (st) => {
+        const game = JSON.stringify({
+          phase: st.phase, scores: st.match?.scores, round: st.match?.roundNumber,
+          trick: st.trick, summary: st.roundSummary, roundId: st.roundId, trickId: st.trickId, log: st.log,
+        });
+        if (record[record.length - 1] !== game) record.push(game);
+      },
+    });
+    controller.newMatch();
+    const s = controller.state;
+    let rejected = 0;
+    for (let steps = 0; s.phase !== "matchEnd"; steps++) {
+      assert.ok(steps < 20000, "match did not finish");
+      if (s.phase === "roundEnd") {
+        controller.continueRound();
+        continue;
+      }
+      if (withRejections) {
+        assert.equal(controller.humanPlay([]), false);
+        const hand = s.trick!.hands[0];
+        const lowHigh = [hand[0], hand[hand.length - 1]];
+        if (hand.length >= 2 && hand[0].rank !== hand[hand.length - 1].rank) {
+          assert.equal(controller.humanPlay(lowHigh), false);
+          assert.equal(s.messageTone, "error");
+          rejected++;
+        }
+      }
+      const action = controller.hint()!;
+      assert.ok(action.type === "pass" ? controller.humanPass() : controller.humanPlay(action.cards));
+    }
+    return { record, log: [...s.log], scores: [...s.match!.scores], winner: s.match!.winner, rejected };
+  };
+  const a = run(false);
+  const b = run(true);
+  assert.ok(b.rejected > 10, "the error path was exercised");
+  assert.deepEqual(b.record, a.record);
+  assert.deepEqual(b.log, a.log);
+  assert.deepEqual(b.scores, a.scores);
+  assert.equal(b.winner, a.winner);
 });

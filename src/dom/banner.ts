@@ -1,5 +1,5 @@
 import type { ControllerState, RoundSummary } from "../ui/controller.js";
-import { SEAT_NAMES, penaltyLine, roundResultRows } from "../ui/model.js";
+import { SEAT_NAMES, seatVerb, penaltyLine, roundResultRows } from "../ui/model.js";
 import { els, el, finishMedal } from "./elements.js";
 
 // Round/match summaries (TASK 036 split of main.ts): the round-over
@@ -134,11 +134,13 @@ export function renderBanner(state: ControllerState): void {
       el(
         "p",
         "note",
-        `${SEAT_NAMES[winner]} was dealt an instant-win hand (${kind.replaceAll("-", " ")}). Everyone else pays 2.`,
+        // Locked wording; only the human seat's grammar moves (TASK
+        // 041): "You were dealt…", "Mina was dealt…".
+        `${seatVerb(winner, "were", "was")} dealt an instant-win hand (${kind.replaceAll("-", " ")}). Everyone else pays 2.`,
       ),
     );
   } else if (state.phase === "matchEnd") {
-    els.bannerTitle.textContent = `🏆 ${SEAT_NAMES[summary.matchWinner as number]} wins the match!`;
+    els.bannerTitle.textContent = `🏆 ${seatVerb(summary.matchWinner as number, "win", "wins")} the match!`;
   } else {
     els.bannerTitle.textContent = "Round over";
   }

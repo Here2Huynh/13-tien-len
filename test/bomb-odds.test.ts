@@ -97,7 +97,7 @@ test("bomb odds: every figure on the card is the engine's, row by row, in the sh
     "0.43% · 1 in 231", "0.26% · 1 in 379", "0.065% · 1 in 1,542",
     "0.058% · 1 in 1,720", "0.010% · 1 in 10,041", "0.83% · 1 in 121",
   ]);
-  assert.ok(card.includes("<h2>Bomb odds</h2>"));
+  assert.ok(card.includes('<h2 id="odds-title">Bomb odds</h2>'));
   assert.ok(card.includes("Dealt-hand odds: the chance your 13-card deal holds each one."));
   assert.ok(card.includes("A deal that fits two instant wins counts once, as the one the game awards."));
   assert.ok(!html.toLowerCase().includes("chop"), "no chop vocabulary in the page");
