@@ -1,16 +1,18 @@
 # TASK-038: No more dead comeback turns (audit #1)
 
-Status: ASSIGNED (verifier) — PR #40, head e55edde; checklist
-tasks/VERIFY-038.md. Builder (Claude Code, Switch #9) local
-commit fa81cbb pushed as e55edde (blob-identical); suite
-134/134 at pickup. Verifier: judge build disclosures 1–5 in
-the PR body, disclosure 2 (controller-level check) and 3
-(triple-2s share unsupported) explicitly.
-Source: Task 035 audit finding #1 — the auditor's #1 pick and
-**John's first pick of the walk-through (2026-11-04, "Build
-it")**: auto-decline a comeback turn when no comeback-legal bomb
-in hand can go; outcome identical to the pass the player would
-tap anyway.
+Status: COMPLETE — PR #40, merged 6924ea3, deployment
+e64aa576-0efd-4a1f-b1a1-399475574094. Suite 125 → 134.
+Verifier PASS (Verifier chat, Switch #9 fallback after the
+Claude Code verifier died on the 5h usage limit): all items
+PASS on head e55edde — own equivalence seeds 1–101 (6,839
+auto-declines matched 1:1 to old forced passes, live offers
+38 → 38), own 1,000-match sweep (dead 68,465 → 0, live 433
+unchanged, deadOnTriple2s 0 — disclosure 3 CONFIRMED),
+false-negative hunt 1,482 states 0 mismatches, Option C
+probes (seeds 23/39 dead stops gone, seed 38 live comeback
+stops with the four 4s). Disclosures 1–3 accepted/confirmed.
+Source: Task 035 audit finding #1 — John's first pick of the
+walk-through (2026-11-04, "Build it").
 
 ## The defect (audit #1, verified against the engine)
 

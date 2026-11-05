@@ -87,6 +87,7 @@ completion.
 | 035 | Full codebase + UI/UX audit (report only) — 29 findings, no rule defects; owner walk-through picked the fix batch | — | ✅ Complete |
 | 036 | Split src/main.ts into src/dom/ modules; explicit roundId/trickId replace object-identity checks (structure only, zero behavior change) | #38 | ✅ Merged · Live |
 | 037 | Phone one-screen layout V3: slim header + ☰ menu, one-row score strip, compact table; A+B fit fix (pile 144px, one-row action row) — reference turn fully in the first screen at 360×640 | #39 | ✅ Merged · Live |
+| 038 | No more dead comeback turns — comeback turns offered only when a comeback-legal bomb answer is in hand; dead turns auto-decline (no log line, no pause), zero outcome change | #40 | ✅ Merged · Live |
 
 ## Play
 
