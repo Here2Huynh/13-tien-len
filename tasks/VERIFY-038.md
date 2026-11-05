@@ -1,44 +1,86 @@
-# VERIFY-038: Dead comeback turns — independent verification checklist
+# VERIFY 038 — no more dead comeback turns, audit #1 (PR #40)
 
-Verify PR #40 at its head against TASK-038. Builder claim: a comeback
-turn is offered only when live; dead turns auto-decline; zero outcome
-change. Suite 125 → 134.
+Verifier: independent session (Claude Code run, Switch #9; the
+Verifier chat is the fallback). You did not write this code.
+Judge the PR against TASK-038 (John's locked scope: a comeback
+turn is offered only when live; dead turns auto-decline with
+ZERO outcome change; locked comeback rules unchanged) and the
+claims in the PR body / build report; do not fix anything.
+Post PASS or FAIL with per-item evidence as a PR comment on
+PR #40 and write the verdict to the VERIFY-REPORT.md path named
+in your prompt.
 
-1. **Independent run.** Fresh checkout of the PR head; `npm test`
-   (expect 134, all pass), `npm run build` clean; working tree clean
-   afterwards.
-2. **Diff discipline.** Exactly 4 files: `src/engine/comeback.ts`
-   (new), `src/ui/controller.ts`, `test/app.test.ts`,
-   `test/engine.test.ts`. No changes to `trick.ts`, `bombs.ts`,
-   `ai.ts`, `runner.ts` or any `src/dom/*` file. The controller's
-   decline uses the engine's own `passTurn` and writes no log line,
-   makes no emit, adds no CPU delay (read the diff and confirm).
-   The comeback answer computation must use the same legality test
-   a real comeback play faces (isComebackBomb + the bomb ladders) —
-   confirm by reading `comeback.ts` against `trick.playCards`.
-3. **Test-diff audit.** 9 new tests; the ONE modified existing
-   fixture (TASK 016 "a pass that closes the trick…") is disclosed:
-   the human was given four 9s so the tested decline is a live one;
-   its assertion is unchanged and two assertions were added. Judge:
-   no assertion weakened anywhere; the old dead-turn path is covered
-   by the new auto-decline tests. Run the builder's mutation logic
-   yourself if cheap: disabling the decline call must fail tests.
-4. **Equivalence, independently.** Reproduce the core claim with
-   your OWN harness or by re-running the builder's scripts from a
-   clean state: over ≥20 controller seeds, old actions minus the
-   dead passes == new actions exactly; final states equal; live
-   comeback turns offered equal (incl. seed 38). Separately confirm
-   the sweep headline: offered dead turns after = 0, live offered
-   unchanged (a reduced sweep, e.g. 500 matches, is acceptable if
-   the method matches the audit's).
-5. **Probe (Option C, patched CfT 156.0.8078.80 only, localOnly,
-   localhost dist only, fresh profile, sandbox OFF — do not claim
-   ON).** On the PR dist: a seeded replay that previously stopped
-   the human on a dead comeback turn (builder used seeds 23/39)
-   now flows past with no "your turn" render on a locked-out hand;
-   the seed-38 live comeback still stops, offers the bomb via Hint,
-   and plays with the bomb-penalty line. One full autopilot match
-   completes with 0 page errors.
+## Checklist
 
-Verdict: PASS or FAIL per item, with evidence. A false negative —
-any genuinely live comeback no longer offered — is a FAIL.
+1. **Independent run.** Fresh checkout of the PR head
+   (`e55edde`). `npm test` = 134/134, `npm run build` clean,
+   tree clean afterwards.
+2. **Diff discipline.** Exactly 4 files vs main:
+   `src/engine/comeback.ts` (new), `src/ui/controller.ts`,
+   `test/app.test.ts`, `test/engine.test.ts`. The locked files
+   `src/engine/trick.ts`, `src/engine/bombs.ts`,
+   `src/engine/ai.ts`, `src/engine/runner.ts` are zero diff.
+   No presentation files touched (`src/main.ts`, `src/dom/*`
+   zero diff). No rule, eligibility, or scoring change: the
+   comeback helper must apply the same legality test
+   `trick.playCards` applies (comeback-eligible kinds only,
+   `bombBeats || bombOnBombBeats` the table play).
+3. **Test-diff audit.** Exactly 9 new tests (125 → 134).
+   Judge build disclosure 1 explicitly: one TASK-016 fixture
+   was re-pointed — the human was given four 9s so the decline
+   it tests is a live one; its assertion ("You passes.") is
+   unchanged and two assertions were added. Accept only if
+   that is the sole existing-test change and no assertion
+   anywhere was removed or weakened.
+4. **Independent equivalence (the decisive item).** Re-derive
+   the zero-outcome-change claim with your OWN harness on your
+   OWN builds of base (main) and head (do not reuse the
+   builder's scripts or outputs): seeded controller-level
+   matches (at least 20 seeds; include seeds 38/56/101),
+   classifying dead turns by the audit's method from engine
+   primitives. Required: the new build's action sequence,
+   log lines, and states equal the old build's with exactly
+   the auto-declined passes removed — each auto-decline
+   matched 1:1 to an old forced pass (round, trick, player,
+   table play) — and NO other diff. The game log of the new
+   build must be an exact subsequence of the old build's.
+5. **Own sweep.** Audit method, ≥1,000 matches: offered dead
+   comeback turns AFTER = 0; live turns offered unchanged vs
+   BEFORE on the same seeds; BEFORE reproduces the audit's
+   proportions (builder at 3,000 matches: dead 205,651,
+   live 1,378). Report your own counts, not the builder's.
+6. **False-negative hunt (FAIL-grade risk).** A live comeback
+   turn silently skipped is the worst failure mode. Prove
+   live turns still stop and offer: four of a kind AND the
+   4-pair run against a 2; the seed-38 replay (four 4s vs
+   Rosa's 2♠, Hint names the bomb, bomb plays, penalty line
+   follows); bomb-vs-bomb comeback answers (higher quad over
+   a quad, 4-pair run over any bomb) still offered. Triple 2s
+   never open a turn, for any hand.
+7. **Option C probes — your OWN.** Playwright on the built
+   dist under the Option C harness rules (patched Chrome for
+   Testing 156.0.8078.80 only, probes load only locally built
+   dist over localhost/file, every probe route-blocks ALL
+   external requests via localOnly, sandbox-OFF is the
+   accepted state — never claim sandbox-ON):
+   - a seeded replay that produced a dead human comeback
+     turn on the old build (builder used seeds 23 and 39)
+     now flows past it — no "YOUR TURN" stop on a locked-out
+     hand without a live bomb;
+   - a live comeback replay (seed 38) still stops and
+     offers the bomb;
+   - a full autopilot match completes; zero page errors.
+8. **Disclosures judged.** Rule on each build-report
+   disclosure against the code and your own evidence:
+   #2 (the check lives in the controller, not the engine
+   gate — accept only if the log-subsequence property in
+   item 4 holds and you agree the engine-level P7 counts
+   staying unchanged is by design, not a miss);
+   #3 (the task file's "~54% triple 2s" is unsupported —
+   the audit's P7 reports deadOnTriple2s: 0; confirm from
+   your sweep data); #4 (harness choices: mixed policy is
+   harness-only, real-speed probes); #5 (presentation and
+   How to Play copy untouched — confirm by diff).
+
+Verdict format: PASS or FAIL, per-item evidence. A FAIL names
+the exact failing items.

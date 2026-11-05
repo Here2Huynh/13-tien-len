@@ -1,7 +1,11 @@
 # TASK-038: No more dead comeback turns (audit #1)
 
 Status: ASSIGNED (verifier) — PR #40, head e55edde; checklist
-tasks/VERIFY-038.md. Suite baseline: 125.
+tasks/VERIFY-038.md. Builder (Claude Code, Switch #9) local
+commit fa81cbb pushed as e55edde (blob-identical); suite
+134/134 at pickup. Verifier: judge build disclosures 1–5 in
+the PR body, disclosure 2 (controller-level check) and 3
+(triple-2s share unsupported) explicitly.
 Source: Task 035 audit finding #1 — the auditor's #1 pick and
 **John's first pick of the walk-through (2026-11-04, "Build
 it")**: auto-decline a comeback turn when no comeback-legal bomb
