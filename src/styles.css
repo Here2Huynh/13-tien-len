@@ -577,6 +577,9 @@ tr.winline td:first-child{color:var(--gold-bright);}
   margin-top:10px;font-size:clamp(16px,5.2vw,22px);font-weight:800;
   color:var(--gold-bright);text-shadow:0 2px 8px rgba(0,0,0,.5);
 }
+/* The winning hand under the winner line (TASK 043): the shared
+   .minicards fan, spaced off the line. */
+.iwbeat-cards{margin-top:16px;}
 
 @media (max-width:640px){
   body{font-size:16px;}

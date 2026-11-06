@@ -21,6 +21,7 @@ import {
   comebackLogLine,
   validateSelection,
   seatVerb,
+  sortHand,
   playerErrorText,
   type MessageTone,
   type TrickView,
@@ -44,7 +45,11 @@ import {
 export type Phase = "idle" | "playing" | "roundEnd" | "matchEnd";
 
 export interface RoundSummary {
-  instantWin: { winner: number; kind: InstantWinKind } | null;
+  /** An instant-win round (TASK 033/043): the winner, the hand
+      kind, and the dealt hand itself — captured by the controller
+      at the deal (see startRoundInternal) so the celebration
+      beat can show the cards. Presentation only. */
+  instantWin: { winner: number; kind: InstantWinKind; hand: Card[] } | null;
   finishOrder: number[];
   deltas: number[];
   penalties: Penalty[];
@@ -152,12 +157,24 @@ export function createController(options: ControllerOptions = {}): Controller {
     roundChops = [];
     const match = state.match as Match;
     const roundNo = match.roundNumber;
-    const start = startRound(match, dealHands());
+    const hands = dealHands();
+    const start = startRound(match, hands);
     if (start.type === "instant-win") {
       const { deltas } = applyInstantWin(match, start.winner);
       state.trick = null;
       state.roundSummary = {
-        instantWin: { winner: start.winner, kind: start.kind },
+        // The dealt hand rides the summary (TASK 043): the
+        // engine's verdict names only the winner and the kind,
+        // and no trick state is ever built for an instant-win
+        // round, so the hand exists nowhere else by render time.
+        // The controller dealt these cards itself moments ago —
+        // capturing them here (sorted, a copy) changes no engine,
+        // scoring, or save behavior.
+        instantWin: {
+          winner: start.winner,
+          kind: start.kind,
+          hand: sortHand(hands[start.winner]),
+        },
         finishOrder: [start.winner],
         deltas,
         penalties: [],

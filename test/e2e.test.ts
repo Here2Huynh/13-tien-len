@@ -7,7 +7,7 @@ import { inflateSync } from "node:zlib";
 import { createDeck, makeCard, type Card } from "../src/engine/cards.js";
 import { createTrickState, playCards, passTurn } from "../src/engine/trick.js";
 import { createMatch } from "../src/engine/match.js";
-import { emptyTrickView, SEAT_NAMES } from "../src/ui/model.js";
+import { emptyTrickView, SEAT_NAMES, cardLabel, sortHand } from "../src/ui/model.js";
 import { newDeal } from "../src/engine/deal.js";
 import { detectInstantWin } from "../src/engine/instantWin.js";
 import type { ControllerState } from "../src/ui/controller.js";
@@ -2463,6 +2463,111 @@ test("e2e: instant-win celebration beat — withheld banner, skip, no replay, ti
   // (TASK 036: the beat moved from src/main.ts to src/dom/banner.ts.)
   const bannerTs = readFileSync(new URL("../../src/dom/banner.ts", import.meta.url), "utf8");
   assert.match(bannerTs, /const BEAT_MS = 2800;/, "the beat's total duration is ~2.8s");
+});
+
+// ---------- TASK 043: instant-win match end ----------
+
+function findBeatOverlay(): FakeElement | null {
+  const walk = (node: FakeElement): FakeElement | null => {
+    if ((node.className ?? "").split(/\s+/).includes("iwbeat")) return node;
+    for (const child of node.children) {
+      const hit = walk(child);
+      if (hit) return hit;
+    }
+    return null;
+  };
+  return walk(fakeDocument.body);
+}
+
+function beatCardsShown(beat: FakeElement): string[] {
+  const card = beat.children[0];
+  const row = card.children[2];
+  assert.ok(row, "the beat card carries a cards row");
+  return row.children.map(
+    (mini) => mini.children[0].textContent + mini.children[1].textContent,
+  );
+}
+
+function handLabels(cards: Card[]): string[] {
+  return sortHand(cards).map((c) => {
+    const l = cardLabel(c);
+    return l.rank + l.glyph;
+  });
+}
+
+test("e2e: instant-win beat shows the winning hand as cards; the round-level banner keeps its title (TASK 043)", async () => {
+  await import("../src/main.js");
+  fakeStorage.clear();
+  // A seed whose FIRST deal hands some seat an instant win (the
+  // TASK 033 test's search).
+  let scripted: { seed: number; winner: number } | null = null;
+  for (let seed = 1; seed < 5000 && !scripted; seed++) {
+    const hands = newDeal(seededRng(seed));
+    for (let p = 0; p < 4; p++) {
+      if (detectInstantWin(hands[p])) {
+        scripted = { seed, winner: p };
+        break;
+      }
+    }
+  }
+  assert.ok(scripted, "a seed with an instant-win first deal exists");
+  const { seed, winner } = scripted;
+  // Leave the shared Math.random stream exactly as found: later
+  // tests inherit its position.
+  const prevRandom = Math.random;
+  Math.random = seededRng(seed);
+  newMatchTop();
+  const beat = findBeatOverlay();
+  assert.ok(beat, "the beat overlay exists");
+  assert.equal(beat.hidden, false, "the beat is showing");
+  assert.deepEqual(
+    beatCardsShown(beat),
+    handLabels(newDeal(seededRng(seed))[winner]),
+    "the beat shows the winner's dealt hand as cards, in display order",
+  );
+  beat.click(); // skip to the banner
+  assert.equal(
+    $("banner-title").textContent, "Instant win!",
+    "a round-level instant win keeps its banner title",
+  );
+  Math.random = prevRandom;
+});
+
+test("e2e: an instant win that ends the match names the winner in the banner title (TASK 043)", async () => {
+  await import("../src/main.js");
+  fakeStorage.clear();
+  fakeStorage.throws = false;
+  // A seed whose first deal hands YOU an instant win, so a resumed
+  // match with you already on 8 ends on it (8 + 6 = 14 ≥ 13).
+  let seed = 0;
+  for (let s = 1; s < 5000; s++) {
+    if (detectInstantWin(newDeal(seededRng(s))[0])) {
+      seed = s;
+      break;
+    }
+  }
+  assert.ok(seed > 0, "a seed with a human instant-win first deal exists");
+  fakeStorage.setItem(SCORE_KEY, JSON.stringify({ scores: [8, 0, 0, 0], round: 3 }));
+  const prevRandom = Math.random;
+  Math.random = seededRng(seed);
+  $("resume-btn").click();
+  const beat = findBeatOverlay();
+  assert.ok(beat, "the beat overlay exists");
+  assert.equal(beat.hidden, false, "the beat precedes the match-over banner");
+  assert.deepEqual(
+    beatCardsShown(beat),
+    handLabels(newDeal(seededRng(seed))[0]),
+    "the beat shows your dealt instant-win hand",
+  );
+  beat.click(); // skip to the banner
+  assert.equal($("banner").hidden, false, "the banner lands after the beat");
+  assert.equal(
+    $("banner-title").textContent, "🏆 You win the match!",
+    "the match-over title names the winner in the normal form",
+  );
+  assert.equal($("new-match-btn").hidden, false, "match end offers New Match");
+  assert.equal($("continue-btn").hidden, true, "no Continue at match end");
+  Math.random = prevRandom;
 });
 
 // ---------- TASK 037: phone one-screen layout (V3) ----------

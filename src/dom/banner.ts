@@ -3,6 +3,7 @@ import {
   SEAT_NAMES, seatVerb, penaltyLine, roundResultRows, bombPenaltyNet, bombPenaltyNoteLine,
 } from "../ui/model.js";
 import { els, el, finishMedal } from "./elements.js";
+import { miniCard } from "./pile.js";
 
 // Round/match summaries (TASK 036 split of main.ts): the round-over
 // / match-over banner and the instant-win celebration beat that
@@ -43,13 +44,15 @@ let beatDone = false;
 let beatTimer: ReturnType<typeof setTimeout> | null = null;
 let beatOverlay: HTMLElement | null = null;
 let beatLine: HTMLElement | null = null;
+let beatCards: HTMLElement | null = null;
 
 function ensureBeatOverlay(): HTMLElement {
   if (beatOverlay) return beatOverlay;
   const overlay = el("div", "overlay iwbeat");
   const card = el("div", "iwbeat-card");
   const line = el("div", "iwbeat-line");
-  card.append(el("h2", "iwbeat-title", "INSTANT WIN!"), line);
+  const cards = el("div", "minicards iwbeat-cards");
+  card.append(el("h2", "iwbeat-title", "INSTANT WIN!"), line, cards);
   overlay.append(card);
   overlay.hidden = true;
   overlay.addEventListener("click", () => {
@@ -58,6 +61,7 @@ function ensureBeatOverlay(): HTMLElement {
   if (document.body) document.body.append(overlay);
   beatOverlay = overlay;
   beatLine = line;
+  beatCards = cards;
   return overlay;
 }
 
@@ -73,6 +77,16 @@ function startBeat(roundId: number, summary: RoundSummary): void {
   // (hyphens as spaces): "<Name> — <hand kind>".
   if (beatLine) {
     beatLine.textContent = `${SEAT_NAMES[winner]} — ${kind.replaceAll("-", " ")}`;
+  }
+  // The winning hand itself, as cards (TASK 043): the hand that
+  // ended the round, dealt face-up under the winner line for the
+  // length of the beat. Static DOM — it rides the beat's existing
+  // timing and skip, and reduced motion changes nothing about it.
+  if (beatCards) {
+    beatCards.textContent = "";
+    for (const card of summary.instantWin?.hand ?? []) {
+      beatCards.append(miniCard(card));
+    }
   }
   overlay.hidden = false;
   beatTimer = setTimeout(() => finishBeat(roundId), BEAT_MS);
@@ -130,8 +144,13 @@ export function renderBanner(state: ControllerState): void {
   body.textContent = "";
   if (summary.instantWin) {
     const { winner, kind } = summary.instantWin;
+    // A match decided by an instant win names its winner in the
+    // normal match-end form (TASK 043, audit #6); a round-level
+    // instant win keeps the "Instant win!" title.
     els.bannerTitle.textContent =
-      state.phase === "matchEnd" ? "Match over!" : "Instant win!";
+      state.phase === "matchEnd"
+        ? `🏆 ${seatVerb(winner, "win", "wins")} the match!`
+        : "Instant win!";
     body.append(
       el(
         "p",
