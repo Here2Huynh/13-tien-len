@@ -226,6 +226,7 @@ const ELEMENT_IDS = [
   "odds-btn-top", "odds-overlay", "odds-close",
   "menu-btn", "menu-panel",
   "app", "confirm-overlay", "confirm-standing", "confirm-cancel", "confirm-new",
+  "speed-btn", "skip-btn",
 ];
 
 const registry = new Map<string, FakeElement>();
@@ -2050,7 +2051,8 @@ test("utility buttons: the button.ghost family is warm gold from the trim, with 
   // elements — the header's .ghost.small set (TASK 037 adds the
   // phone ☰ Menu button ahead of the trio it holds), the controls
   // row, the start screen's How to play, and (TASK 041) How to
-  // play's own top close control.
+  // play's own top close control. (TASK 044: the controls row's
+  // Speed toggle and Skip button join the same family.)
   const html = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
   const ghostIds = [...html.matchAll(/<button\b[^>]*>/g)]
     .map((m) => m[0])
@@ -2059,6 +2061,7 @@ test("utility buttons: the button.ghost family is warm gold from the trim, with 
   assert.deepEqual(ghostIds, [
     "menu-btn", "help-btn-top", "odds-btn-top", "new-match-top",
     "pass-btn", "hint-btn", "sort-btn", "clear-btn",
+    "speed-btn", "skip-btn",
     "help-btn-start", "help-close-top",
   ]);
   const { css, rules } = task025Rules();
@@ -2567,6 +2570,54 @@ test("e2e: an instant win that ends the match names the winner in the banner tit
   );
   assert.equal($("new-match-btn").hidden, false, "match end offers New Match");
   assert.equal($("continue-btn").hidden, true, "no Continue at match end");
+  Math.random = prevRandom;
+});
+
+// ---------- TASK 044: Fast mode + skip to the end ----------
+
+test("e2e: Speed toggle flips its label; Skip to end appears once you are out and lands the banner (TASK 044)", async () => {
+  await import("../src/main.js");
+  fakeStorage.clear();
+  // The speed toggle: label and pressed state flip together,
+  // and the choice is the session's until flipped back.
+  assert.equal($("speed-btn").textContent, "Speed: Normal");
+  assert.equal($("speed-btn").getAttribute("aria-pressed"), "false");
+  $("speed-btn").click();
+  assert.equal($("speed-btn").textContent, "Speed: Fast");
+  assert.equal($("speed-btn").getAttribute("aria-pressed"), "true");
+  $("speed-btn").click();
+  assert.equal($("speed-btn").textContent, "Speed: Normal");
+  assert.equal($("speed-btn").getAttribute("aria-pressed"), "false");
+
+  // Skip: seed 1's first round (see the TASK 044 controller
+  // tests) — hint-driven, you go out with CPUs still holding
+  // cards. Timers fire one at a time here: settle() would play
+  // the round out, which is exactly what the skip replaces.
+  const prevRandom = Math.random;
+  Math.random = seededRng(1);
+  newMatchTop();
+  assert.equal($("skip-btn").hidden, true, "no skip while you are still in the round");
+  let offered = false;
+  for (let steps = 0; steps < 4000 && !offered; steps++) {
+    if (!$("banner").hidden) break;
+    if (!$("skip-btn").hidden) {
+      offered = true;
+      break;
+    }
+    if (!$("play-btn").disabled) humanMove();
+    else {
+      const fire = timerQueue.shift();
+      assert.ok(fire, "a CPU timer is pending while a CPU turn is due");
+      fire();
+    }
+  }
+  assert.ok(offered, "the skip control was offered once you were out");
+  $("skip-btn").click();
+  assert.equal($("banner").hidden, false, "skip lands on the round-over banner");
+  assert.equal($("skip-btn").hidden, true, "the skip control goes away with the banner");
+  // The CPU timer armed before the skip fires harmlessly now.
+  while (timerQueue.length > 0) timerQueue.shift()!();
+  assert.equal($("banner").hidden, false, "the banner stands after the stale timer");
   Math.random = prevRandom;
 });
 

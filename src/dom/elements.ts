@@ -14,6 +14,8 @@ export const els = {
   youArea: $("you-area"),
   youHeader: $("you-header"),
   hand: $("hand"),
+  speedBtn: $btn("speed-btn"),
+  skipBtn: $btn("skip-btn"),
   playBtn: $btn("play-btn"),
   passBtn: $btn("pass-btn"),
   hintBtn: $btn("hint-btn"),
