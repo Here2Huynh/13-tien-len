@@ -1,6 +1,14 @@
 # TASK-044: Fast mode + skip to the end of the round (audit #13)
 
-Status: ASSIGNED (verifier). Suite baseline: 174. PR #46, head 1394fc114b3efd256e7b14fb0312ad4c4880b7f3.
+Status: COMPLETE — PR #46 merged 5bb6c1f (verifier PASS, all 9
+VERIFY-044 items, head 1394fc1), deployed c0be62fe-5b0f-4bf9-a804-5d10e83ff7ad.
+Suite 174 -> 178.
+Close-out note: merged by the pipeline check; its run then wedged
+before docs landed, so the foreman completed the close-out. An
+earlier deployment of this identical merged tree had already
+reached live (assets verified 2026-11-06 01:50 PT) but its id went
+unrecorded; the deployment id above is the foreman's re-deploy of
+the identical tree, byte-verified live.
 
 ## Why
 
