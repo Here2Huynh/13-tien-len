@@ -1,7 +1,8 @@
 # TASK-042: Round-over banner — bomb-penalty note rows (audit #4)
 
-Status: ASSIGNED (verifier) — PR #44, head a4eeca3 (builder
-commit deafc55). Suite baseline: 166.
+Status: COMPLETE — PR #44 merged 0d2bbaf (verifier PASS, all 8
+VERIFY-042 items, head a4eeca3), deployed 8f66c8bf-e72e-4525-b04d-6e37dd67bb66.
+Suite 166 -> 171.
 
 ## Why
 
