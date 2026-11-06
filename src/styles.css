@@ -28,6 +28,18 @@
   --shadow:0 10px 24px rgba(5,15,18,.45);
   --radius:16px;
 }
+/* Self-hosted Nunito (TASK 048, audit #24): the latin subsets of
+   exactly the faces this page used to fetch from Google Fonts —
+   the upright weights the CSS uses (600/700/800/900), served by
+   Google as one variable font (wght axis 200-1000), plus the
+   static italic 900. The files live next to this stylesheet and
+   the build copies them into dist/ alongside it, so the page
+   makes zero external requests. */
+@font-face{font-family:"Nunito";font-style:normal;font-weight:600;font-display:swap;src:url("./nunito-var.woff2") format("woff2");unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;}
+@font-face{font-family:"Nunito";font-style:normal;font-weight:700;font-display:swap;src:url("./nunito-var.woff2") format("woff2");unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;}
+@font-face{font-family:"Nunito";font-style:normal;font-weight:800;font-display:swap;src:url("./nunito-var.woff2") format("woff2");unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;}
+@font-face{font-family:"Nunito";font-style:normal;font-weight:900;font-display:swap;src:url("./nunito-var.woff2") format("woff2");unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;}
+@font-face{font-family:"Nunito";font-style:italic;font-weight:900;font-display:swap;src:url("./nunito-900-italic.woff2") format("woff2");unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;}
 *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
 html,body{margin:0;padding:0;}
 body{
