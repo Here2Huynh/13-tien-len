@@ -1,12 +1,12 @@
 import { newDeal } from "../engine/deal.js";
 import {
-  createMatch, startRound, applyInstantWin, finishRound, applyChop, applyBombedBombPenalty,
+  createMatch, startRound, applyInstantWin, finishRound, applyTurn,
   type Match, type Chop,
 } from "../engine/match.js";
-import { playCards, passTurn, hasComebackTurn, type TrickState } from "../engine/trick.js";
+import { passTurn, hasComebackTurn, type TrickState } from "../engine/trick.js";
 import { chooseAction, type Action } from "../engine/ai.js";
 import { isDeadComebackTurn } from "../engine/comeback.js";
-import { detectBomb, bombOnBombBeats, bombTarget } from "../engine/bombs.js";
+import { functionedAsBomb } from "../engine/bombs.js";
 import type { Card } from "../engine/cards.js";
 import type { Penalty } from "../engine/scoring.js";
 import type { InstantWinKind } from "../engine/instantWin.js";
@@ -244,9 +244,12 @@ export function createController(options: ControllerOptions = {}): Controller {
     // state: the player had passed earlier in this same trick, and
     // the engine's comeback gate is open for them right now.
     const wasComeback = action.type === "play" && hasComebackTurn(trick, player);
+    let chop: Chop | null = null;
+    let bombedBomb: Chop | null = null;
     try {
-      if (action.type === "play") playCards(trick, player, action.cards);
-      else passTurn(trick, player);
+      if (action.type === "play") {
+        ({ chop, bombedBomb } = applyTurn(match, trick, player, action));
+      } else passTurn(trick, player);
     } catch (error) {
       // Rejections never change the trick (the engine throws before
       // it mutates), so the copy can name what is still on the table.
@@ -262,30 +265,21 @@ export function createController(options: ControllerOptions = {}): Controller {
     if (action.type === "play") {
       // The play functioned as a bomb when it answered a single 2 /
       // pair of 2s with a bomb, or answered a bomb with one (TASK
-      // 021) — that context decides the phrasing.
-      const wasBomb =
-        prevPlay !== null &&
-        detectBomb(action.cards) !== null &&
-        (bombTarget(prevPlay.cards) !== null ||
-          bombOnBombBeats(action.cards, prevPlay.cards));
+      // 021) — that context decides the phrasing. The engine's
+      // functionedAsBomb is the single definition (TASK 046).
+      const wasBomb = functionedAsBomb(prevPlay, action.cards);
       log(`${seatVerb(player, "play", "plays")} ${describePlay(action.cards, wasBomb)}.`);
       if (wasComeback) log(comebackLogLine(player));
-      // Chop: bombing a played 2 / pair of 2s transfers 1 point per
-      // 2 from its owner to the bomber, instantly (TASK 012). The
-      // engine decides what counts (applyChop via bombBeats); the
-      // transfer lands on the match scores before this emit, so the
-      // score display moves on the same render.
-      const chop = applyChop(match, prevPlay, action.cards, player);
+      // The transfers were settled by applyTurn with the play
+      // itself (bomb penalty, then bombed-bomb penalty — TASK 012
+      // / TASK 021, mutually exclusive), landing on the match
+      // scores before this emit, so the score display moves on
+      // the same render. Here they are only recorded and logged,
+      // in settlement order.
       if (chop) {
         roundChops.push(chop);
         log(bombPenaltyLogLine(chop));
       }
-      // Bombed-bomb penalty: beating a bomb with a bomb transfers
-      // 1 point from the beaten bomb's owner to the player who
-      // bombed it, instantly (TASK 021). Mutually exclusive with
-      // the chop above — a bombed 2 is not a bomb, a bombed bomb
-      // is not a 2 — and settled the same way.
-      const bombedBomb = applyBombedBombPenalty(match, prevPlay, action.cards, player);
       if (bombedBomb) {
         roundChops.push(bombedBomb);
         log(bombedBombLogLine(bombedBomb));

@@ -1,6 +1,6 @@
 import { detectCombination, type CombinationType } from "./combinations.js";
 import { beats } from "./plays.js";
-import { detectBomb, bombBeats, bombOnBombBeats, bombTarget, isComebackBomb } from "./bombs.js";
+import { detectBomb, bombAnswers, bombTarget, isComebackBomb } from "./bombs.js";
 import type { Card } from "./cards.js";
 
 // Trick / turn state machine for Thirteen / Tien Len. Engine only.
@@ -49,7 +49,10 @@ export interface TrickState {
 }
 
 export interface TrickOptions {
-  leader?: number;
+  /** Explicit leader for rounds after the first; null (a restored
+      match whose Match.leader was never set) or omitted means the
+      3 of spades holder leads, exactly like round 1 (TASK 046). */
+  leader?: number | null;
   openingLead?: boolean;
 }
 
@@ -64,9 +67,9 @@ export function createTrickState(hands: Card[][], options: TrickOptions = {}): T
   // Default (first round of a match): the player holding 3 of spades
   // leads and the opening-lead rule applies. Later rounds pass an
   // explicit leader (the previous round's winner) and no opening rule.
-  const hasExplicitLeader = typeof options.leader === "number";
-  const leader = hasExplicitLeader ? (options.leader as number) : findOpeningLeader(hands);
-  const opening = options.openingLead ?? (!hasExplicitLeader && leader !== -1);
+  const leader =
+    typeof options.leader === "number" ? options.leader : findOpeningLeader(hands);
+  const opening = options.openingLead ?? (typeof options.leader !== "number" && leader !== -1);
   return {
     hands: hands.map((hand) => [...hand]),
     currentPlayer: leader !== -1 ? leader : 0,
@@ -133,7 +136,11 @@ function clearTrick(state: TrickState): void {
   state.passed = [];
   state.comebackCandidates = [];
   state.bombDecisionMade = [];
-  state.leader = winner as number;
+  // A trick only clears once a play stands, so the winner is
+  // always set here; the guard replaces the old `as number` cast
+  // (TASK 046) — in the unreachable null case the leader simply
+  // keeps its previous value instead of being poisoned with null.
+  if (winner !== null) state.leader = winner;
   state.trickNumber += 1;
   // Winner leads next. If the winner holds no cards, the lead moves
   // clockwise to the next player who still holds cards.
@@ -176,19 +183,14 @@ export function playCards(state: TrickState, player: number, cards: Card[]): Tri
     // current play — a 2 / pair of 2s via the bomb ladder, or a bomb
     // via the bomb-on-bomb ladder (TASK 021). The 3-pair double run
     // does not qualify, and kind rules still bind.
-    if (
-      !isComebackBomb(cards) ||
-      (!bombBeats(cards, state.currentPlay.cards) &&
-        !bombOnBombBeats(cards, state.currentPlay.cards))
-    ) {
+    if (!isComebackBomb(cards) || !bombAnswers(cards, state.currentPlay.cards)) {
       throw new Error(
         "Comeback after passing requires four of a kind or a 4-pair double run that bombs the current play",
       );
     }
   } else if (
     !beats(cards, state.currentPlay.cards) &&
-    !bombBeats(cards, state.currentPlay.cards) &&
-    !bombOnBombBeats(cards, state.currentPlay.cards)
+    !bombAnswers(cards, state.currentPlay.cards)
   ) {
     throw new Error("Play does not beat the current trick play");
   }

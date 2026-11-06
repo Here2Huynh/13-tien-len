@@ -1,7 +1,7 @@
 import { RANKS, type Card, type Rank } from "./cards.js";
 import { detectCombination } from "./combinations.js";
 import { beats, highestCard } from "./plays.js";
-import { detectBomb, bombBeats, bombOnBombBeats, bombTarget, isComebackBomb, type BombKind } from "./bombs.js";
+import { detectBomb, bombAnswers, bombTarget, isComebackBomb, type BombKind } from "./bombs.js";
 import { hasComebackTurn, type TrickState } from "./trick.js";
 
 // Simple rule-based CPU policy for Thirteen / Tien Len.
@@ -141,9 +141,20 @@ function bombKey(play: Card[]): PlayKey {
 
 const byBombOrder = (a: Card[], b: Card[]): number => compareKeys(bombKey(a), bombKey(b));
 
-function weakestBomb(hand: Card[], current: Card[], { comebackOnly = false } = {}): Card[] | null {
-  const bombs = enumerateBombs(hand)
-    .filter((bomb) => bombBeats(bomb, current) || bombOnBombBeats(bomb, current))
+// Every bomb in `player`'s hand that answers the play on the
+// table (bombs.bombAnswers), in hand order; empty when there is
+// no play to answer. The single enumeration of the bomb-answer
+// predicate (TASK 046): the AI's bomb choice, the comeback gate
+// (engine/comeback), and the adapter's glow/flicker all read
+// from here.
+export function legalBombs(state: TrickState, player: number): Card[][] {
+  if (state.currentPlay === null) return [];
+  const table = state.currentPlay.cards;
+  return enumerateBombs(state.hands[player]).filter((bomb) => bombAnswers(bomb, table));
+}
+
+function weakestBomb(state: TrickState, player: number, { comebackOnly = false } = {}): Card[] | null {
+  const bombs = legalBombs(state, player)
     .filter((bomb) => !comebackOnly || isComebackBomb(bomb))
     .sort(byBombOrder);
   return bombs[0] ?? null;
@@ -169,7 +180,7 @@ export function chooseAction(state: TrickState, player: number): Action {
   const current = state.currentPlay.cards;
 
   if (hasComebackTurn(state, player)) {
-    const bomb = weakestBomb(hand, current, { comebackOnly: true });
+    const bomb = weakestBomb(state, player, { comebackOnly: true });
     return bomb ? { type: "play", cards: bomb } : { type: "pass" };
   }
 
@@ -179,7 +190,7 @@ export function chooseAction(state: TrickState, player: number): Action {
   if (beating.length > 0) return { type: "play", cards: beating[0] };
 
   if (bombTarget(current) !== null || detectBomb(current) !== null) {
-    const bomb = weakestBomb(hand, current);
+    const bomb = weakestBomb(state, player);
     if (bomb) return { type: "play", cards: bomb };
   }
 

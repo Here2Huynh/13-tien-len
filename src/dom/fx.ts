@@ -1,6 +1,6 @@
 import type { ControllerState } from "../ui/controller.js";
 import type { Match } from "../engine/match.js";
-import { bombOnBombBeats, detectBomb, bombTarget } from "../engine/bombs.js";
+import { functionedAsBomb } from "../engine/bombs.js";
 import { HUMAN } from "../ui/model.js";
 import { els, el } from "./elements.js";
 import type { PilePlays } from "./pile.js";
@@ -308,12 +308,7 @@ export function endFx(fx: FxBegin, state: ControllerState, pile: PilePlays): voi
           { transform: "translate(0, 0) scale(1)", opacity: 1 },
         ], { duration: 320, easing: "cubic-bezier(.25,.9,.3,1.18)" });
       }
-      const prevPlay = pile.prevPlay;
-      const wasBomb =
-        prevPlay !== null &&
-        detectBomb(cp.cards) !== null &&
-        (bombTarget(prevPlay.cards) !== null ||
-          bombOnBombBeats(cp.cards, prevPlay.cards));
+      const wasBomb = functionedAsBomb(pile.prevPlay, cp.cards);
       if (wasBomb) {
         animate(els.toBeat, [
           { transform: "scale(1)" },

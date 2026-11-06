@@ -1,7 +1,7 @@
 import type { Card } from "./cards.js";
-import { isComebackBomb, bombBeats, bombOnBombBeats } from "./bombs.js";
+import { isComebackBomb } from "./bombs.js";
 import { hasComebackTurn, type TrickState } from "./trick.js";
-import { enumerateBombs } from "./ai.js";
+import { legalBombs } from "./ai.js";
 
 // Live vs dead comeback turns (TASK 038). Engine only; no rule change.
 //
@@ -10,8 +10,8 @@ import { enumerateBombs } from "./ai.js";
 // passed before it). Whether that turn is LIVE depends on the hand:
 // the player must hold at least one comeback-legal answer — a
 // comeback bomb (four of a kind / 4-pair double run, per
-// bombs.isComebackBomb) that beats the table via the bomb ladder
-// (bombBeats) or the bomb-on-bomb ladder (bombOnBombBeats). That is
+// bombs.isComebackBomb) that answers the table (bombs.bombAnswers:
+// the bomb ladder or the bomb-on-bomb ladder). That is
 // exactly the test trick.playCards applies to a comeback play, run
 // over every bomb in the hand (ai.enumerateBombs lists every four of
 // a kind and every 4-pair run, every suit choice), so:
@@ -28,11 +28,7 @@ import { enumerateBombs } from "./ai.js";
     comeback gate is closed or the turn is dead). */
 export function comebackAnswers(state: TrickState, player: number): Card[][] {
   if (state.currentPlay === null || !hasComebackTurn(state, player)) return [];
-  const table = state.currentPlay.cards;
-  return enumerateBombs(state.hands[player]).filter(
-    (bomb) =>
-      isComebackBomb(bomb) && (bombBeats(bomb, table) || bombOnBombBeats(bomb, table)),
-  );
+  return legalBombs(state, player).filter((bomb) => isComebackBomb(bomb));
 }
 
 /** The comeback gate is open AND the player can actually come back. */

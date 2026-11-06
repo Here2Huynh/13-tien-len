@@ -429,6 +429,28 @@ test("controller: a seeded start logs the resume line; an unseeded start logs th
   assert.equal(fresh.state.log[0], "New match — first to 13.");
 });
 
+test("controller: a restored match's round is led by the 3 of spades holder (TASK 046)", () => {
+  // The TASK 039 save carries scores + round only — no leader —
+  // so a restored match's Match.leader is null, and the resumed
+  // round falls back to the opening rule: whoever was dealt the
+  // 3 of spades leads it. (Before TASK 046 this only worked
+  // because an `as number` cast smuggled the null past the types
+  // and a typeof check downstream caught it; the leader is now
+  // number | null end-to-end and the fallback is the typed path.)
+  // A dormant scheduler: the dealt state is inspected before any
+  // CPU move can disturb it (the sync scheduler would already
+  // have played the opening lead, 3 of spades included).
+  const controller = createController({ schedule: () => {}, dealHands: () => newDeal(seededRng(11)) });
+  controller.newMatch({ scores: [5, -2, 3, 0], round: 4 });
+  const s = controller.state;
+  assert.equal(s.match!.leader, null, "a restored match has no recorded leader");
+  const trick = s.trick!;
+  const holder = trick.hands.findIndex((hand) => hand.some((card) => card.id === "3-spades"));
+  assert.ok(holder >= 0, "someone holds the 3 of spades");
+  assert.equal(trick.leader, holder, "the 3 of spades holder leads the resumed round");
+  assert.equal(trick.currentPlayer, holder, "and takes the first turn");
+});
+
 test("controller: newMatch without a seed is a fresh 0-0 round 1 (TASK 031)", () => {
   const controller = createController({ schedule: sync, dealHands: () => newDeal(seededRng(11)) });
   controller.newMatch({ scores: [5, -2, 3, 0], round: 4 });

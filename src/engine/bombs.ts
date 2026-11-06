@@ -127,6 +127,35 @@ export function bombBeats(bombPlay: PlayLike, targetPlay: PlayLike): boolean {
 // Strength inside a kind compares by highest card (rank, then suit):
 // for four of a kind that is just the rank; for a pair run it is the
 // top pair's highest card.
+// "Does this bomb answer the table?" — the single composed
+// definition (TASK 046): a bomb answers a 2 / pair of 2s via the
+// bomb ladder (bombBeats), or a bomb via the bomb-on-bomb ladder
+// (bombOnBombBeats). Every legality, policy, and glow/flicker site
+// routes through this, directly or via ai.legalBombs; the
+// composition used to be written out at six sites.
+export function bombAnswers(bombPlay: PlayLike, tablePlay: PlayLike): boolean {
+  return bombBeats(bombPlay, tablePlay) || bombOnBombBeats(bombPlay, tablePlay);
+}
+
+// "Did this play function as a bomb?" (TASK 046): the play is a
+// bomb, and what it answered was a 2-target (a single 2, a pair of
+// 2s, or triple 2s) or a bomb. Wider than bombBeats on purpose —
+// it describes the play's role (the log's phrasing, the pile
+// pulse), not its legality or its penalty: no legal game produces
+// a bomb over triple 2s, but as a predicate over (prev, cards)
+// that shape still counts, exactly as both former copies (the
+// controller's log check, the adapter's pulse check) had it.
+export function functionedAsBomb(
+  prevPlay: { cards: Card[] } | null | undefined,
+  cards: Card[],
+): boolean {
+  return (
+    prevPlay != null &&
+    detectBomb(cards) !== null &&
+    (bombTarget(prevPlay.cards) !== null || bombOnBombBeats(cards, prevPlay.cards))
+  );
+}
+
 export function bombOnBombBeats(bombPlay: PlayLike, targetPlay: PlayLike): boolean {
   const bomb = detectBomb(bombPlay);
   const target = detectBomb(targetPlay);
