@@ -1,8 +1,9 @@
 # TASK-041: Copy bundle — grammar, player-facing errors, How to Play (audit #5 + #7 + #8) + accessibility details (#18)
 
-Status: ASSIGNED (verifier) — PR #43 open at head b7e507c (local commit
-5583bac; builder died post-commit, BUILD-REPORT reconstructed by the foreman
-per Disclosure 1). Suite 151 → 166. VERIFY-041 filed.
+Status: COMPLETE — PR #43 merged 098ce7f on 2026-11-05 (verifier PASS on
+head b7e507c, all 9 VERIFY-041 items; builder died post-commit, BUILD-REPORT
+reconstructed by the foreman per Disclosure 1), deployed f48c9abe.
+Suite 151 → 166.
 
 ## Why
 

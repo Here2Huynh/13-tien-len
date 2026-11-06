@@ -90,6 +90,7 @@ completion.
 | 038 | No more dead comeback turns — comeback turns offered only when a comeback-legal bomb answer is in hand; dead turns auto-decline (no log line, no pause), zero outcome change | #40 | ✅ Merged · Live |
 | 039 | Save only at round end (mid-round reload restarts the round at the last completed standings) + Resume button naming the round and all four scores on the start gate | #41 | ✅ Merged · Live |
 | 040 | New Match asks first — confirm dialog (standing line + Keep playing / New Match) freezes the whole page incl. the round-over banner; CPU timers hold and re-arm; start gate and match-over stay one tap | #42 | ✅ Merged · Live |
+| 041 | Copy bundle — human-seat grammar, errors read as guidance in an error style, How to Play agrees with the engine + top close/Esc; a11y: Sort labels fixed, both sheets are modal dialogs, log is aria-live | #43 | ✅ Merged · Live |
 
 ## Play
 

@@ -1,7 +1,7 @@
 # TASK-049: Restore the mid-round pile-collect animation
 
-Status: QUEUED (after the audit batch; files in pipeline order).
-Suite baseline: 122.
+Status: ASSIGNED (builder).
+Suite baseline: 166.
 Source: found by the TASK-036 verifier, 2026-11-04 — a
 pre-existing defect present on base and head alike. **John ruled
 "Fix it — restore the mid-round collect" on 2026-11-04.**
@@ -37,7 +37,7 @@ clears and **0** ghost animations. Only the round-end collect
   logs, and final scores before/after (the repo's seeded
   equivalence method).
 - `prefers-reduced-motion` still suppresses the animation.
-- Suite floor 122; zero `any`; strict on.
+- Suite floor 166; zero `any`; strict on.
 
 ## Proof bar
 
