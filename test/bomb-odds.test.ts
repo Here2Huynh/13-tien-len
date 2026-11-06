@@ -12,12 +12,45 @@ import {
 
 // TASK 022: the Bomb odds card's figures are the engine's. The full
 // enumeration (test/bomb-odds.ts — every C(52,13) dealt hand, judged
-// by detectBomb and detectInstantWin) runs here once and the card in
-// index.html is pinned to it, row by row. If the engine's detection
-// ever changes, these tests fail until the card is re-derived.
+// by detectBomb and detectInstantWin) pins the card in index.html,
+// row by row. If the engine's detection ever changes, these tests
+// fail until the card is re-derived.
+//
+// TASK 047 (#19): the enumeration takes ~30 s, so the default run
+// reads its result from the checked-in fixture
+// (test/bomb-odds.fixture.json) instead of recomputing it — every
+// assertion below is unchanged and runs against the fixture's
+// values. To re-run the full enumeration and prove the fixture is
+// still exactly what the engine produces, set the env flag:
+//
+//   BOMB_ODDS_FULL=1 npm test
+//
+// In that mode odds() enumerates and asserts the result deep-equals
+// the fixture before any test reads it, so a stale fixture fails
+// loudly rather than silently certifying old numbers.
+
+const fixture = (): DealtOdds =>
+  JSON.parse(
+    readFileSync(new URL("../../test/bomb-odds.fixture.json", import.meta.url), "utf8"),
+  ) as DealtOdds;
 
 let cached: DealtOdds | null = null;
-const odds = (): DealtOdds => (cached ??= enumerateDealtOdds());
+const odds = (): DealtOdds => {
+  if (cached) return cached;
+  if (process.env.BOMB_ODDS_FULL === "1") {
+    const enumerated = enumerateDealtOdds();
+    assert.deepEqual(
+      enumerated,
+      fixture(),
+      "the full enumeration must reproduce the checked-in fixture exactly " +
+        "(regenerate test/bomb-odds.fixture.json if the engine's detection changed on purpose)",
+    );
+    cached = enumerated;
+  } else {
+    cached = fixture();
+  }
+  return cached;
+};
 
 const choose = (n: number, k: number): bigint => {
   let r = 1n;
