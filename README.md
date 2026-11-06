@@ -92,6 +92,7 @@ completion.
 | 040 | New Match asks first — confirm dialog (standing line + Keep playing / New Match) freezes the whole page incl. the round-over banner; CPU timers hold and re-arm; start gate and match-over stay one tap | #42 | ✅ Merged · Live |
 | 041 | Copy bundle — human-seat grammar, errors read as guidance in an error style, How to Play agrees with the engine + top close/Esc; a11y: Sort labels fixed, both sheets are modal dialogs, log is aria-live | #43 | ✅ Merged · Live |
 | 042 | Round-over banner bomb-penalty note rows — per-seat net of mid-round bomb penalties under each player's rows, so previous + ROUND + note = TOTAL reconciles every round | #44 | ✅ Merged · Live |
+| 043 | Instant-win match end — the banner title names the winner; the winning hand shows as cards in every instant-win celebration beat (owner option A) | #45 | ✅ Merged · Live |
 
 ## Play
 

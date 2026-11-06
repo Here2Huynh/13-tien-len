@@ -1,7 +1,8 @@
 # TASK-043: Instant-win match end — name the winner, show the winning hand (audit #6)
 
-Status: ASSIGNED (verifier) — PR #45, head da96624 (builder
-commit 646bb17). Suite baseline: 171.
+Status: COMPLETE — PR #45 merged d7fe797 (verifier PASS, all 9
+VERIFY-043 items, head da96624), deployed 1ceb0a14-314a-4aef-aae3-8f60965969b5.
+Suite 171 -> 174.
 
 ## Why
 
