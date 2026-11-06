@@ -1,6 +1,8 @@
 # TASK-046: One source of truth for rule predicates + honest leader typing (audit #15 + #16)
 
-Status: ASSIGNED (verifier). Suite baseline: 179. PR #48, head 0ddeb20bf65f4626beec5c2c5a1e04c463048062.
+Status: COMPLETE — PR #48 merged 8f46c0f (verifier PASS, all 9
+VERIFY-046 items, head 0ddeb20), deployed 3aba0ed1-17e8-496a-8794-30df01ddcabe.
+Suite 179 -> 180.
 
 ## Why
 
