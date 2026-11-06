@@ -1485,7 +1485,12 @@ test("bomb foil: golden band, sweep and ring unchanged (TASK 034)", () => {
   const css = rawCss.replace(/\/\*[\s\S]*?\*\//g, "");
   const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
     .map((m) => ({ selector: m[1].trim(), body: m[2] }));
-  const foil = rules.find((r) => r.selector === ".hand .card.bombhot::after")!;
+  // TASK 045 adds a reduced-motion override under the same
+  // selector (display:none in the reduce block, earlier in the
+  // file): the base rule is the one carrying the gradient.
+  const foil = rules.find(
+    (r) => r.selector === ".hand .card.bombhot::after" && r.body.includes("linear-gradient"),
+  )!;
   assert.ok(foil, ".hand .card.bombhot::after rule exists");
   // The owner-approved V1 gradient, value for value: golds only,
   // wide band, pale white-gold peak.
@@ -1960,7 +1965,7 @@ test("e2e: finish medals — 1st gold, 2nd silver, 3rd/4th keep the green pill (
   assert.match(css, /\.medal\.silver\{background:linear-gradient\(180deg, #f4f7f9, #b7c2ca\);/);
   assert.match(css, /\.medal::before\{[^}]*linear-gradient\(90deg, var\(--red\) 0 50%, var\(--blue\) 50% 100%\);/);
   // The green pill itself is untouched for the lower places.
-  assert.match(css, /\.badge\.done\{background:var\(--green\);color:#06350f;\}/);
+  assert.match(css, /\.badge\.done\{background:var\(--green\);color:#fff;\}/);
 });
 
 test("e2e: responsive stage zoom — capped factor, phone floor, compensated motion math (TASK 024)", async () => {
@@ -1994,7 +1999,7 @@ test("e2e: responsive stage zoom — capped factor, phone floor, compensated mot
   const css = readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8");
   assert.match(
     css,
-    /\.wrap\{max-width:1080px;margin:0 auto;padding:16px 14px 48px;zoom:clamp\(1, calc\(100vw \/ 1080px\), 1\.5\);}/,
+    /\.wrap\{max-width:1080px;margin:0 auto;padding:16px 14px 48px;zoom:min\(clamp\(1, calc\(100vw \/ 1080px\), 1\.5\), calc\(100vh \/ 1280px\)\);}/,
     "the stage zoom declaration ships as designed",
   );
   assert.match(
@@ -2619,6 +2624,93 @@ test("e2e: Speed toggle flips its label; Skip to end appears once you are out an
   while (timerQueue.length > 0) timerQueue.shift()!();
   assert.equal($("banner").hidden, false, "the banner stands after the stale timer");
   Math.random = prevRandom;
+});
+
+// ---------- TASK 045: visual batch ----------
+
+function lumOf(hex: string): number {
+  const f = (v: number): number => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return (
+    0.2126 * f(parseInt(hex.slice(1, 3), 16)) +
+    0.7152 * f(parseInt(hex.slice(3, 5), 16)) +
+    0.0722 * f(parseInt(hex.slice(5, 7), 16))
+  );
+}
+
+test("e2e: visual batch — AA primaries, 44px action targets, legible CPU counts, foil off under reduced motion, height-bound stage (TASK 045)", async () => {
+  const css = readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8");
+  const token = (name: string): string => {
+    const m = css.match(new RegExp(`--${name}:(#[0-9a-f]{6});`));
+    assert.ok(m, `--${name} token ships`);
+    return m[1];
+  };
+  // #11: the deepened primaries, white text passing WCAG AA.
+  const expected: Record<string, string> = {
+    blue: "#006fb5", red: "#d5121f", green: "#1f7b3e",
+  };
+  for (const [name, hex] of Object.entries(expected)) {
+    assert.equal(token(name), hex, `--${name} is the deepened shade`);
+    const ratio = (1 + 0.05) / (lumOf(hex) + 0.05);
+    assert.ok(ratio >= 4.5, `--${name} white-text contrast ${ratio.toFixed(2)}:1 passes AA`);
+  }
+  // #12: the action row guarantees 44px targets at base width too
+  // (the phone block's own 44px pin stands separately).
+  const base = css.slice(0, css.indexOf("@media (max-width:640px)"));
+  const controlsBtn = base.match(/\.controls button\{([^}]*)\}/)?.[1] ?? "";
+  assert.match(controlsBtn, /min-height:44px;/, "the action row floors at 44px");
+  // #12: the CPU count line (.who carries the count) is legible
+  // in both phone blocks.
+  const block640 = css.slice(css.indexOf("@media (max-width:640px)"), css.indexOf("@media (max-width:520px)"));
+  const block520 = css.slice(css.indexOf("@media (max-width:520px)"));
+  assert.match(block640, /\.opp \.who\{font-size:12\.5px;\}/, "≤640 count line is 12.5px");
+  assert.match(block520, /\.opp \.who\{font-size:12px;\}/, "≤520 count line is 12px");
+  assert.match(block520, /\.wrap\{padding:10px 10px 48px;zoom:1;\}/, "the phone stage never height-shrinks");
+  // #14: under reduced motion the foil layer is not rendered;
+  // outside that block the ::after carries no display rule (the
+  // TASK 034 gradient/sweep themselves are pinned by its test).
+  const reduce = css.slice(
+    css.indexOf("@media (prefers-reduced-motion: reduce)"),
+    css.indexOf("/* TASK 024:"),
+  );
+  assert.match(reduce, /\.hand \.card\.bombhot::after\{display:none;\}/, "reduced motion hides the foil layer");
+  const foilRule =
+    [...css.matchAll(/\.hand \.card\.bombhot::after\{([^}]*)\}/g)]
+      .map((m) => m[1])
+      .find((body) => body.includes("linear-gradient")) ?? "";
+  assert.ok(foilRule.length > 0, "the base foil rule is found");
+  assert.ok(!/display/.test(foilRule), "the foil renders as before without reduced motion");
+
+  // #3: stageScale mirrors the height bound.
+  const main = await import("../src/main.js");
+  const setViewport = (innerWidth: number, innerHeight: number): void => {
+    (globalThis as { window?: unknown }).window = {
+      innerWidth,
+      innerHeight,
+      matchMedia: () => ({ matches: false }),
+    };
+  };
+  try {
+    setViewport(1280, 640);
+    assert.equal(main.stageScale(), 0.5, "1280x640: height-bound to fit");
+    setViewport(1440, 700);
+    assert.equal(main.stageScale(), 700 / 1280, "1440x700: height-bound to fit");
+    setViewport(1920, 1080);
+    assert.equal(main.stageScale(), 1080 / 1280, "1080p: height-bound (the hand fits without scrolling)");
+    setViewport(1080, 2000);
+    assert.equal(main.stageScale(), 1, "design width, tall: exactly 1");
+    setViewport(2560, 1600);
+    assert.equal(main.stageScale(), 1.25, "large but height-bound below the 1.5 cap");
+    setViewport(390, 844);
+    assert.equal(main.stageScale(), 1, "phone: pinned to 1 whatever the height");
+  } finally {
+    (globalThis as { window?: unknown }).window = {
+      innerWidth: 1024,
+      matchMedia: () => ({ matches: false }),
+    };
+  }
 });
 
 // ---------- TASK 037: phone one-screen layout (V3) ----------
