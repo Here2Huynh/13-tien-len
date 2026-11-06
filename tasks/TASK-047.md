@@ -1,6 +1,6 @@
 # TASK-047: Tests bundle — fixture the slow enumeration, close coverage gaps, un-pin CSS text (audit #19 + #20 + #21)
 
-Status: ASSIGNED (builder). Suite baseline: 180.
+Status: ASSIGNED (verifier) — PR #49, head b0ddc311798d1409f25fe56085e4ea55c3e25225 (push-files snapshot of builder commit c441321). Suite baseline: 180.
 
 ## Why
 
