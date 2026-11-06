@@ -1,0 +1,22 @@
+{
+  "total": 635013559600,
+  "patterns": {
+    "pair-sequence-3": 10,
+    "pair-sequence-4": 9,
+    "four-of-a-kind": 13
+  },
+  "bombs": {
+    "pair-sequence-3": 53096899088,
+    "pair-sequence-4": 6103825920,
+    "four-of-a-kind": 21717689136
+  },
+  "anyBomb": 73852645680,
+  "instantWins": {
+    "four-2s": 1677106640,
+    "six-pairs": 2746828848,
+    "five-consecutive-pairs": 411724800,
+    "dragon-straight": 369098752,
+    "three-consecutive-triples": 63240112
+  },
+  "anyInstantWin": 5267999152
+}

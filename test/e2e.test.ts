@@ -796,12 +796,10 @@ test("e2e: the pile shows a muted 'Before that' line for the play the current on
   // inline opacity, and the rule sets exactly .65.
   assert.ok(seen.className.split(/\s+/).includes("prior"), "the Before-that line carries the muted class");
   assert.equal(seen.style.opacity, undefined, "no inline opacity remains");
-  const pileCss = readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8")
-    .replace(/\/\*[\s\S]*?\*\//g, "");
-  const muted = [...pileCss.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
-    .find((m) => m[1].trim() === ".pile .leadline.prior");
+  const muted = rulesOf(readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8"))
+    .find((r) => r.selector === ".pile .leadline.prior");
   assert.ok(muted, "the .pile .leadline.prior rule exists");
-  assert.equal(muted[2], "opacity:.65;");
+  assert.deepEqual(Object.fromEntries(muted.decls), { opacity: ".65" });
 });
 
 // --- Drag-to-rearrange (TASK 010) -------------------------------------
@@ -916,34 +914,74 @@ test("e2e: select then deselect — the second tap clears .sel and Play reports 
   assert.match($("message").textContent, /Select at least one card/);
 });
 
+// ---------- CSS value parsing (TASK 047, audit #21) ----------
+// CSS assertions compare PARSED declaration values, never raw
+// stylesheet text: harmless reformatting (spacing around a colon,
+// line breaks inside a value, keyframe layout, comments) must not
+// fail a test, while every locked value stays pinned exactly.
+// Values are whitespace-normalized (runs collapse to one space)
+// before comparison. Comment text is never asserted.
+function declsOf(body: string): Map<string, string> {
+  const decls = new Map<string, string>();
+  for (const part of body.split(";")) {
+    const at = part.indexOf(":");
+    if (at < 0) continue;
+    const prop = part.slice(0, at).trim().toLowerCase();
+    if (prop) decls.set(prop, part.slice(at + 1).replace(/\s+/g, " ").trim());
+  }
+  return decls;
+}
+function rulesOf(css: string): { selector: string; body: string; decls: Map<string, string> }[] {
+  const bare = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  return [...bare.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({
+    selector: m[1].trim(),
+    body: m[2],
+    decls: declsOf(m[2]),
+  }));
+}
+function keyframeStopsOf(css: string, name: string): Map<string, Map<string, string>> {
+  const bare = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  // Name-boundary search: "@keyframes burst" must not land on
+  // "@keyframes burstHold".
+  const at = bare.search(new RegExp(`@keyframes ${name}(?![\\w-])`));
+  assert.ok(at >= 0, `@keyframes ${name} exists`);
+  const open = bare.indexOf("{", at);
+  let depth = 0;
+  let end = open;
+  for (; end < bare.length; end++) {
+    if (bare[end] === "{") depth++;
+    else if (bare[end] === "}") { depth--; if (depth === 0) break; }
+  }
+  const stops = new Map<string, Map<string, string>>();
+  for (const m of bare.slice(open + 1, end).matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    for (const stop of m[1].split(",")) stops.set(stop.trim(), declsOf(m[2]));
+  }
+  return stops;
+}
+
 test("css: the pile is one fixed size per breakpoint and the minicards row never wraps (TASK 015)", () => {
   // The fake DOM has no layout engine, so the fixed-size guarantee is
   // asserted at the CSS level: the exact height declarations the
   // worst-case math in styles.css is built on. Tests run compiled
   // (npm test -> .test-out/), so the stylesheet is two levels up.
   const css = readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8");
-  const blockOf = (text: string, selector: string): string => {
-    const at = text.indexOf(selector);
-    assert.ok(at >= 0, `${selector} not found in styles.css`);
-    return text.slice(at, text.indexOf("}", at));
-  };
+  const rules = rulesOf(css);
   // Base breakpoint: a true fixed height (not a min-height that can
   // still grow), sized for lead 2 lines + minis + before 2 lines.
-  const base = blockOf(css, ".pile{");
-  assert.ok(base.includes("height:179px"), `base .pile should fix height:179px, got: ${base}`);
-  assert.ok(!base.includes("min-height"), "base .pile must not keep a resizable min-height");
+  const base = rules.find((r) => r.selector === ".pile")!;
+  assert.ok(base, ".pile rule exists");
+  assert.equal(base.decls.get("height"), "179px", "base .pile fixes its height");
+  assert.ok(!base.decls.has("min-height"), "base .pile must not keep a resizable min-height");
   // Phone breakpoint: the fixed height covers 3 + 3 wrapped lines.
   const media = css.slice(css.indexOf("@media (max-width:640px)"));
   assert.ok(media.length > 0, "phone media query not found");
-  assert.ok(
-    blockOf(media, ".pile{").includes("height:207px"),
-    "phone .pile should fix height:207px",
-  );
+  const phonePile = rulesOf(media).find((r) => r.selector === ".pile")!;
+  assert.ok(phonePile, ".pile rule exists in the phone block");
+  assert.equal(phonePile.decls.get("height"), "207px", "phone .pile fixes its height");
   // The card row is one row by construction: no wrapping, fanned minis.
-  assert.ok(
-    blockOf(css, ".minicards{").includes("flex-wrap:nowrap"),
-    ".minicards must not wrap",
-  );
+  const minicards = rules.find((r) => r.selector === ".minicards")!;
+  assert.ok(minicards, ".minicards rule exists");
+  assert.equal(minicards.decls.get("flex-wrap"), "nowrap", ".minicards must not wrap");
 });
 
 test("e2e: how-to-play overlay mid-game — header button, close leaves the game untouched (TASK 017)", async () => {
@@ -1134,22 +1172,22 @@ test("e2e: LOCKED stamp plays once per lockout — stampplay only on the newly-l
 
 test("locked stamp: stampIn hangs on the stampplay gate only, look unchanged (TASK 028)", () => {
   const rawCss = readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8");
-  const css = rawCss.replace(/\/\*[\s\S]*?\*\//g, "");
-  const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
-    .map((m) => ({ selector: m[1].trim(), body: m[2] }));
+  const rules = rulesOf(rawCss);
   const base = rules.find((r) => r.selector === ".seat.lockedout .opp::after")!;
   assert.ok(base, "the stamp's base rule exists");
-  assert.match(base.body, /content:"LOCKED"/);
-  assert.ok(!/animation:/.test(base.body), "the base stamp carries no animation — it is the settled look");
+  assert.equal(base.decls.get("content"), "\"LOCKED\"");
+  assert.ok(!base.decls.has("animation"), "the base stamp carries no animation — it is the settled look");
   const gated = rules.find((r) => r.selector === ".seat.lockedout.stampplay .opp::after")!;
   assert.ok(gated, "the stampplay gate rule exists");
-  assert.match(gated.body, /animation:stampIn \.28s cubic-bezier\(\.2,1\.4,\.4,1\) both;/);
-  const frames = css.match(/@keyframes stampIn\{([\s\S]*?)\n\}/)?.[1] ?? "";
-  assert.match(frames, /from\{opacity:0;.*scale\(2\.1\)/);
-  assert.match(frames, /to\{opacity:1;.*scale\(1\);/);
+  assert.equal(gated.decls.get("animation"), "stampIn .28s cubic-bezier(.2,1.4,.4,1) both");
+  const frames = keyframeStopsOf(rawCss, "stampIn");
+  assert.equal(frames.get("from")?.get("opacity"), "0");
+  assert.equal(frames.get("from")?.get("transform"), "translate(-50%,-50%) rotate(-10deg) scale(2.1)");
+  assert.equal(frames.get("to")?.get("opacity"), "1");
+  assert.equal(frames.get("to")?.get("transform"), "translate(-50%,-50%) rotate(-10deg) scale(1)");
   // Reduced motion still suppresses the stamp animation: the
   // reduced block's animation:none rule names the gated selector.
-  const reduced = rules.filter((r) => /animation:none !important/.test(r.body));
+  const reduced = rules.filter((r) => r.decls.get("animation") === "none !important");
   assert.ok(
     reduced.some((r) => r.selector.includes(".seat.lockedout.stampplay .opp::after")),
     "reduced-motion block must cover the gated stamp selector",
@@ -1472,19 +1510,24 @@ test("e2e: flicker leaves the same hand DOM and state under reduced motion", asy
     delete (globalThis as { window?: unknown }).window;
   }
   const css = readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8");
-  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.hand \.card[^{}]*\{animation:none !important;/);
-  const keyframes = css.match(/@keyframes bombflicker\{([\s\S]*?)\n\}/)?.[1];
-  assert.ok(keyframes);
-  assert.ok(!/transform|box-shadow/.test(keyframes), "flicker leaves lift and foil geometry alone");
+  const rules = rulesOf(css);
+  assert.ok(
+    rules.some((r) => r.selector.includes(".hand .card") && r.decls.get("animation") === "none !important"),
+    "reduced motion stills the hand cards (the reduce block's list rule)",
+  );
+  const frames = keyframeStopsOf(css, "bombflicker");
+  assert.ok(frames.size > 0, "bombflicker keyframes exist");
+  for (const [stop, decls] of frames) {
+    assert.ok(
+      !decls.has("transform") && !decls.has("box-shadow"),
+      `flicker stop ${stop} leaves lift and foil geometry alone`,
+    );
+  }
 });
 
 test("bomb foil: golden band, sweep and ring unchanged (TASK 034)", () => {
   const rawCss = readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8");
-  // Strip comments before parsing rules: a comment above a rule would
-  // otherwise be captured as part of its selector text.
-  const css = rawCss.replace(/\/\*[\s\S]*?\*\//g, "");
-  const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
-    .map((m) => ({ selector: m[1].trim(), body: m[2] }));
+  const rules = rulesOf(rawCss);
   // TASK 045 adds a reduced-motion override under the same
   // selector (display:none in the reduce block, earlier in the
   // file): the base rule is the one carrying the gradient.
@@ -1494,46 +1537,47 @@ test("bomb foil: golden band, sweep and ring unchanged (TASK 034)", () => {
   assert.ok(foil, ".hand .card.bombhot::after rule exists");
   // The owner-approved V1 gradient, value for value: golds only,
   // wide band, pale white-gold peak.
-  assert.ok(
-    foil.body.includes(
-      "background:linear-gradient(115deg, transparent 24%, rgba(184,119,0,.35) 37%, rgba(255,178,35,.72) 47%, rgba(255,246,200,.95) 54%, rgba(255,178,35,.72) 61%, rgba(184,119,0,.35) 70%, transparent 82%);",
-    ),
+  assert.equal(
+    foil.decls.get("background"),
+    "linear-gradient(115deg, transparent 24%, rgba(184,119,0,.35) 37%, rgba(255,178,35,.72) 47%, rgba(255,246,200,.95) 54%, rgba(255,178,35,.72) 61%, rgba(184,119,0,.35) 70%, transparent 82%)",
     "the foil is the approved golden gradient",
   );
   // No rainbow stop survives: every rgba() in the foil is a gold.
-  const stops = [...foil.body.matchAll(/rgba\((\d+),(\d+),(\d+),[^)]*\)/g)]
+  const stops = [...(foil.decls.get("background") ?? "").matchAll(/rgba\((\d+),(\d+),(\d+),[^)]*\)/g)]
     .map((m) => [Number(m[1]), Number(m[2]), Number(m[3])]);
   assert.equal(stops.length, 5);
   for (const [r, g, b] of stops) {
     assert.ok(r >= g && g >= b, `rgb(${r},${g},${b}) is a gold (r >= g >= b), not pink or blue`);
   }
-  // Frozen: geometry, sweep animation, and its keyframes.
-  assert.match(foil.body, /content:"";position:absolute;inset:-40%;/);
-  assert.match(foil.body, /animation:foil 1\.6s ease-in-out infinite;/);
-  assert.match(foil.body, /pointer-events:none;/);
-  assert.match(
-    rawCss,
-    /@keyframes foil\{ 0%\{transform:translateX\(-55%\) rotate\(0\.001deg\);\} 55%\{transform:translateX\(45%\) rotate\(0\.001deg\);\} 100%\{transform:translateX\(45%\) rotate\(0\.001deg\);\} \}/,
-  );
+  // Frozen: geometry, sweep animation, and its keyframes (values
+  // pinned as parsed declarations/stops — TASK 047).
+  assert.equal(foil.decls.get("content"), "\"\"");
+  assert.equal(foil.decls.get("position"), "absolute");
+  assert.equal(foil.decls.get("inset"), "-40%");
+  assert.equal(foil.decls.get("animation"), "foil 1.6s ease-in-out infinite");
+  assert.equal(foil.decls.get("pointer-events"), "none");
+  const foilFrames = keyframeStopsOf(rawCss, "foil");
+  assert.equal(foilFrames.size, 3, "the foil sweep has exactly three stops");
+  assert.equal(foilFrames.get("0%")?.get("transform"), "translateX(-55%) rotate(0.001deg)");
+  assert.equal(foilFrames.get("55%")?.get("transform"), "translateX(45%) rotate(0.001deg)");
+  assert.equal(foilFrames.get("100%")?.get("transform"), "translateX(45%) rotate(0.001deg)");
   // Frozen: the gold ring + glow and the animation slots.
   const hot = rules.find((r) => r.selector === ".hand .card.bombhot")!;
   assert.ok(hot, ".hand .card.bombhot rule exists");
-  assert.match(hot.body, /box-shadow:0 8px 16px rgba\(5,20,15,\.4\), 0 0 0 3px var\(--gold\), 0 0 22px rgba\(255,178,35,\.65\);/);
-  assert.match(hot.body, /animation:bombglow 1\.1s ease-in-out infinite alternate;/);
+  assert.equal(hot.decls.get("box-shadow"), "0 8px 16px rgba(5,20,15,.4), 0 0 0 3px var(--gold), 0 0 22px rgba(255,178,35,.65)");
+  assert.equal(hot.decls.get("animation"), "bombglow 1.1s ease-in-out infinite alternate");
   const both = rules.find((r) => r.selector === ".hand .card.bombhot.bombplayable")!;
   assert.ok(both, ".hand .card.bombhot.bombplayable rule exists");
-  assert.equal(both.body, "animation:bombglow 1.1s ease-in-out infinite alternate, bombflicker 1.2s ease-in-out infinite;");
-  // The comment above the foil describes the gold, not a rainbow.
-  assert.ok(!/holographic/i.test(rawCss), "no stale holographic-sheen comment");
-  assert.match(rawCss, /\/\* Foil treatment for live jump-back bombs — golden foil/);
+  assert.deepEqual(Object.fromEntries(both.decls), {
+    animation: "bombglow 1.1s ease-in-out infinite alternate, bombflicker 1.2s ease-in-out infinite",
+  });
 });
 
 test("hand motion: shared transition and selected pose wins hover", () => {
   const css = readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8");
-  const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
-    .map((m) => ({ selector: m[1].trim(), body: m[2] }));
+  const rules = rulesOf(css);
   const hand = rules.filter((r) => r.selector.startsWith(".hand "));
-  const transitions = hand.filter((r) => /transition:/.test(r.body));
+  const transitions = hand.filter((r) => r.decls.has("transition"));
   // TASK 023 disclosed update: the count goes 2 -> 3 because the
   // reduced-motion block gains `.hand .card{transition:none
   // !important}` — with buttons reused across redraws, selection
@@ -1542,12 +1586,12 @@ test("hand motion: shared transition and selected pose wins hover", () => {
   // because the reduced-motion rule shares the base selector and
   // sits earlier in the file.
   assert.equal(transitions.length, 3);
-  const shared = transitions.find((r) => /transition:transform/.test(r.body))!;
+  const shared = transitions.find((r) => r.decls.get("transition")?.startsWith("transform"))!;
   assert.equal(shared.selector, ".hand .card");
-  assert.match(shared.body, /transition:transform \.13s ease, box-shadow \.13s ease;/);
+  assert.equal(shared.decls.get("transition"), "transform .13s ease, box-shadow .13s ease");
   const dragging = transitions.find((r) => r.selector === ".hand .card.dragging")!;
-  assert.match(dragging.body, /transition:none/);
-  const reducedOff = transitions.filter((r) => /transition:none !important/.test(r.body));
+  assert.equal(dragging.decls.get("transition"), "none");
+  const reducedOff = transitions.filter((r) => r.decls.get("transition") === "none !important");
   assert.equal(reducedOff.length, 1);
   assert.equal(reducedOff[0].selector, ".hand .card");
   const hover = hand.filter((r) => r.selector.includes(":hover"));
@@ -1555,43 +1599,39 @@ test("hand motion: shared transition and selected pose wins hover", () => {
   assert.equal(hover[0].selector, ".hand .card:hover");
   const selected = hand.find((r) => r.selector === ".hand .card.sel")!;
   assert.ok(hand.indexOf(selected) > hand.indexOf(hover[0]));
-  assert.match(selected.body, /transform:translateY\(-15px\) rotate\(0deg\);/);
-  assert.match(selected.body, /background:#e8f5ff/);
-  assert.match(selected.body, /0 0 0 3px var\(--blue\)/);
-  assert.match(shared.body, /filter:none/);
+  assert.equal(selected.decls.get("transform"), "translateY(-15px) rotate(0deg)");
+  assert.equal(selected.decls.get("background"), "#e8f5ff");
+  assert.ok(selected.decls.get("box-shadow")?.includes("0 0 0 3px var(--blue)"), "the selected ring is the blue trim");
+  assert.equal(shared.decls.get("filter"), "none");
   assert.ok(!hand.some((r) => r.selector.includes(":active")));
 });
 
 test("modal shell: no horizontal scroll; the banner scrolls in an inner box (TASK 027)", () => {
   const rawCss = readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8");
-  // Strip comments before parsing rules: a comment above a rule would
-  // otherwise be captured as part of its selector text.
-  const css = rawCss.replace(/\/\*[\s\S]*?\*\//g, "");
-  const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
-    .map((m) => ({ selector: m[1].trim(), body: m[2] }));
+  const rules = rulesOf(rawCss);
   // The shell scrolls vertically only past the 88vh cap, and never
   // horizontally: overflow-x is pinned shut, not left to compute to
   // auto off the vertical rule.
   const shell = rules.find((r) => r.selector === ".modal")!;
   assert.ok(shell, ".modal rule exists");
-  assert.match(shell.body, /max-height:88vh/);
-  assert.match(shell.body, /overflow-y:auto/);
-  assert.match(shell.body, /overflow-x:hidden/);
+  assert.equal(shell.decls.get("max-height"), "88vh");
+  assert.equal(shell.decls.get("overflow-y"), "auto");
+  assert.equal(shell.decls.get("overflow-x"), "hidden");
   // The banner's modal is a non-scrolling shell: padding moves to
   // the inner box, and the shell itself never scrolls.
   const bannerShell = rules.find((r) => r.selector === ".modal.scrollshell")!;
   assert.ok(bannerShell, ".modal.scrollshell rule exists");
-  assert.match(bannerShell.body, /padding:0/);
-  assert.match(bannerShell.body, /overflow:visible/);
+  assert.equal(bannerShell.decls.get("padding"), "0");
+  assert.equal(bannerShell.decls.get("overflow"), "visible");
   // The inner box scrolls instead — same cap (minus the shell's
   // border, so the banner's outer size is unchanged), same padding,
   // and never horizontally.
   const scrollbox = rules.find((r) => r.selector === ".scrollbox")!;
   assert.ok(scrollbox, ".scrollbox rule exists");
-  assert.match(scrollbox.body, /max-height:calc\(88vh - 4px\)/);
-  assert.match(scrollbox.body, /overflow-y:auto/);
-  assert.match(scrollbox.body, /overflow-x:hidden/);
-  assert.match(scrollbox.body, /padding:26px 22px/);
+  assert.equal(scrollbox.decls.get("max-height"), "calc(88vh - 4px)");
+  assert.equal(scrollbox.decls.get("overflow-y"), "auto");
+  assert.equal(scrollbox.decls.get("overflow-x"), "hidden");
+  assert.equal(scrollbox.decls.get("padding"), "26px 22px");
   // The burst stays the modal's ::before in its original layer. It
   // no longer grows scrollbars because it is the scroller's SIBLING
   // now, not its child — no part of it sits inside the .scrollbox
@@ -1600,34 +1640,35 @@ test("modal shell: no horizontal scroll; the banner scrolls in an inner box (TAS
   // gradient and layer are still the declarations pinned here.)
   const modalOn = rules.find((r) => r.selector === ".modal.instantwin")!;
   assert.ok(modalOn, ".modal.instantwin rule exists");
-  assert.match(modalOn.body, /position:relative/);
-  assert.match(modalOn.body, /z-index:0/);
+  assert.equal(modalOn.decls.get("position"), "relative");
+  assert.equal(modalOn.decls.get("z-index"), "0");
   const burst = rules.find((r) => r.selector === ".modal.instantwin::before")!;
   assert.ok(burst, "burst rule exists on the modal");
-  assert.match(burst.body, /position:absolute/);
-  assert.match(burst.body, /inset:-34px/);
-  assert.match(burst.body, /border-radius:50%/);
-  assert.match(burst.body, /z-index:-1/);
-  assert.match(burst.body, /radial-gradient\(circle,rgba\(255,197,48,\.55\) 0%,rgba\(255,197,48,\.18\) 42%,transparent 68%\)/);
-  assert.match(burst.body, /animation:burstHold 2\.4s ease-out both/);
+  assert.equal(burst.decls.get("position"), "absolute");
+  assert.equal(burst.decls.get("inset"), "-34px");
+  assert.equal(burst.decls.get("border-radius"), "50%");
+  assert.equal(burst.decls.get("z-index"), "-1");
+  assert.equal(burst.decls.get("background"), "radial-gradient(circle,rgba(255,197,48,.55) 0%,rgba(255,197,48,.18) 42%,transparent 68%)");
+  assert.equal(burst.decls.get("animation"), "burstHold 2.4s ease-out both");
   // burstHold keyframes (TASK 033): the burst arc with a plateau
   // at full glow — reaches opacity 1 at 20%, still 1 at 55%, then
   // fades to the same end state.
-  const holdFrames = css.match(/@keyframes burstHold\{([\s\S]*?)\n\}/)?.[1];
-  assert.ok(holdFrames);
-  assert.ok(holdFrames.includes("0%{opacity:0;transform:scale(.55);}"));
-  assert.ok(holdFrames.includes("20%{opacity:1;transform:scale(1);}"));
-  assert.ok(holdFrames.includes("55%{opacity:1;transform:scale(1.05);}"));
-  assert.ok(holdFrames.includes("100%{opacity:0;transform:scale(1.12);}"));
+  const holdFrames = keyframeStopsOf(rawCss, "burstHold");
+  assert.deepEqual(Object.fromEntries(holdFrames.get("0%")!), { opacity: "0", transform: "scale(.55)" });
+  assert.deepEqual(Object.fromEntries(holdFrames.get("20%")!), { opacity: "1", transform: "scale(1)" });
+  assert.deepEqual(Object.fromEntries(holdFrames.get("55%")!), { opacity: "1", transform: "scale(1.05)" });
+  assert.deepEqual(Object.fromEntries(holdFrames.get("100%")!), { opacity: "0", transform: "scale(1.12)" });
   // Burst keyframes untouched: same scale/opacity arc (the TASK
   // 033 celebration beat's burst still uses them).
-  const keyframes = css.match(/@keyframes burst\{([\s\S]*?)\n\}/)?.[1];
-  assert.ok(keyframes);
-  assert.ok(keyframes.includes("0%{opacity:0;transform:scale(.55);}"));
-  assert.ok(keyframes.includes("30%{opacity:1;}"));
-  assert.ok(keyframes.includes("100%{opacity:0;transform:scale(1.12);}"));
+  const burstFrames = keyframeStopsOf(rawCss, "burst");
+  assert.deepEqual(Object.fromEntries(burstFrames.get("0%")!), { opacity: "0", transform: "scale(.55)" });
+  assert.deepEqual(Object.fromEntries(burstFrames.get("30%")!), { opacity: "1" });
+  assert.deepEqual(Object.fromEntries(burstFrames.get("100%")!), { opacity: "0", transform: "scale(1.12)" });
   // Reduced motion still kills the burst.
-  assert.match(rawCss, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.modal\.instantwin::before[^{}]*\{animation:none !important;/);
+  assert.ok(
+    rules.some((r) => r.selector.includes(".modal.instantwin::before") && r.decls.get("animation") === "none !important"),
+    "reduced motion stills the burst (the reduce block's list rule)",
+  );
   // The banner's shipped markup: shell outside, scrollbox inside,
   // content inside that. (This harness's fake DOM is a flat id
   // registry, so the nesting is pinned here on the shipped HTML;
@@ -1959,13 +2000,25 @@ test("e2e: finish medals — 1st gold, 2nd silver, 3rd/4th keep the green pill (
   assert.equal(byPlace["4th"].text, "4th");
   // The medal styling ships: gold and silver discs, the ribbon,
   // and the pill footprint (19px) so the row does not shift.
-  const css = readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8");
-  assert.match(css, /\.medal\{[^}]*width:19px;height:19px;border-radius:50%;/);
-  assert.match(css, /\.medal\.gold\{background:linear-gradient\(180deg, var\(--gold-bright\), var\(--gold\)\);/);
-  assert.match(css, /\.medal\.silver\{background:linear-gradient\(180deg, #f4f7f9, #b7c2ca\);/);
-  assert.match(css, /\.medal::before\{[^}]*linear-gradient\(90deg, var\(--red\) 0 50%, var\(--blue\) 50% 100%\);/);
+  const medalRules = rulesOf(readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8"));
+  const medal = medalRules.find((r) => r.selector === ".medal")!;
+  assert.ok(medal, ".medal rule exists");
+  assert.equal(medal.decls.get("width"), "19px");
+  assert.equal(medal.decls.get("height"), "19px");
+  assert.equal(medal.decls.get("border-radius"), "50%");
+  const medalGold = medalRules.find((r) => r.selector === ".medal.gold")!;
+  assert.equal(medalGold.decls.get("background"), "linear-gradient(180deg, var(--gold-bright), var(--gold))");
+  const medalSilver = medalRules.find((r) => r.selector === ".medal.silver")!;
+  assert.equal(medalSilver.decls.get("background"), "linear-gradient(180deg, #f4f7f9, #b7c2ca)");
+  const medalRibbon = medalRules.find((r) => r.selector === ".medal::before")!;
+  assert.ok(
+    [...medalRibbon.decls.values()].some((v) => v.includes("linear-gradient(90deg, var(--red) 0 50%, var(--blue) 50% 100%)")),
+    "the medal ribbon is the red/blue split gradient",
+  );
   // The green pill itself is untouched for the lower places.
-  assert.match(css, /\.badge\.done\{background:var\(--green\);color:#fff;\}/);
+  const badgeDone = medalRules.find((r) => r.selector === ".badge.done")!;
+  assert.equal(badgeDone.decls.get("background"), "var(--green)");
+  assert.equal(badgeDone.decls.get("color"), "#fff");
 });
 
 test("e2e: responsive stage zoom — capped factor, phone floor, compensated motion math (TASK 024)", async () => {
@@ -1997,16 +2050,21 @@ test("e2e: responsive stage zoom — capped factor, phone floor, compensated mot
   // The shipped CSS carries the same clamp on the stage, and the
   // phone presentation rules are untouched.
   const css = readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8");
-  assert.match(
-    css,
-    /\.wrap\{max-width:1080px;margin:0 auto;padding:16px 14px 48px;zoom:min\(clamp\(1, calc\(100vw \/ 1080px\), 1\.5\), calc\(100vh \/ 1280px\)\);}/,
+  const wrap = rulesOf(css).find((r) => r.selector === ".wrap")!;
+  assert.ok(wrap, ".wrap rule exists");
+  assert.equal(wrap.decls.get("max-width"), "1080px");
+  assert.equal(wrap.decls.get("margin"), "0 auto");
+  assert.equal(wrap.decls.get("padding"), "16px 14px 48px");
+  assert.equal(
+    wrap.decls.get("zoom"),
+    "min(clamp(1, calc(100vw / 1080px), 1.5), calc(100vh / 1280px))",
     "the stage zoom declaration ships as designed",
   );
-  assert.match(
-    css,
-    /@media \(max-width:640px\)\{[\s\S]*?\.card\{width:48px;height:68px;\}/,
-    "the phone card size is unchanged",
-  );
+  const phoneCard = rulesOf(css.slice(css.indexOf("@media (max-width:640px)")))
+    .find((r) => r.selector === ".card")!;
+  assert.ok(phoneCard, ".card rule exists in the phone block");
+  assert.equal(phoneCard.decls.get("width"), "48px", "the phone card size is unchanged");
+  assert.equal(phoneCard.decls.get("height"), "68px", "the phone card size is unchanged");
   // The two in-stage rect->translate conversions divide by the
   // factor (the fx layer lives outside the stage in client
   // space and needs none).
@@ -2020,12 +2078,10 @@ test("e2e: responsive stage zoom — capped factor, phone floor, compensated mot
 
 // TASK 025 helpers: parse the shipped CSS into rules (comments
 // stripped) and measure colors the way WCAG does.
-function task025Rules(): { css: string; rules: { selector: string; body: string }[] } {
+function task025Rules(): { css: string; rules: ReturnType<typeof rulesOf> } {
   const rawCss = readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8");
   const css = rawCss.replace(/\/\*[\s\S]*?\*\//g, "");
-  const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
-    .map((m) => ({ selector: m[1].trim(), body: m[2] }));
-  return { css, rules };
+  return { css, rules: rulesOf(rawCss) };
 }
 function task025Rgb(hex: string): [number, number, number] {
   assert.match(hex, /^#[0-9a-f]{6}$/);
@@ -2073,10 +2129,12 @@ test("utility buttons: the button.ghost family is warm gold from the trim, with 
   // The gold family is derived from the trim: --gold is still the
   // hand zone's turn border, and the deeper shades share its hue
   // and saturation, stepping down in lightness.
+  const rootRule = rules.find((r) => r.selector === ":root")!;
+  assert.ok(rootRule, ":root rule exists");
   const token = (name: string): string => {
-    const m = css.match(new RegExp(`--${name}:(#[0-9a-f]{6});`));
-    assert.ok(m, `--${name} token ships`);
-    return m[1];
+    const v = rootRule.decls.get(`--${name}`);
+    assert.ok(v && /^#[0-9a-f]{6}$/.test(v), `--${name} token ships`);
+    return v;
   };
   const gold = token("gold");
   const deep = token("gold-deep");
@@ -2084,7 +2142,7 @@ test("utility buttons: the button.ghost family is warm gold from the trim, with 
   const ink = token("gold-ink");
   assert.equal(gold, "#ffb223", "the trim gold itself is unchanged");
   const trim = rules.filter((r) => r.selector === ".handzone.myturn");
-  assert.ok(trim.some((r) => /border-color:var\(--gold\);/.test(r.body)), "the trim is --gold");
+  assert.ok(trim.some((r) => r.decls.get("border-color") === "var(--gold)"), "the trim is --gold");
   const g = task025Hsl(gold);
   for (const shade of [deep, ledge]) {
     const s = task025Hsl(shade);
@@ -2101,26 +2159,31 @@ test("utility buttons: the button.ghost family is warm gold from the trim, with 
   // hover and pressed. The old slate is gone from the stylesheet.
   const ghost = rules.find((r) => r.selector === "button.ghost:not(#pass-btn)")!;
   assert.ok(ghost, "button.ghost rule exists");
-  assert.match(ghost.body, /background:var\(--gold\);/);
-  assert.match(ghost.body, /color:var\(--gold-ink\);/);
-  assert.match(ghost.body, /box-shadow:0 5px 0 var\(--gold-ledge\), 0 8px 16px rgba\(0,0,0,\.3\)/);
+  assert.equal(ghost.decls.get("background"), "var(--gold)");
+  assert.equal(ghost.decls.get("color"), "var(--gold-ink)");
+  assert.ok(ghost.decls.get("box-shadow")?.startsWith("0 5px 0 var(--gold-ledge), 0 8px 16px rgba(0,0,0,.3)"), "the gold ledge shadow leads the ghost's box-shadow");
   const hover = rules.find((r) => r.selector === "button.ghost:not(#pass-btn):hover")!;
   assert.ok(hover, "button.ghost:hover rule exists");
-  assert.match(hover.body, /background:var\(--gold-deep\);/);
+  assert.equal(hover.decls.get("background"), "var(--gold-deep)");
   const active = rules.find((r) => r.selector === "button.ghost:not(#pass-btn):active")!;
   assert.ok(active, "button.ghost:active rule exists");
-  assert.match(active.body, /background:var\(--gold-deep\);/);
-  assert.match(active.body, /box-shadow:0 1px 0 var\(--gold-ledge\), 0 3px 8px rgba\(0,0,0,\.3\);/);
-  assert.ok(!/#486a73|#33525b/i.test(css), "the slate face and ledge are gone");
+  assert.equal(active.decls.get("background"), "var(--gold-deep)");
+  assert.equal(active.decls.get("box-shadow"), "0 1px 0 var(--gold-ledge), 0 3px 8px rgba(0,0,0,.3)");
+  assert.ok(
+    !rules.some((r) => [...r.decls.values()].some((v) => /#486a73|#33525b/i.test(v))),
+    "the slate face and ledge are gone",
+  );
   // The Sort toggle's id rule no longer forces white over the gold:
   // word and arrow both carry the dark ink.
   const sort = rules.find((r) => r.selector === "#sort-btn")!;
   assert.ok(sort, "#sort-btn rule exists");
-  assert.match(sort.body, /color:var\(--gold-ink\);/);
+  assert.equal(sort.decls.get("color"), "var(--gold-ink)");
   const arrow = rules.find((r) => r.selector === "#sort-btn .sort-arrow")!;
   assert.ok(arrow, "#sort-btn .sort-arrow rule exists");
-  assert.match(arrow.body, /color:inherit;margin-left:5px;font-weight:900;/);
-  assert.ok(!rules.some((r) => r.selector.includes("ghost") && /color:#fff/.test(r.body)), "no white text on gold");
+  assert.equal(arrow.decls.get("color"), "inherit");
+  assert.equal(arrow.decls.get("margin-left"), "5px");
+  assert.equal(arrow.decls.get("font-weight"), "900");
+  assert.ok(!rules.some((r) => r.selector.includes("ghost") && r.decls.get("color") === "#fff"), "no white text on gold");
 });
 
 test("utility buttons: genuine disabled states stay grey; primaries keep their colors (TASK 025)", () => {
@@ -2133,7 +2196,9 @@ test("utility buttons: genuine disabled states stay grey; primaries keep their c
   // The shared disabled wash is untouched...
   const base = rules.find((r) => r.selector === "button:disabled")!;
   assert.ok(base, "button:disabled rule exists");
-  assert.equal(base.body, "opacity:.4;cursor:not-allowed;transform:none;filter:grayscale(.4);");
+  assert.deepEqual(Object.fromEntries(base.decls), {
+    opacity: ".4", cursor: "not-allowed", transform: "none", filter: "grayscale(.4)",
+  });
   // ...and a disabled gold button drops to a fully desaturated grey
   // face, ledge, and ink — declared after hover/pressed so neither
   // can repaint it gold.
@@ -2142,16 +2207,16 @@ test("utility buttons: genuine disabled states stay grey; primaries keep their c
   assert.ok(disabled, "button.ghost:disabled rule exists");
   assert.ok(idx("button.ghost:not(#pass-btn):disabled") > idx("button.ghost:not(#pass-btn):hover"));
   assert.ok(idx("button.ghost:not(#pass-btn):disabled") > idx("button.ghost:not(#pass-btn):active"));
-  assert.match(disabled.body, /filter:grayscale\(1\);/);
-  assert.ok(!/var\(--gold/.test(disabled.body), "no gold in the disabled state");
-  const colors = [...disabled.body.matchAll(/#[0-9a-f]{6}/g)].map((m) => m[0]);
+  assert.equal(disabled.decls.get("filter"), "grayscale(1)");
+  assert.ok(![...disabled.decls.values()].some((v) => v.includes("var(--gold")), "no gold in the disabled state");
+  const colors = [...[...disabled.decls.values()].join(" ").matchAll(/#[0-9a-f]{6}/g)].map((m) => m[0]);
   assert.equal(colors.length, 3, "face, ink, ledge");
   for (const c of colors) {
     const chroma = Math.max(...task025Rgb(c)) - Math.min(...task025Rgb(c));
     assert.ok(chroma < 0.06, `${c} is a desaturated grey`);
   }
-  const face = disabled.body.match(/background:(#[0-9a-f]{6});/)?.[1];
-  const ledgeShadow = disabled.body.match(/box-shadow:0 5px 0 (#[0-9a-f]{6}),/)?.[1];
+  const face = disabled.decls.get("background");
+  const ledgeShadow = disabled.decls.get("box-shadow")?.match(/^0 5px 0 (#[0-9a-f]{6}),/)?.[1];
   assert.ok(face && ledgeShadow);
   assert.ok(task025Hsl(ledgeShadow).l < task025Hsl(face).l, "the grey keeps its 3D ledge");
   // Buttons with their own colors keep them. PASS is a .ghost in
@@ -2163,16 +2228,23 @@ test("utility buttons: genuine disabled states stay grey; primaries keep their c
   assert.equal(ghostRules.length, 4);
   for (const r of ghostRules) assert.ok(r.selector.startsWith("button.ghost:not(#pass-btn)"), `${r.selector} skips PASS`);
   const pass = rules.find((r) => r.selector === "#pass-btn")!;
-  assert.equal(pass.body, "background:var(--red);box-shadow:0 5px 0 var(--red-dark), 0 8px 16px rgba(0,0,0,.3), inset 0 2px 0 rgba(255,255,255,.35);");
+  assert.deepEqual(Object.fromEntries(pass.decls), {
+    background: "var(--red)",
+    "box-shadow": "0 5px 0 var(--red-dark), 0 8px 16px rgba(0,0,0,.3), inset 0 2px 0 rgba(255,255,255,.35)",
+  });
   const passActive = rules.find((r) => r.selector === "#pass-btn:active")!;
-  assert.equal(passActive.body, "box-shadow:0 1px 0 var(--red-dark), 0 3px 8px rgba(0,0,0,.3);");
-  assert.ok(!rules.some((r) => r.selector.startsWith("#pass-btn") && /color:|filter:/.test(r.body)), "PASS text and filters come from the base button");
+  assert.deepEqual(Object.fromEntries(passActive.decls), {
+    "box-shadow": "0 1px 0 var(--red-dark), 0 3px 8px rgba(0,0,0,.3)",
+  });
+  assert.ok(!rules.some((r) => r.selector.startsWith("#pass-btn") && (r.decls.has("color") || r.decls.has("filter"))), "PASS text and filters come from the base button");
   // Play cards stays green, the start/dialog primaries stay the
   // base blue.
   const play = rules.find((r) => r.selector === "#play-btn")!;
-  assert.match(play.body, /background:var\(--green\);box-shadow:0 5px 0 var\(--green-dark\)/);
+  assert.equal(play.decls.get("background"), "var(--green)");
+  assert.ok(play.decls.get("box-shadow")?.startsWith("0 5px 0 var(--green-dark)"), "Play keeps its green ledge");
   const button = rules.find((r) => r.selector === "button")!;
-  assert.match(button.body, /background:var\(--blue\);color:#fff;/);
+  assert.equal(button.decls.get("background"), "var(--blue)");
+  assert.equal(button.decls.get("color"), "#fff");
   const html = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
   for (const id of ["play-btn", "start-btn", "continue-btn", "new-match-btn"]) {
     const tag = html.match(new RegExp(`<button\\b[^>]*id="${id}"[^>]*>`))?.[0];
@@ -2450,22 +2522,20 @@ test("e2e: instant-win celebration beat — withheld banner, skip, no replay, ti
 
   // --- shipped style pins ---
   const css = readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8");
-  const rules = [...css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^{}]*)\}/g)]
-    .map((m) => ({ selector: m[1].trim(), body: m[2] }));
+  const rules = rulesOf(css);
   const cardRule = rules.find((r) => r.selector === ".iwbeat-card")!;
   assert.ok(cardRule, ".iwbeat-card rule exists");
-  assert.match(cardRule.body, /position:absolute/);
-  assert.match(cardRule.body, /animation:stampIn \.45s cubic-bezier\(\.2,1\.4,\.4,1\) both/);
+  assert.equal(cardRule.decls.get("position"), "absolute");
+  assert.equal(cardRule.decls.get("animation"), "stampIn .45s cubic-bezier(.2,1.4,.4,1) both");
   const beatBurst = rules.find((r) => r.selector === ".iwbeat-card::before")!;
   assert.ok(beatBurst, "the beat burst rule exists");
-  assert.match(beatBurst.body, /inset:-70px/);
-  assert.match(beatBurst.body, /animation:burst 2\.6s ease-out both/);
+  assert.equal(beatBurst.decls.get("inset"), "-70px");
+  assert.equal(beatBurst.decls.get("animation"), "burst 2.6s ease-out both");
   const winRow = rules.find((r) => r.selector === "tr.winline")!;
   assert.ok(winRow, "tr.winline rule exists");
-  assert.match(winRow.body, /animation:winPulse \.8s ease-in-out 4 both/);
-  assert.match(
-    css,
-    /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.iwbeat-card[^{}]*\{animation:none !important;/,
+  assert.equal(winRow.decls.get("animation"), "winPulse .8s ease-in-out 4 both");
+  assert.ok(
+    rules.some((r) => r.selector.includes(".iwbeat-card") && r.decls.get("animation") === "none !important"),
     "reduced motion stills the beat (text shows statically, timer still hands off)",
   );
   // (TASK 036: the beat moved from src/main.ts to src/dom/banner.ts.)
@@ -2642,10 +2712,13 @@ function lumOf(hex: string): number {
 
 test("e2e: visual batch — AA primaries, 44px action targets, legible CPU counts, foil off under reduced motion, height-bound stage (TASK 045)", async () => {
   const css = readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8");
+  const rules045 = rulesOf(css);
+  const rootRule = rules045.find((r) => r.selector === ":root")!;
+  assert.ok(rootRule, ":root rule exists");
   const token = (name: string): string => {
-    const m = css.match(new RegExp(`--${name}:(#[0-9a-f]{6});`));
-    assert.ok(m, `--${name} token ships`);
-    return m[1];
+    const v = rootRule.decls.get(`--${name}`);
+    assert.ok(v, `--${name} token ships`);
+    return v;
   };
   // #11: the deepened primaries, white text passing WCAG AA.
   const expected: Record<string, string> = {
@@ -2659,15 +2732,23 @@ test("e2e: visual batch — AA primaries, 44px action targets, legible CPU count
   // #12: the action row guarantees 44px targets at base width too
   // (the phone block's own 44px pin stands separately).
   const base = css.slice(0, css.indexOf("@media (max-width:640px)"));
-  const controlsBtn = base.match(/\.controls button\{([^}]*)\}/)?.[1] ?? "";
-  assert.match(controlsBtn, /min-height:44px;/, "the action row floors at 44px");
+  const controlsBtn = rulesOf(base).find((r) => r.selector === ".controls button")!;
+  assert.ok(controlsBtn, ".controls button rule exists");
+  assert.equal(controlsBtn.decls.get("min-height"), "44px", "the action row floors at 44px");
   // #12: the CPU count line (.who carries the count) is legible
   // in both phone blocks.
   const block640 = css.slice(css.indexOf("@media (max-width:640px)"), css.indexOf("@media (max-width:520px)"));
   const block520 = css.slice(css.indexOf("@media (max-width:520px)"));
-  assert.match(block640, /\.opp \.who\{font-size:12\.5px;\}/, "≤640 count line is 12.5px");
-  assert.match(block520, /\.opp \.who\{font-size:12px;\}/, "≤520 count line is 12px");
-  assert.match(block520, /\.wrap\{padding:10px 10px 48px;zoom:1;\}/, "the phone stage never height-shrinks");
+  const who640 = rulesOf(block640).find((r) => r.selector === ".opp .who")!;
+  assert.ok(who640, ".opp .who rule exists in the 640 block");
+  assert.equal(who640.decls.get("font-size"), "12.5px", "≤640 count line is 12.5px");
+  const who520 = rulesOf(block520).find((r) => r.selector === ".opp .who")!;
+  assert.ok(who520, ".opp .who rule exists in the 520 block");
+  assert.equal(who520.decls.get("font-size"), "12px", "≤520 count line is 12px");
+  const wrap520 = rulesOf(block520).find((r) => r.selector === ".wrap")!;
+  assert.ok(wrap520, ".wrap rule exists in the 520 block");
+  assert.equal(wrap520.decls.get("padding"), "10px 10px 48px");
+  assert.equal(wrap520.decls.get("zoom"), "1", "the phone stage never height-shrinks");
   // #14: under reduced motion the foil layer is not rendered;
   // outside that block the ::after carries no display rule (the
   // TASK 034 gradient/sweep themselves are pinned by its test).
@@ -2675,13 +2756,15 @@ test("e2e: visual batch — AA primaries, 44px action targets, legible CPU count
     css.indexOf("@media (prefers-reduced-motion: reduce)"),
     css.indexOf("/* TASK 024:"),
   );
-  assert.match(reduce, /\.hand \.card\.bombhot::after\{display:none;\}/, "reduced motion hides the foil layer");
-  const foilRule =
-    [...css.matchAll(/\.hand \.card\.bombhot::after\{([^}]*)\}/g)]
-      .map((m) => m[1])
-      .find((body) => body.includes("linear-gradient")) ?? "";
-  assert.ok(foilRule.length > 0, "the base foil rule is found");
-  assert.ok(!/display/.test(foilRule), "the foil renders as before without reduced motion");
+  assert.ok(
+    rulesOf(reduce).some((r) => r.selector === ".hand .card.bombhot::after" && r.decls.get("display") === "none"),
+    "reduced motion hides the foil layer",
+  );
+  const foilRule = rules045.find(
+    (r) => r.selector === ".hand .card.bombhot::after" && r.decls.get("background")?.includes("linear-gradient"),
+  );
+  assert.ok(foilRule, "the base foil rule is found");
+  assert.ok(!foilRule.decls.has("display"), "the foil renders as before without reduced motion");
 
   // #3: stageScale mirrors the height bound.
   const main = await import("../src/main.js");
@@ -2865,67 +2948,76 @@ test("e2e: score strip data — the live count line is number + unit, same text 
 });
 
 test("css: phone layout V3 lives in a <=520px block; desktop and the 521-640 band are untouched (TASK 037)", () => {
-  const raw = readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8");
-  const css = raw.replace(/\/\*[\s\S]*?\*\//g, "");
-  const at640 = css.indexOf("@media (max-width:640px){");
-  const at520 = css.indexOf("@media (max-width:520px){");
+  const css = readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8");
+  const at640 = css.search(/@media \(max-width:640px\)/);
+  const at520 = css.search(/@media \(max-width:520px\)/);
   assert.ok(at640 >= 0 && at520 > at640, "the 520 block layers after the 640 block");
-  assert.equal(css.split("@media (max-width:520px){").length, 2, "one phone-layout block");
-  const end520 = css.indexOf("\n}", at520);
-  const block = css.slice(at520, end520);
-  const outside = css.slice(0, at520) + css.slice(end520);
-  const rulesIn = (text: string): { selector: string; body: string }[] =>
-    [...text.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({
-      selector: m[1].replace(/^[\s\S]*\{/, "").trim(),
-      body: m[2].trim(),
-    }));
-  const phone = rulesIn(block.slice(block.indexOf("{") + 1));
-  const ruleOf = (selector: string): string => {
+  assert.equal((css.match(/@media \(max-width:520px\)/g) ?? []).length, 1, "one phone-layout block");
+  // The block runs from its opening brace to the matching close.
+  const open520 = css.indexOf("{", at520);
+  let depth = 0;
+  let end520 = open520;
+  for (; end520 < css.length; end520++) {
+    if (css[end520] === "{") depth++;
+    else if (css[end520] === "}") { depth--; if (depth === 0) break; }
+  }
+  const block = css.slice(open520 + 1, end520);
+  const outside = css.slice(0, at520) + css.slice(end520 + 1);
+  const phone = rulesOf(block);
+  const ruleOf = (selector: string) => {
     const r = phone.find((x) => x.selector === selector);
     assert.ok(r, `${selector} rule in the phone block`);
-    return r.body;
+    return r;
   };
+  const declObj = (selector: string): Record<string, string> => Object.fromEntries(ruleOf(selector).decls);
   // Above the breakpoint the ☰ button is not rendered and the panel
   // is layout-transparent: the header renders as before.
-  assert.ok(outside.includes("#menu-btn{display:none;}"));
-  assert.ok(outside.includes(".menu-panel{display:contents;}"));
-  assert.equal(ruleOf("#menu-btn"), "display:inline-block;");
-  assert.equal(ruleOf(".menu-panel"), "display:none;");
-  assert.match(ruleOf('#menu-btn[aria-expanded="true"] + .menu-panel'), /display:flex;/);
-  assert.match(ruleOf(".menu-panel button"), /min-height:44px;/);
+  const outsideRules = rulesOf(outside);
+  assert.ok(outsideRules.some((r) => r.selector === "#menu-btn" && r.decls.get("display") === "none"));
+  assert.ok(outsideRules.some((r) => r.selector === ".menu-panel" && r.decls.get("display") === "contents"));
+  assert.deepEqual(declObj("#menu-btn"), { display: "inline-block" });
+  assert.deepEqual(declObj(".menu-panel"), { display: "none" });
+  assert.equal(ruleOf('#menu-btn[aria-expanded="true"] + .menu-panel').decls.get("display"), "flex");
+  assert.equal(ruleOf(".menu-panel button").decls.get("min-height"), "44px");
   // Slim header: subtitle and the First-to-13 chip are not shown.
-  assert.equal(ruleOf("h1 .sub"), "display:none;");
-  assert.equal(ruleOf(".chip.gold"), "display:none;");
+  assert.deepEqual(declObj("h1 .sub"), { display: "none" });
+  assert.deepEqual(declObj(".chip.gold"), { display: "none" });
   // The strip: one row of four content-sized cells (never wraps),
   // no progress bar.
-  assert.match(ruleOf(".scores"), /display:flex;/);
-  assert.ok(!/flex-wrap:wrap/.test(ruleOf(".scores")), "the strip is one row");
-  assert.match(ruleOf(".score"), /white-space:nowrap;/);
-  assert.equal(ruleOf(".score .bar"), "display:none;");
+  assert.equal(ruleOf(".scores").decls.get("display"), "flex");
+  assert.ok(ruleOf(".scores").decls.get("flex-wrap") !== "wrap", "the strip is one row");
+  assert.equal(ruleOf(".score").decls.get("white-space"), "nowrap");
+  assert.deepEqual(declObj(".score .bar"), { display: "none" });
   // John's closer trade: no Before-that line on the phone — and
   // only there.
-  assert.equal(ruleOf(".pile .prior"), "display:none;");
-  assert.ok(!/\.prior\{display:none/.test(outside), "desktop keeps the Before-that line");
+  assert.deepEqual(declObj(".pile .prior"), { display: "none" });
+  assert.ok(
+    !outsideRules.some((r) => r.selector.includes(".prior") && r.decls.get("display") === "none"),
+    "desktop keeps the Before-that line",
+  );
   // Fit ruling A (John, 2026-11-04): the phone block DOES size the
   // pile — 144px, Task 015's formula without the dropped
   // Before-that line — overriding the 640 block's 207px here only.
-  assert.equal(ruleOf(".pile"), "height:144px;");
+  assert.deepEqual(declObj(".pile"), { height: "144px" });
   // Hand cards ~42px; action buttons keep >=44px tall targets.
-  assert.equal(ruleOf(".hand .card"), "width:42px;height:60px;");
-  assert.match(ruleOf(".controls button"), /min-height:44px;/);
+  assert.deepEqual(declObj(".hand .card"), { width: "42px", height: "60px" });
+  assert.equal(ruleOf(".controls button").decls.get("min-height"), "44px");
   // Fit ruling B (same ruling): the action row fits on one line —
   // 12.5px type, 6px side padding, 4px gaps.
-  assert.equal(ruleOf(".controls"), "margin-top:6px;gap:4px;");
-  assert.equal(
-    ruleOf(".controls button"),
-    "min-height:44px;padding:6px 6px;font-size:12.5px;letter-spacing:.2px;",
-  );
+  assert.deepEqual(declObj(".controls"), { "margin-top": "6px", gap: "4px" });
+  assert.deepEqual(declObj(".controls button"), {
+    "min-height": "44px", padding: "6px 6px", "font-size": "12.5px", "letter-spacing": ".2px",
+  });
   // Locked designs are not restyled here: no rule touches PLAY /
   // PASS / the ghost family / the turn panel / the felt's paint, and
   // nothing animates.
   for (const r of phone) {
     assert.ok(!/#play-btn|#pass-btn|\.ghost|\.myturn/.test(r.selector), `${r.selector} leaves locked buttons/panel alone`);
-    assert.ok(!/background|animation|transition/.test(r.body) || r.selector.includes("menu-panel"), `${r.selector}: no paint or motion change`);
+    assert.ok(
+      ![...r.decls.keys()].some((k) => k.startsWith("background") || k.startsWith("animation") || k.startsWith("transition")) ||
+        r.selector.includes("menu-panel"),
+      `${r.selector}: no paint or motion change`,
+    );
   }
 });
 
@@ -3599,9 +3691,11 @@ test("e2e: a rejected play shows mapped guidance in the error style; a hint does
   const { rules } = task025Rules();
   const err = rules.filter((r) => r.selector === ".selinfo.error");
   assert.equal(err.length, 1);
-  assert.match(err[0].body, /color:#ffb3ab;/);
-  assert.ok(rules.some((r) => r.selector === ".selinfo.error::before" && /content:/.test(r.body)), "a non-color marker too");
-  for (const r of rules.filter((x) => x.selector.startsWith(".selinfo.error"))) assert.ok(!/animation|transition/.test(r.body));
+  assert.equal(err[0].decls.get("color"), "#ffb3ab");
+  assert.ok(rules.some((r) => r.selector === ".selinfo.error::before" && r.decls.has("content")), "a non-color marker too");
+  for (const r of rules.filter((x) => x.selector.startsWith(".selinfo.error"))) {
+    assert.ok(!r.decls.has("animation") && !r.decls.has("transition"), "the error line does not animate");
+  }
   // A legal move clears it.
   humanMove();
   assert.equal(hasError(), false);
@@ -3858,13 +3952,11 @@ test("e2e: round-over banner bomb-penalty notes reconcile — seed 164: a seat t
 });
 
 test("css: the bomb-penalty note is a subordinate static note — smaller than the row text, no animation (TASK 042)", () => {
-  const css = readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8");
-  const rules = [...css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^{}]*)\}/g)]
-    .map((m) => ({ selector: m[1].trim(), body: m[2] }));
+  const rules = rulesOf(readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8"));
   const note = rules.find((r) => r.selector === ".sumtable .bombnotetr p.note");
   assert.ok(note, "the note rule exists");
-  assert.match(note.body, /font-size:12\.5px/, "smaller than the 14.5px modal note text");
-  assert.ok(!/animation/.test(note.body), "the note is static");
-  assert.ok(!rules.some((r) => r.selector.includes("bombnote") && /animation|transition/.test(r.body)),
+  assert.equal(note.decls.get("font-size"), "12.5px", "smaller than the 14.5px modal note text");
+  assert.ok(!note.decls.has("animation"), "the note is static");
+  assert.ok(!rules.some((r) => r.selector.includes("bombnote") && (r.decls.has("animation") || r.decls.has("transition"))),
     "no motion on the note (reduced motion has nothing to still)");
 });

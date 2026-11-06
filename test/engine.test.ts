@@ -12,7 +12,7 @@ import { chooseAction } from "../src/engine/ai.js";
 import { detectBomb, bombBeats, bombOnBombBeats, isComebackBomb } from "../src/engine/bombs.js";
 import { detectInstantWin } from "../src/engine/instantWin.js";
 import { scoreRound, scoreInstantWin, leftoverPenalty, countUnusedBombs, unusedBombs } from "../src/engine/scoring.js";
-import { createMatch, startRound, applyInstantWin, finishRound, applyChop, applyBombedBombPenalty } from "../src/engine/match.js";
+import { createMatch, startRound, applyInstantWin, finishRound, applyChop, applyBombedBombPenalty, applyTurn } from "../src/engine/match.js";
 import { seededRng } from "../src/engine/runner.js";
 
 // Consolidated engine suite: cards, deal, combinations, plays, trick
@@ -623,6 +623,127 @@ test("match: instant win at the deal ends the round before any play", () => {
   if (start.type !== "instant-win") assert.fail("expected an instant-win start");
   assert.equal(start.winner, 2);
   assert.equal(start.kind, "six-pairs");
+});
+
+test("match: two instant-win hands in one deal — the leader's clockwise priority picks the winner (TASK 047)", () => {
+  // Seat 1 holds six pairs, seat 3 holds four 2s, seat 0 holds the
+  // 3 of spades. The priority loop starts at the round's leader
+  // (the 3 of spades holder) and walks clockwise, so seat 1 wins —
+  // seat order decides, not the instant-win detection order (four
+  // 2s is checked first inside detectInstantWin, and still loses).
+  const sixPairs = [
+    c("3", "clubs"), c("3", "diamonds"), c("4", "clubs"), c("4", "diamonds"),
+    c("5", "clubs"), c("5", "diamonds"), c("6", "clubs"), c("6", "diamonds"),
+    c("9", "clubs"), c("9", "diamonds"), c("10", "clubs"), c("10", "diamonds"),
+    c("K", "spades"),
+  ];
+  const fourTwos = [c("2", "spades"), c("2", "clubs"), c("2", "diamonds"), c("2", "hearts")];
+  const used = new Set([...sixPairs, ...fourTwos, c("3", "spades")].map((card) => card.id));
+  const rest = shuffle(createDeck().filter((card) => !used.has(card.id)), seededRng(5));
+  const hands: Card[][] = [
+    [c("3", "spades"), ...rest.slice(9, 21)],
+    sixPairs,
+    rest.slice(21, 34),
+    [...fourTwos, ...rest.slice(0, 9)],
+  ];
+  assert.deepEqual(hands.map((h) => h.length), [13, 13, 13, 13]);
+  assert.equal(new Set(hands.flat().map((card) => card.id)).size, 52);
+  assert.equal(detectInstantWin(hands[0]), null);
+  assert.equal(detectInstantWin(hands[1])?.kind, "six-pairs");
+  assert.equal(detectInstantWin(hands[2]), null);
+  assert.equal(detectInstantWin(hands[3])?.kind, "four-2s");
+  const match = createMatch();
+  const start = startRound(match, hands);
+  assert.equal(start.type, "instant-win");
+  if (start.type !== "instant-win") assert.fail("expected an instant-win start");
+  assert.equal(start.winner, 1, "seat 1 is reached before seat 3 walking clockwise from the leader");
+  assert.equal(start.kind, "six-pairs");
+  // The locked payout: every other player pays the winner 2.
+  const result = applyInstantWin(match, start.winner);
+  assert.deepEqual(result.deltas, [-2, 6, -2, -2]);
+  assert.deepEqual(match.scores, [-2, 6, -2, -2]);
+  assert.equal(match.leader, 1, "the instant winner leads the next round");
+  assert.equal(match.roundNumber, 2);
+});
+
+test("match: two instant-win hands in one deal — the leader themself wins first (TASK 047)", () => {
+  // Seat 2 holds the 3 of spades inside a dragon straight; seat 0
+  // holds six pairs. The priority loop checks the leader first,
+  // so seat 2 wins before the walk ever reaches seat 0.
+  const dragon = [
+    c("3", "spades"), c("4", "clubs"), c("5", "clubs"), c("6", "clubs"),
+    c("7", "clubs"), c("8", "clubs"), c("9", "clubs"), c("10", "clubs"),
+    c("J", "clubs"), c("Q", "clubs"), c("K", "clubs"), c("A", "clubs"),
+    c("4", "diamonds"),
+  ];
+  const sixPairs = [
+    c("3", "hearts"), c("3", "diamonds"), c("5", "hearts"), c("5", "diamonds"),
+    c("7", "hearts"), c("7", "diamonds"), c("9", "hearts"), c("9", "diamonds"),
+    c("J", "hearts"), c("J", "diamonds"), c("K", "hearts"), c("K", "diamonds"),
+    c("Q", "spades"),
+  ];
+  const used = new Set([...dragon, ...sixPairs].map((card) => card.id));
+  const rest = shuffle(createDeck().filter((card) => !used.has(card.id)), seededRng(6));
+  const hands: Card[][] = [sixPairs, rest.slice(0, 13), dragon, rest.slice(13, 26)];
+  assert.deepEqual(hands.map((h) => h.length), [13, 13, 13, 13]);
+  assert.equal(new Set(hands.flat().map((card) => card.id)).size, 52);
+  assert.equal(detectInstantWin(hands[0])?.kind, "six-pairs");
+  assert.equal(detectInstantWin(hands[1]), null);
+  assert.equal(detectInstantWin(hands[2])?.kind, "dragon-straight");
+  assert.equal(detectInstantWin(hands[3]), null);
+  const match = createMatch();
+  const start = startRound(match, hands);
+  assert.equal(start.type, "instant-win");
+  if (start.type !== "instant-win") assert.fail("expected an instant-win start");
+  assert.equal(start.winner, 2, "the leader is checked first in the priority loop");
+  assert.equal(start.kind, "dragon-straight");
+  const result = applyInstantWin(match, start.winner);
+  assert.deepEqual(result.deltas, [-2, -2, 6, -2]);
+  assert.deepEqual(match.scores, [-2, -2, 6, -2]);
+});
+
+test("match: crossing 13 mid-round does not end the match — the target is checked at round end (TASK 047)", () => {
+  // A restored save's scores (round 3, seat 1 on 12). Seat 0 leads
+  // a single 2; seat 1 bombs it with four of a kind, and the bomb
+  // penalty takes seat 1 to 13 MID-ROUND. Locked rules: the match
+  // target is decided only when a round completes, so the winner
+  // must still be undecided here and the round must play on.
+  const match = createMatch();
+  match.scores = [10, 12, 0, 0];
+  match.roundNumber = 3;
+  match.leader = 0;
+  const twoSpades = c("2", "spades");
+  const quadNines = [c("9", "spades"), c("9", "clubs"), c("9", "diamonds"), c("9", "hearts")];
+  const used = new Set([twoSpades, ...quadNines].map((card) => card.id));
+  const rest = shuffle(createDeck().filter((card) => !used.has(card.id)), seededRng(7));
+  const hands: Card[][] = [
+    [twoSpades, ...rest.slice(0, 12)],
+    [...quadNines, ...rest.slice(12, 21)],
+    rest.slice(21, 34),
+    rest.slice(34, 47),
+  ];
+  assert.deepEqual(hands.map((h) => h.length), [13, 13, 13, 13]);
+  for (const hand of hands) assert.equal(detectInstantWin(hand), null);
+  const start = startRound(match, hands);
+  assert.equal(start.type, "play");
+  if (start.type !== "play") assert.fail("expected a played round");
+  const state = start.state;
+  assert.equal(state.currentPlayer, 0, "the recorded leader leads the restored round");
+  const lead = applyTurn(match, state, 0, { type: "play", cards: [twoSpades] });
+  assert.deepEqual(lead, { chop: null, bombedBomb: null });
+  const bomb = applyTurn(match, state, 1, { type: "play", cards: quadNines });
+  assert.deepEqual(bomb.chop, { payer: 0, payee: 1, points: 1 });
+  assert.equal(bomb.bombedBomb, null);
+  assert.deepEqual(match.scores, [9, 13, 0, 0], "the bomb penalty lands instantly, mid-round");
+  assert.equal(match.winner, null, "13 mid-round decides nothing — the round plays on");
+  assert.equal(state.roundOver, false);
+  // Only when the round completes is the target checked: seat 1,
+  // who finished first, takes the round's +2 as well and wins.
+  const result = finishRound(match, finishedState([1, 0, 2, 3]));
+  assert.deepEqual(result.deltas, [1, 2, -1, -2]);
+  assert.deepEqual(match.scores, [10, 15, -1, -2]);
+  assert.equal(result.matchWinner, 1);
+  assert.equal(match.winner, 1, "the winner is decided at round end, not before");
 });
 
 function finishedState(finishOrder: number[], lastHand: Card[] = [c("9", "clubs")]) {
