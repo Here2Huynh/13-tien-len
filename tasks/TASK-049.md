@@ -1,6 +1,6 @@
 # TASK-049: Restore the mid-round pile-collect animation
 
-Status: ASSIGNED (builder).
+Status: QUEUED (after the audit batch 042-048, per the 2026-11-04 walk-through queue).
 Suite baseline: 166.
 Source: found by the TASK-036 verifier, 2026-11-04 — a
 pre-existing defect present on base and head alike. **John ruled
