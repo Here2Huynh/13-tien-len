@@ -94,6 +94,7 @@ completion.
 | 042 | Round-over banner bomb-penalty note rows — per-seat net of mid-round bomb penalties under each player's rows, so previous + ROUND + note = TOTAL reconciles every round | #44 | ✅ Merged · Live |
 | 043 | Instant-win match end — the banner title names the winner; the winning hand shows as cards in every instant-win celebration beat (owner option A) | #45 | ✅ Merged · Live |
 | 044 | Fast mode + Skip to end of round — Normal/Fast speed setting (650 ms / 250 ms plays, 100 ms passes) and a Skip control once you're out that drains the round to the banner | #46 | ✅ Merged · Live |
+| 045 | Visual batch — primaries deepened to AA contrast (blue/red/green ~5.3:1), action buttons ≥44px + CPU counts 12.5px, foil hidden under reduced motion, height-bound stage zoom fits short desktop viewports | #47 | ✅ Merged · Live |
 
 ## Play
 
