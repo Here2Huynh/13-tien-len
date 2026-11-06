@@ -27,7 +27,7 @@ npm run build # type-checks, compiles, and assembles dist/
 - `src/engine/combinations.ts` — single / pair / triple / four of a kind / straight detection
 - `src/engine/plays.ts` — play comparison (`beats` / `canBeat`): same type, same card count, higher by highest card
 - `src/engine/trick.ts` — trick/turn state machine: lead, follow, pass lockout, trick clear, next leader
-- `src/engine/bombs.ts` — bomb detection (3-pair / 4-pair double run, four of a kind) and bomb-vs-2 comparison, incl. comeback-bomb eligibility
+- `src/engine/bombs.ts` — bomb detection (3-pair / 4-pair double run, four of a kind), bomb-vs-2 comparison, and bomb-on-bomb answers (a beaten bomb pays its beater), incl. comeback-bomb eligibility
 - `src/engine/instantWin.ts` — instant-win hand detection at deal: four 2s, six pairs, five consecutive pairs, dragon straight 3–A, three consecutive triples
 - `src/engine/scoring.ts` — round scoring: baseline transfers, leftover 2 / unused bomb penalties, instant-win payout
 - `src/engine/match.ts` — match state: scores across rounds, first to 13, next-round leader
@@ -100,7 +100,10 @@ completion.
 
 ## Play
 
-Run `npm run build` and open `dist/index.html` in a browser (or serve
-the `dist/` folder). Tap cards to select, then Play or Pass; Hint
-highlights the CPU policy's suggestion for your seat.
+Run `npm run build`, then serve the `dist/` folder — the page is a
+module script, so opening the file directly in a browser does not
+work. Either `python3 -m http.server -d dist` or `npx serve dist`,
+then open the local address it prints. Tap cards to select, then
+Play or Pass; Hint highlights the CPU policy's suggestion for your
+seat.
 - `test/` — the test suites (TypeScript, compiled and run by `npm test`)

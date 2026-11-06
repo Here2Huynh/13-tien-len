@@ -56,6 +56,23 @@ the switch landed, finished there under the finish-where-started
 rule. The foreman launches the runs, reads their reports from the
 runs folder, and keeps every other duty: push, PR, merge only on
 a verifier PASS, deploy, README, report.
+Switch #8 (owner, 2026-11-03, superseding Switch #7): the two
+chats are the builder/verifier route again from Task 032 on;
+Tasks 025-026 had completed under Switch #7. Claude Code is out
+as a pipeline route unless the owner re-opens it.
+Switch #9 (owner, 2026-11-04, superseding Switch #8): Claude Code
+is the PREFERRED route again — a FRESH usage check before every
+pipeline job; builder and verifier run as Claude Code runs when
+usage is low and the job fits (launch pins from 2026-11-05:
+`--model claude-opus-5-5 --effort medium`); the chats are the
+fallback only when the window can't fit the job.
+Switch #10 (owner, 2026-11-05, superseding Switch #9 — CURRENT):
+the Thirteen Builder / Thirteen Verifier chats are the standing
+builder/verifier route again, with no per-job usage gate. Claude
+Code is reserved for the owner's other projects (the ETF
+dashboard and Three.js) and is out of this pipeline unless he
+re-opens it. Across every switch, a job already running finishes
+where it started.
 
 - **BUILDER task** — the task file's Status reads `ASSIGNED (builder)`.
   Implement exactly what the task file says, nothing more. Branch
@@ -113,6 +130,12 @@ for these rules. If a task file ever conflicts with them, stop and
 flag it in the PR instead of improvising.
 
 ## Conventions
+
+- **Task-file naming.** Task files live in `tasks/`. Through
+  Task 031 they carry a slug suffix (`TASK-018-bomb-examples....md`);
+  from Task 032 on they are bare (`TASK-032.md`) — the bare form
+  is the convention now. The older suffixed files keep their
+  names; nothing is renamed retroactively.
 
 - The suite count must never drop, and no assertion may be weakened.
   Behavior changes require equivalence evidence (seeded runner sweeps)

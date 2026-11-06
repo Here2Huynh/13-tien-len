@@ -1,5 +1,5 @@
 {
-  "description": "Thirteen / Tien Len \u2014 local web app (scaffold + core card engine)",
+  "description": "13 \u2014 Thirteen / Tien Len: the owner's custom-rules card game, solo vs 3 CPU opponents (local web app)",
   "name": "13-tien-len",
   "private": true,
   "scripts": {
