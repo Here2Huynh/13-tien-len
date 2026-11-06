@@ -1,7 +1,7 @@
 # TASK-042: Round-over banner — bomb-penalty note rows (audit #4)
 
-Status: ASSIGNED (builder) — launch gated on the Claude 5h reset
-(2026-11-05 18:20 PT) per Switch #9. Suite baseline: 166.
+Status: ASSIGNED (verifier) — PR #44, head a4eeca3 (builder
+commit deafc55). Suite baseline: 166.
 
 ## Why
 
