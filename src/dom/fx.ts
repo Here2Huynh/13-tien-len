@@ -101,12 +101,24 @@ function rectOf(node: HTMLElement): RectLike {
 // (post-zoom) while a CSS transform on an in-stage element is in
 // LOCAL (pre-zoom) pixels, so a rect-derived delta becomes a
 // local translate only after dividing by this factor. Mirrors
-// the CSS clamp exactly; the test harness has no viewport, so
-// it reads 1 there and the math is today's.
+// the CSS exactly; the test harness has no viewport, so it
+// reads 1 there and the math is today's.
+//
+// TASK 045: the factor is also bound by viewport height over
+// the stage's 1280px design height (see styles.css), and at
+// phone widths the CSS block pins the zoom to 1 — both mirrored
+// here. A missing height (the harness's stub window) leaves the
+// width bound alone, as before.
+const STAGE_DESIGN_HEIGHT = 1280;
+
 export function stageScale(): number {
   const w = typeof window !== "undefined" ? window.innerWidth : 0;
   if (!w || !Number.isFinite(w)) return 1;
-  return Math.min(1.5, Math.max(1, w / 1080));
+  if (w <= 520) return 1;
+  const widthBound = Math.min(1.5, Math.max(1, w / 1080));
+  const h = typeof window !== "undefined" ? window.innerHeight : 0;
+  if (!h || !Number.isFinite(h)) return widthBound;
+  return Math.min(widthBound, h / STAGE_DESIGN_HEIGHT);
 }
 
 export function beginFx(playKey: string | null): FxBegin {
