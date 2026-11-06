@@ -1,6 +1,6 @@
 import { detectInstantWin, type InstantWinKind } from "./instantWin.js";
 import { scoreRound, scoreInstantWin, type Penalty } from "./scoring.js";
-import { createTrickState, findOpeningLeader, type TrickState } from "./trick.js";
+import { createTrickState, findOpeningLeader, playCards, type TrickState } from "./trick.js";
 import { bombBeats, bombOnBombBeats } from "./bombs.js";
 import type { Card } from "./cards.js";
 
@@ -107,7 +107,7 @@ export function startRound(match: Match, hands: Card[][]): StartRoundResult {
   const state =
     match.roundNumber === 1
       ? createTrickState(hands)
-      : createTrickState(hands, { leader: match.leader as number, openingLead: false });
+      : createTrickState(hands, { leader: match.leader, openingLead: false });
   return { type: "play", state };
 }
 
@@ -177,6 +177,35 @@ export function applyBombedBombPenalty(
   match.scores[prevPlay.player] -= 1;
   match.scores[bomber] += 1;
   return { payer: prevPlay.player, payee: bomber, points: 1 };
+}
+
+/** The transfers one play settled, in settlement order. The two
+    penalties are mutually exclusive (a bombed 2 is not a bomb, a
+    bombed bomb is not a 2), so at most one field is non-null. */
+export interface TurnTransfers {
+  chop: Chop | null;
+  bombedBomb: Chop | null;
+}
+
+// The single play -> penalties application sequence (TASK 046):
+// capture the play on the table, apply the play, then settle the
+// bomb penalty (applyChop) and the bombed-bomb penalty in that
+// order. The headless runner and the UI controller both run
+// exactly this; each used to carry its own copy. An illegal play
+// throws out of playCards before anything is applied — the same
+// failure the copies had.
+export function applyTurn(
+  match: Match,
+  state: TrickState,
+  player: number,
+  action: { type: "play"; cards: Card[] },
+): TurnTransfers {
+  const prevPlay = state.currentPlay;
+  playCards(state, player, action.cards);
+  return {
+    chop: applyChop(match, prevPlay, action.cards, player),
+    bombedBomb: applyBombedBombPenalty(match, prevPlay, action.cards, player),
+  };
 }
 
 // Score and apply a finished round from its trick state.

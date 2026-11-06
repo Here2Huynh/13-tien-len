@@ -1,6 +1,6 @@
 import { newDeal } from "./deal.js";
-import { createMatch, startRound, applyInstantWin, finishRound, applyChop, applyBombedBombPenalty, type Chop } from "./match.js";
-import { playCards, passTurn } from "./trick.js";
+import { createMatch, startRound, applyInstantWin, finishRound, applyTurn, type Chop } from "./match.js";
+import { passTurn } from "./trick.js";
 import { chooseAction } from "./ai.js";
 import type { InstantWinKind } from "./instantWin.js";
 
@@ -72,11 +72,8 @@ export function playMatch(seed: number, { maxRounds = 500, maxActionsPerRound = 
       const player = state.currentPlayer;
       const action = chooseAction(state, player);
       if (action.type === "play") {
-        const prevPlay = state.currentPlay;
-        playCards(state, player, action.cards);
-        const chop = applyChop(match, prevPlay, action.cards, player);
+        const { chop, bombedBomb } = applyTurn(match, state, player, action);
         if (chop) chops.push(chop);
-        const bombedBomb = applyBombedBombPenalty(match, prevPlay, action.cards, player);
         if (bombedBomb) chops.push(bombedBomb);
       } else passTurn(state, player);
     }
@@ -84,5 +81,9 @@ export function playMatch(seed: number, { maxRounds = 500, maxActionsPerRound = 
     rounds.push({ deltas, winner: state.finishOrder[0], instantWin: null });
   }
 
-  return { winner: match.winner as number, scores: [...match.scores], rounds, chops };
+  // The loop above only exits once the match has a winner; the
+  // check replaces the old `as number` cast (TASK 046).
+  const winner = match.winner;
+  if (winner === null) throw new Error("Match loop ended without a winner");
+  return { winner, scores: [...match.scores], rounds, chops };
 }

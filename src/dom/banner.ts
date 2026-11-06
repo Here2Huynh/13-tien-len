@@ -160,8 +160,10 @@ export function renderBanner(state: ControllerState): void {
         `${seatVerb(winner, "were", "was")} dealt an instant-win hand (${kind.replaceAll("-", " ")}). Everyone else pays 2.`,
       ),
     );
-  } else if (state.phase === "matchEnd") {
-    els.bannerTitle.textContent = `🏆 ${seatVerb(summary.matchWinner as number, "win", "wins")} the match!`;
+  } else if (state.phase === "matchEnd" && summary.matchWinner !== null) {
+    // The controller only enters matchEnd with a decided winner;
+    // the check replaces the old `as number` cast (TASK 046).
+    els.bannerTitle.textContent = `🏆 ${seatVerb(summary.matchWinner, "win", "wins")} the match!`;
   } else {
     els.bannerTitle.textContent = "Round over";
   }
