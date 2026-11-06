@@ -1,7 +1,8 @@
 # TASK-041: Copy bundle — grammar, player-facing errors, How to Play (audit #5 + #7 + #8) + accessibility details (#18)
 
-Status: ASSIGNED (builder) — builder launch gated on the Claude 5h window reset
-(2026-11-05 01:20 PT) per Switch #9. Suite baseline: 151.
+Status: ASSIGNED (verifier) — PR #43 open at head b7e507c (local commit
+5583bac; builder died post-commit, BUILD-REPORT reconstructed by the foreman
+per Disclosure 1). Suite 151 → 166. VERIFY-041 filed.
 
 ## Why
 
