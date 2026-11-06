@@ -3390,3 +3390,233 @@ test("e2e: the live log appends new lines in place — painted lines are kept, n
   newMatchTop();
   assert.equal(logLines040()[0], "New match — first to 13.");
 });
+
+// ---------- TASK 042 (audit #4): round-over banner bomb-penalty note rows ----------
+// Mid-round bomb penalties land on the match scores when they happen,
+// so they are inside TOTAL but not in ROUND. The banner explains the
+// gap with a note row under the seat: previous + ROUND + note = TOTAL.
+// These tests read the RENDERED banner and check that identity for
+// every seat in every round of full seeded matches played through the
+// real page, and cross-check each note's amount against the
+// "Bomb penalty:" log lines the page painted during that round (an
+// independent ledger: the log copy, not the summary's chops array).
+
+interface BannerSeat042 {
+  seat: number;
+  total: number;
+  round: number;
+  note: number | null;
+}
+
+interface BannerRead042 {
+  instant: boolean;
+  seats: BannerSeat042[];
+  noteRows: number;
+}
+
+const POSSESSIVE042 = ["your", "her", "his", "her"];
+const hasCls042 = (node: FakeElement, cls: string): boolean =>
+  (node.className ?? "").split(/\s+/).includes(cls);
+const findAll042 = (node: FakeElement, pred: (n: FakeElement) => boolean, out: FakeElement[] = []): FakeElement[] => {
+  if (pred(node)) out.push(node);
+  for (const child of node.children) findAll042(child, pred, out);
+  return out;
+};
+
+function readBanner042(): BannerRead042 {
+  const body = $("banner-body");
+  const table = body.children.find((c) => c.tagName === "TABLE");
+  assert.ok(table, "the banner has a table");
+  const seats: BannerSeat042[] = [];
+  let noteRows = 0;
+  if (!hasCls042(table, "sumtable")) {
+    // Instant-win variant (TASK 014/033): untouched — no note rows.
+    assert.equal(findAll042(body, (n) => hasCls042(n, "bombnote") || hasCls042(n, "bombnotetr")).length, 0,
+      "the instant-win banner carries no bomb-penalty note");
+    for (const tr of table.children) {
+      const seat = SEAT_NAMES.indexOf(tr.children[0].textContent.replace(/^★ /, ""));
+      assert.ok(seat >= 0, `instant-win row names a seat: ${tr.textContent}`);
+      const total = /^score (-?\d+)$/.exec(tr.children[1].textContent)?.[1];
+      assert.ok(total !== undefined, `instant-win total cell: ${tr.children[1].textContent}`);
+      seats.push({ seat, total: Number(total), round: Number(tr.children[2].textContent), note: null });
+    }
+    assert.equal(seats.length, 4);
+    return { instant: true, seats, noteRows };
+  }
+  let current: BannerSeat042 | null = null;
+  let afterNote = false;
+  for (const tr of table.children) {
+    if (tr.tagName !== "TR") continue;
+    if (hasCls042(tr, "penrowtr")) {
+      assert.ok(current && !afterNote, "round-end penalty rows stay directly under their payer, ahead of any note");
+      continue;
+    }
+    if (hasCls042(tr, "bombnotetr")) {
+      assert.ok(current, "a note row follows a player row");
+      assert.equal(current.note, null, "at most one note row per seat");
+      assert.equal(tr.children.length, 1, "one full-width cell — a note, not a fifth column");
+      const cell = tr.children[0];
+      assert.equal(cell.getAttribute("colspan"), "4", "the note spans the four columns");
+      const p = cell.children[0];
+      assert.ok(hasCls042(p, "note") && hasCls042(p, "bombnote"), "the note carries .note.bombnote");
+      const m = /^Bomb penalty: ([+-]\d+) — mid-round, already in (\w+) total\.$/.exec(p.textContent);
+      assert.ok(m, `note copy: ${p.textContent}`);
+      assert.equal(m[2], POSSESSIVE042[current.seat], `${SEAT_NAMES[current.seat]}: per-seat possessive`);
+      assert.ok(!/chop/i.test(p.textContent), "no chop vocabulary");
+      current.note = Number(m[1]);
+      assert.notEqual(current.note, 0, "a zero net never renders");
+      noteRows += 1;
+      afterNote = true;
+      continue;
+    }
+    // A player row: the locked four cells (TASK 032).
+    assert.equal(tr.children.length, 4, "player rows keep exactly PLACE / PLAYER / TOTAL / ROUND");
+    const seat = SEAT_NAMES.indexOf(tr.children[1].textContent);
+    assert.ok(seat >= 0, `player row names a seat: ${tr.children[1].textContent}`);
+    current = {
+      seat,
+      total: Number(tr.children[2].children[0].textContent),
+      round: Number(tr.children[3].textContent),
+      note: null,
+    };
+    seats.push(current);
+    afterNote = false;
+  }
+  assert.equal(seats.length, 4, "four player rows");
+  return { instant: false, seats, noteRows };
+}
+
+interface RoundRecord042 {
+  round: number;
+  instant: boolean;
+  notes: (number | null)[];
+  noteRows: number;
+  kinds: Set<string>;
+  paidAndReceived: number[];
+}
+
+const PENALTY_LINE042 = /^Bomb penalty: (\w+) pays? (\d+) to (\w+) — \w+ (2|pair of 2s|bomb) was bombed\.$/;
+
+// Plays one full seeded match through the real page (Hint-driven
+// human seat, the e2e convention) and checks every banner.
+function playSeeded042(seed: number): RoundRecord042[] {
+  const logEl = $("log");
+  const painted: string[] = [];
+  const originalAppend = logEl.appendChild;
+  logEl.appendChild = (node: FakeElement): FakeElement => {
+    painted.push(node.textContent);
+    return originalAppend.call(logEl, node);
+  };
+  const records: RoundRecord042[] = [];
+  try {
+    pumpTimers();
+    Math.random = seededRng(seed);
+    newMatchTop();
+    let prev = [0, 0, 0, 0];
+    for (let steps = 0; steps < 200000; steps++) {
+      if (settle() === "your-turn") {
+        humanMove();
+        continue;
+      }
+      const round = records.length + 1;
+      const banner = readBanner042();
+      // The round's ledger from the painted log copy.
+      const logNet = [0, 0, 0, 0];
+      const paid = new Set<number>();
+      const recv = new Set<number>();
+      const kinds = new Set<string>();
+      for (const line of painted) {
+        const m = PENALTY_LINE042.exec(line);
+        if (!m) continue;
+        const payer = SEAT_NAMES.indexOf(m[1]);
+        const payee = SEAT_NAMES.indexOf(m[3]);
+        assert.ok(payer >= 0 && payee >= 0, line);
+        logNet[payer] -= Number(m[2]);
+        logNet[payee] += Number(m[2]);
+        paid.add(payer);
+        recv.add(payee);
+        kinds.add(m[4] === "bomb" ? "bomb" : "two");
+      }
+      const notes: (number | null)[] = [null, null, null, null];
+      for (const s of banner.seats) {
+        const name = SEAT_NAMES[s.seat];
+        const note = s.note ?? 0;
+        notes[s.seat] = s.note;
+        // The decisive identity (VERIFY-042 item 4).
+        assert.equal(prev[s.seat] + s.round + note, s.total,
+          `seed ${seed} round ${round} ${name}: previous ${prev[s.seat]} + ROUND ${s.round} + note ${note} = TOTAL ${s.total}`);
+        assert.equal(note, logNet[s.seat], `seed ${seed} round ${round} ${name}: the note matches the round's Bomb penalty log lines`);
+        assert.equal(s.total, scoreValues()[s.seat], `seed ${seed} round ${round} ${name}: TOTAL matches the scoreboard`);
+      }
+      if (banner.instant) assert.equal(kinds.size, 0, "no mid-round penalties in an instant-win round");
+      records.push({
+        round,
+        instant: banner.instant,
+        notes,
+        noteRows: banner.noteRows,
+        kinds,
+        paidAndReceived: [0, 1, 2, 3].filter((p) => paid.has(p) && recv.has(p)),
+      });
+      prev = banner.seats.reduce((acc, s) => {
+        acc[s.seat] = s.total;
+        return acc;
+      }, [0, 0, 0, 0]);
+      if (isMatchEndBanner()) return records;
+      painted.length = 0;
+      $("continue-btn").click();
+    }
+    throw new Error(`seed ${seed}: the match never ended`);
+  } finally {
+    logEl.appendChild = originalAppend;
+  }
+}
+
+test("e2e: round-over banner bomb-penalty notes reconcile — seed 50: both kinds, a seat that paid and received, an instant-win round, clean rounds (TASK 042)", async () => {
+  await import("../src/main.js");
+  const records = playSeeded042(50);
+  assert.equal(records.length, 7, "seed 50 plays a 7-round match");
+  // Round 3: Mina bombs your 2 (You pay her 1), then Kenji bombs
+  // Mina's bomb (she pays him 1): both kinds in one round; Mina paid
+  // AND received, netting zero, so she shows no note.
+  const r3 = records[2];
+  assert.deepEqual([...r3.kinds].sort(), ["bomb", "two"], "round 3 has a bombed 2 and a beaten bomb");
+  assert.deepEqual(r3.paidAndReceived, [1], "Mina both paid and received in round 3");
+  assert.deepEqual(r3.notes, [-1, null, 1, null], "notes: You -1, Kenji +1; Mina nets zero — no note");
+  assert.equal(r3.noteRows, 2);
+  // Round 4: an instant win, mid-match, reconciles with no notes.
+  assert.equal(records[3].instant, true, "round 4 is an instant-win round");
+  assert.equal(records[3].noteRows, 0);
+  // Every other round is penalty-free: no note lines anywhere.
+  for (const r of records) {
+    if (r.round === 3) continue;
+    assert.equal(r.kinds.size, 0, `round ${r.round} has no mid-round penalty`);
+    assert.equal(r.noteRows, 0, `round ${r.round}: no note lines anywhere`);
+  }
+});
+
+test("e2e: round-over banner bomb-penalty notes reconcile — seed 164: a seat that paid and received with a nonzero net, every round of a 26-round match (TASK 042)", async () => {
+  await import("../src/main.js");
+  const records = playSeeded042(164);
+  assert.equal(records.length, 26, "seed 164 plays a 26-round match");
+  // Round 5: You bomb Rosa's 2 (+1), your bomb is bombed by Mina (-1),
+  // you bomb Mina's bomb back (+1): You net +1 having paid and
+  // received; Mina paid and received, net zero; Rosa -1.
+  const r5 = records[4];
+  assert.deepEqual([...r5.kinds].sort(), ["bomb", "two"]);
+  assert.deepEqual(r5.paidAndReceived, [0, 1], "You and Mina both paid and received in round 5");
+  assert.deepEqual(r5.notes, [1, null, null, -1], "notes: You +1, Rosa -1; Mina nets zero — no note");
+  assert.ok(records.filter((r) => r.noteRows > 0).length >= 5, "several rounds carry notes");
+  assert.ok(records.some((r) => !r.instant && r.kinds.size === 0 && r.noteRows === 0), "a clean round shows no note lines");
+});
+
+test("css: the bomb-penalty note is a subordinate static note — smaller than the row text, no animation (TASK 042)", () => {
+  const css = readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8");
+  const rules = [...css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .map((m) => ({ selector: m[1].trim(), body: m[2] }));
+  const note = rules.find((r) => r.selector === ".sumtable .bombnotetr p.note");
+  assert.ok(note, "the note rule exists");
+  assert.match(note.body, /font-size:12\.5px/, "smaller than the 14.5px modal note text");
+  assert.ok(!/animation/.test(note.body), "the note is static");
+  assert.ok(!rules.some((r) => r.selector.includes("bombnote") && /animation|transition/.test(r.body)),
+    "no motion on the note (reduced motion has nothing to still)");
+});
