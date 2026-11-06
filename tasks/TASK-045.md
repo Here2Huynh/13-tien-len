@@ -1,6 +1,6 @@
 # TASK-045: Visual batch — contrast, touch targets, reduced-motion foil, desktop stage fit (audit #11 + #12 + #14 + #3)
 
-Status: ASSIGNED (builder). Suite baseline: 178.
+Status: ASSIGNED (verifier). Suite baseline: 178. PR #47, head 9bf27038270a1411f41c827df0075ab48666af54.
 
 ## Why
 
