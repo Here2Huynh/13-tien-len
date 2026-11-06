@@ -34,6 +34,8 @@ export const els = {
   helpStart: $btn("help-btn-start"),
   helpOverlay: $("help-overlay"),
   helpClose: $btn("help-close"),
+  // TASK 041 (audit #8): How to play's top close control.
+  helpCloseTop: $btn("help-close-top"),
   oddsTop: $btn("odds-btn-top"),
   oddsOverlay: $("odds-overlay"),
   oddsClose: $btn("odds-close"),

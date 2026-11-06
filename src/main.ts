@@ -16,6 +16,7 @@ import {
 import { renderBanner, setBannerHost } from "./dom/banner.js";
 import { wireMenu, menuOpen } from "./dom/menu.js";
 import { holdingSchedule, openConfirm, wireConfirm } from "./dom/confirm.js";
+import { createModal } from "./dom/dialog.js";
 
 export { stageScale } from "./dom/fx.js";
 
@@ -32,6 +33,7 @@ export { stageScale } from "./dom/fx.js";
 //   banner.ts    round/match summaries + the instant-win beat
 //   menu.ts      the phone header menu (TASK 037)
 //   confirm.ts   the New Match confirmation (TASK 040)
+//   dialog.ts    the shared modal dialog plumbing (TASK 041)
 // — and this file creates the controller, owns the render pass (in
 // the original order), and wires the buttons and overlays.
 
@@ -86,6 +88,9 @@ export function render(state: ControllerState): void {
   // Center: the pile (play to beat) + the turn banner under it.
   renderPile(state, myTurn);
   els.message.textContent = state.message;
+  // TASK 041 (audit #7): a rejected action's line wears the error
+  // style; hints and everything else keep the plain line.
+  els.message.classList.toggle("error", state.messageTone === "error");
 
   renderHand(state, myTurn);
 
@@ -94,8 +99,7 @@ export function render(state: ControllerState): void {
   els.hintBtn.disabled = !myTurn;
 
   // Log.
-  els.log.textContent = "";
-  for (const line of state.log) els.log.append(el("li", null, line));
+  renderLog(state.log);
   els.log.scrollTop = els.log.scrollHeight;
 
   // Start gate: the start screen covers the table until the first
@@ -122,6 +126,22 @@ export function render(state: ControllerState): void {
   endFx(fx, state, pilePlays());
 }
 
+// The table-talk log is an aria-live="polite" region (TASK 041,
+// audit #18), so it is updated in place rather than rebuilt: lines
+// already painted stay put, lines that scrolled off the 60-line cap
+// leave from the top (removals are not announced), and only the new
+// lines are appended — so a screen reader hears each new entry once,
+// not the whole log on every render. The painted result is exactly
+// the state's lines, in order, as the old rebuild painted them; a log
+// that is not a continuation (a new match) is simply repainted.
+function renderLog(lines: readonly string[]): void {
+  const painted = Array.from(els.log.children, (li) => li.textContent ?? "");
+  let drop = 0;
+  while (drop < painted.length && !painted.slice(drop).every((line, i) => lines[i] === line)) drop++;
+  for (let i = 0; i < drop; i++) els.log.children[0]?.remove();
+  for (const line of lines.slice(painted.length - drop)) els.log.append(el("li", null, line));
+}
+
 els.playBtn.addEventListener("click", () => {
   const hand = controller.state.trick?.hands[HUMAN] ?? [];
   const cards = hand.filter((card) => selected.has(card.id));
@@ -136,11 +156,11 @@ els.hintBtn.addEventListener("click", () => {
   const action = controller.hint();
   if (!action) return;
   if (action.type === "pass") {
-    controller.setMessage("Hint: pass — nothing beats it.");
+    controller.setMessage("Hint: pass — nothing beats it.", "hint");
   } else {
     selected.clear();
     action.cards.forEach((card) => selected.add(card.id));
-    controller.setMessage(`Hint: play ${describePlay(action.cards)}.`);
+    controller.setMessage(`Hint: play ${describePlay(action.cards)}.`, "hint");
   }
 });
 
@@ -168,14 +188,16 @@ function requestNewMatch(from: HTMLElement): void {
   }
   openConfirm(`Round ${match.roundNumber} · ${standingsText(match.scores)}`, from);
 }
+// A header button that may be the phone ☰ menu's item (TASK 037):
+// its click runs before the panel closes the menu, so an open menu
+// means a phone-menu tap — focus then returns to the ☰ button, since
+// the item hides with its panel (the TASK 040 New Match rule).
+const opener = (button: HTMLElement): HTMLElement => (menuOpen() ? els.menuBtn : button);
+
 els.newMatchBtn.addEventListener("click", () => requestNewMatch(els.newMatchBtn));
 // The header button is also the phone ☰ menu's item (TASK 037: the
-// panel holds this same button). Its click runs before the panel
-// closes the menu, so an open menu means a phone-menu tap — focus
-// then returns to the ☰ button, since the item hides with its panel.
-els.newMatchTop.addEventListener("click", () =>
-  requestNewMatch(menuOpen() ? els.menuBtn : els.newMatchTop),
-);
+// panel holds this same button) — see opener() above.
+els.newMatchTop.addEventListener("click", () => requestNewMatch(opener(els.newMatchTop)));
 // The start gate's button (Start Game / New Match beside Resume,
 // TASK 039) is shown only behind the idle gate, where no match is
 // in progress: one tap, unchanged — it never asks.
@@ -185,29 +207,36 @@ els.resumeBtn.addEventListener("click", () => controller.newMatch(loadScoreSave(
 
 // How-to-play overlay (TASK 017): pure presentation. It never calls
 // the controller and never renders, so a game in progress resumes
-// exactly as it was when the overlay closes.
+// exactly as it was when the overlay closes. TASK 041 (audit #8/#18):
+// a modal dialog on the shared plumbing (dialog.ts) — focus moves to
+// its top close control on open, Escape / either Close / the
+// backdrop close it, and focus returns to the button that opened it.
 els.helpOverlay.hidden = true;
-const setHelp = (open: boolean): void => {
-  els.helpOverlay.hidden = !open;
-};
-els.helpTop.addEventListener("click", () => setHelp(true));
-els.helpStart.addEventListener("click", () => setHelp(true));
-els.helpClose.addEventListener("click", () => setHelp(false));
+function closeHelp(): void {
+  if (help.isOpen()) help.close();
+}
+const help = createModal(els.helpOverlay, closeHelp);
+els.helpTop.addEventListener("click", () => help.open(els.helpCloseTop, opener(els.helpTop)));
+els.helpStart.addEventListener("click", () => help.open(els.helpCloseTop, els.helpStart));
+els.helpCloseTop.addEventListener("click", closeHelp);
+els.helpClose.addEventListener("click", closeHelp);
 els.helpOverlay.addEventListener("click", (event) => {
-  if (event.target === els.helpOverlay) setHelp(false);
+  if (event.target === els.helpOverlay) closeHelp();
 });
 
 // Bomb odds card (TASK 022): the same pure-presentation contract as
 // the how-to-play overlay — static figures in index.html, no
-// controller call, no render, no timers.
+// controller call, no render, no timers — and (TASK 041) the same
+// modal dialog behavior; focus moves to its Close on open.
 els.oddsOverlay.hidden = true;
-const setOdds = (open: boolean): void => {
-  els.oddsOverlay.hidden = !open;
-};
-els.oddsTop.addEventListener("click", () => setOdds(true));
-els.oddsClose.addEventListener("click", () => setOdds(false));
+function closeOdds(): void {
+  if (odds.isOpen()) odds.close();
+}
+const odds = createModal(els.oddsOverlay, closeOdds);
+els.oddsTop.addEventListener("click", () => odds.open(els.oddsClose, opener(els.oddsTop)));
+els.oddsClose.addEventListener("click", closeOdds);
 els.oddsOverlay.addEventListener("click", (event) => {
-  if (event.target === els.oddsOverlay) setOdds(false);
+  if (event.target === els.oddsOverlay) closeOdds();
 });
 
 // Phone header menu (TASK 037): holds the three header buttons

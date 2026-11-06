@@ -1,4 +1,5 @@
 import { els } from "./elements.js";
+import { createModal } from "./dialog.js";
 
 // New Match confirmation (TASK 040, audit #9). Activating New Match
 // while a match is in progress opens this dialog instead of wiping
@@ -29,42 +30,13 @@ import { els } from "./elements.js";
 // Pure presentation otherwise: opening and cancelling never call the
 // controller and never render; the stored save is never touched.
 
+// TASK 041: the dialog plumbing above (inert background, late
+// arrivals, focus in and back, Escape) now lives in dialog.ts, shared
+// with How to play and Bomb odds; this module keeps what is the
+// confirmation's own — the CPU-turn hold and its two actions.
 let held: { fn: () => void; ms: number }[] = [];
-let returnFocus: HTMLElement | null = null;
 let onConfirm: (() => void) | null = null;
-// The elements this dialog made inert (and only those), plus the
-// watcher that freezes late arrivals while it is open.
-let frozen: HTMLElement[] = [];
-let lateWatch: MutationObserver | null = null;
-
-function freeze(node: Element): void {
-  const el = node as HTMLElement;
-  if (el === els.confirmOverlay || el.inert) return;
-  el.inert = true;
-  frozen.push(el);
-}
-
-function freezeBackground(): void {
-  lateWatch?.disconnect();
-  freeze(els.app);
-  for (const child of Array.from(document.body.children)) freeze(child);
-  if (typeof MutationObserver === "undefined") return;
-  lateWatch = new MutationObserver((records) => {
-    for (const record of records) {
-      for (const node of Array.from(record.addedNodes)) {
-        if (node.nodeType === 1) freeze(node as Element);
-      }
-    }
-  });
-  lateWatch.observe(document.body, { childList: true });
-}
-
-function releaseBackground(): void {
-  lateWatch?.disconnect();
-  lateWatch = null;
-  for (const el of frozen) el.inert = false;
-  frozen = [];
-}
+const dialog = createModal(els.confirmOverlay, cancel);
 
 export function confirmOpen(): boolean {
   return !els.confirmOverlay.hidden;
@@ -82,15 +54,12 @@ export function holdingSchedule(fn: () => void, ms: number): unknown {
     match's round + standings line; `from` gets focus back on close. */
 export function openConfirm(standing: string, from: HTMLElement): void {
   els.confirmStanding.textContent = standing;
-  returnFocus = from;
-  els.confirmOverlay.hidden = false;
-  freezeBackground();
-  els.confirmCancel.focus();
+  dialog.open(els.confirmCancel, from);
 }
 
 function closeConfirm(): void {
-  els.confirmOverlay.hidden = true;
-  releaseBackground();
+  // Hide, release the background, focus back to the opener.
+  dialog.close();
   // Re-arm any CPU turn that came due while the dialog was up. On
   // Confirm this runs before the fresh deal is made (synchronously,
   // below) but the re-armed timers fire after it — exactly as a CPU
@@ -98,8 +67,6 @@ function closeConfirm(): void {
   const due = held;
   held = [];
   for (const { fn, ms } of due) holdingSchedule(fn, ms);
-  returnFocus?.focus();
-  returnFocus = null;
 }
 
 function cancel(): void {
@@ -119,7 +86,5 @@ export function wireConfirm(confirm: () => void): void {
   els.confirmOverlay.addEventListener("click", (event) => {
     if (event.target === els.confirmOverlay) cancel();
   });
-  document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") cancel();
-  });
+  // Escape cancels too — through dialog.ts's one Escape listener.
 }

@@ -355,6 +355,12 @@ button.small{padding:9px 14px;font-size:12.5px;border-radius:10px;}
 .selinfo{text-align:center;font-size:15.5px;font-weight:700;line-height:1.35;min-height:22px;margin-top:13px;color:#eaf7ef;text-shadow:0 1px 0 rgba(0,0,0,.3);}
 .selinfo .bad{color:#ffb3ab;font-weight:800;}
 .selinfo .good{color:#a9f2c0;font-weight:800;}
+/* TASK 041 (audit #7): a rejected action's line reads as an error,
+   apart from a hint (which keeps the plain line): the existing .bad
+   ink and weight, plus a warning mark so the difference is not
+   carried by color alone. No motion. */
+.selinfo.error{color:#ffb3ab;font-weight:800;}
+.selinfo.error::before{content:"\26A0\FE0E\00A0";}
 .controls{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:11px;}
 #play-btn{background:var(--green);box-shadow:0 5px 0 var(--green-dark), 0 8px 16px rgba(0,0,0,.3), inset 0 2px 0 rgba(255,255,255,.35);}
 #play-btn:active{box-shadow:0 1px 0 var(--green-dark), 0 3px 8px rgba(0,0,0,.3);}
@@ -441,6 +447,10 @@ button.small{padding:9px 14px;font-size:12.5px;border-radius:10px;}
 .modal.help h3{font-size:13px;font-weight:900;letter-spacing:2px;color:var(--gold-bright);margin:16px 0 4px;}
 .modal.help p{font-size:15px;font-weight:600;line-height:1.5;color:var(--ink-dim);margin:0;}
 .modal.help .banner-actions{text-align:center;}
+/* TASK 041 (audit #8): the sheet's top close control — the existing
+   small ghost button, right-aligned above the title, so Close is
+   reachable without scrolling the whole sheet. */
+.modal.help .help-top{display:flex;justify-content:flex-end;margin:-10px -6px 0 0;}
 /* Bomb odds card (TASK 022): the shared .overlay/.modal shell dressed
    as a game card — the .card face, ink, border and inset rim, with
    2♥ corner indices (the bottom one turned, as on a real card).

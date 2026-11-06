@@ -279,13 +279,15 @@ export function renderHand(state: ControllerState, myTurn: boolean): void {
 }
 
 // The Sort toggle's label, title, and arrow track the current
-// direction — the mockup's exact strings.
+// direction — the mockup's exact strings (TASK 041, audit #18: the
+// descending aria-label's "tap to sort" half now names the direction
+// the tap actually goes, low to high, as the title always did).
 export function updateSortButton(): void {
   els.sortBtn.setAttribute(
     "aria-label",
     sortAsc
       ? "Sort hand low to high ascending, tap to sort high to low descending"
-      : "Sort hand high to low descending, tap to sort high to low ascending",
+      : "Sort hand high to low descending, tap to sort low to high ascending",
   );
   els.sortBtn.title = sortAsc
     ? "Sorted low to high (ascending) — tap to sort high to low (descending)"

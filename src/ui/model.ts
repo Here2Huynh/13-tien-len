@@ -12,6 +12,21 @@ import type { Penalty, UnusedBomb } from "../engine/scoring.js";
 
 export const SEAT_NAMES = ["You", "Mina", "Kenji", "Rosa"];
 
+/** The one human-seat conjugation helper (TASK 041, audit #5): the
+    human seat is "You" — second person, so "You play / pass / lead /
+    take it / were dealt" — and every CPU seat is third person
+    ("Mina plays"). Every line that puts a verb after a seat name
+    picks its verb form here. */
+export function conjugate(player: number, you: string, they: string): string {
+  return player === HUMAN ? you : they;
+}
+
+/** "<Seat> <verb>" with the verb conjugated for that seat — "You
+    play" / "Mina plays". */
+export function seatVerb(player: number, you: string, they: string): string {
+  return `${SEAT_NAMES[player]} ${conjugate(player, you, they)}`;
+}
+
 /** The four seats' standings as one line — "You 5 · Mina -2 ·
     Kenji 3 · Rosa 0" (TASK 039: the Resume button's label and
     the resumed match's opening log line share this text so the
@@ -69,7 +84,7 @@ export function validateSelection(
   if (!state || state.roundOver) return { ok: false, error: "The round is over." };
   if (state.currentPlayer !== player) return { ok: false, error: "It is not your turn." };
   if (!cards || cards.length === 0) {
-    return { ok: false, error: "Select at least one card first." };
+    return { ok: false, error: NO_SELECTION };
   }
   const held = new Set(state.hands[player].map((card) => card.id));
   if (cards.some((card) => !held.has(card.id))) {
@@ -144,8 +159,7 @@ const POSSESSIVES = ["your", "her", "his", "her"]; // by seat: You, Mina, Kenji,
 
 export function bombPenaltyLogLine({ payer, payee, points }: Chop): string {
   const what = points === 2 ? "pair of 2s" : "2";
-  const pays = payer === HUMAN ? "pay" : "pays";
-  return `Bomb penalty: ${SEAT_NAMES[payer]} ${pays} ${points} to ${SEAT_NAMES[payee]} — ${POSSESSIVES[payer]} ${what} was bombed.`;
+  return `Bomb penalty: ${seatVerb(payer, "pay", "pays")} ${points} to ${SEAT_NAMES[payee]} — ${POSSESSIVES[payer]} ${what} was bombed.`;
 }
 
 // The log line for the bombed-bomb penalty (TASK 021): the moment a
@@ -153,15 +167,111 @@ export function bombPenaltyLogLine({ payer, payee, points }: Chop): string {
 // bombed it 1 point.
 // "Bomb penalty: Mina pays 1 to Kenji — her bomb was bombed."
 export function bombedBombLogLine({ payer, payee }: Chop): string {
-  const pays = payer === HUMAN ? "pay" : "pays";
-  return `Bomb penalty: ${SEAT_NAMES[payer]} ${pays} 1 to ${SEAT_NAMES[payee]} — ${POSSESSIVES[payer]} bomb was bombed.`;
+  return `Bomb penalty: ${seatVerb(payer, "pay", "pays")} 1 to ${SEAT_NAMES[payee]} — ${POSSESSIVES[payer]} bomb was bombed.`;
 }
 
 // The companion line when a player who passed earlier in the same
 // trick returns with a comeback bomb (TASK 016).
 export function comebackLogLine(player: number): string {
-  const verb = player === HUMAN ? "are" : "is";
-  return `${SEAT_NAMES[player]} ${verb} back in the trick.`;
+  return `${seatVerb(player, "are", "is")} back in the trick.`;
+}
+
+// ---- Player-facing rejection copy (TASK 041, audit #7) -------------
+// The engine's rejection strings are terse rule statements ("Play
+// does not beat the current trick play"). The page shows player copy
+// instead — guidance that names what is on the table where the state
+// allows it. Presentation only: the engine's strings and behavior are
+// unchanged, and any string not mapped here is shown exactly as the
+// engine (or the selection check) wrote it.
+export type MessageTone = "" | "hint" | "error";
+
+/** The engine's rejection strings this layer rewrites (verbatim). */
+export const ENGINE_ERRORS = {
+  doesNotBeat: "Play does not beat the current trick play",
+  bombLead: "A bomb cannot be led",
+  comeback:
+    "Comeback after passing requires four of a kind or a 4-pair double run that bombs the current play",
+  openingLead: "Opening lead must include 3 of spades",
+  leaderPass: "The trick leader must play, not pass",
+  notACombination: "Not a valid combination",
+} as const;
+
+/** The selection check's empty-selection string (validateSelection). */
+export const NO_SELECTION = "Select at least one card first.";
+
+// The play on the table, named for a sentence: the log's own
+// phrasing (describePlay) for plain sets; a pair-run bomb by its
+// length and high card.
+function tableName(cards: Card[]): string {
+  const bomb = detectBomb(cards);
+  if (bomb && bomb.kind !== "four-of-a-kind") {
+    const top = cardLabel(sortCards(cards)[cards.length - 1]).text;
+    return `a ${bomb.kind === "pair-sequence-3" ? 3 : 4}-pair double run, high card ${top}`;
+  }
+  return describePlay(cards);
+}
+
+// A name that ends in ", high card X" takes a closing comma mid-
+// sentence: "Beat a pair, high card K♦, with a higher pair".
+function midSentence(name: string): string {
+  return name.includes(", high card ") ? `${name},` : name;
+}
+
+// What beats the table, per the engine's ladder (plays.beats +
+// bombs.bombBeats / bombOnBombBeats) — phrased, never decided, here.
+function beatAdvice(cards: Card[]): string {
+  const named = midSentence(tableName(cards));
+  const bomb = detectBomb(cards);
+  if (bomb?.kind === "pair-sequence-4") {
+    return `Beat ${named} with a higher 4-pair double run — or Pass.`;
+  }
+  if (bomb?.kind === "pair-sequence-3") {
+    return `Beat ${named} with a higher 3-pair double run or a 4-pair double run — or Pass.`;
+  }
+  const combo = detectCombination(cards);
+  if (!combo) return "Beat the table with a higher play of the same kind — or Pass.";
+  if (combo.type === "four-of-a-kind") {
+    return `Beat ${named} with a higher four of a kind or a 4-pair double run — or Pass.`;
+  }
+  if (combo.rank === "2" && combo.type === "triple") return "Nothing beats triple 2s — Pass.";
+  if (combo.rank === "2" && combo.type === "single") {
+    return `Beat ${named} with a higher single or a bomb — or Pass.`;
+  }
+  if (combo.rank === "2" && combo.type === "pair") {
+    return `Beat ${named} with a higher pair, four of a kind, or a 4-pair double run — or Pass.`;
+  }
+  const kind = combo.type === "straight" ? `${cards.length}-card straight` : combo.type;
+  return `Beat ${named} with a higher ${kind} — or Pass.`;
+}
+
+/** The player copy for a rejected action. `error` is the engine's
+    (or the selection check's) message; `trick` is the state the
+    action was rejected against (rejections never change it). An
+    unmapped message falls back to its own text, unchanged. */
+export function playerErrorText(error: string, trick: TrickState | null | undefined): string {
+  const onTable = trick?.currentPlay?.cards ?? null;
+  switch (error) {
+    case ENGINE_ERRORS.doesNotBeat:
+      return onTable ? beatAdvice(onTable) : error;
+    case ENGINE_ERRORS.bombLead:
+      return "A double run can't lead — it plays only as a bomb. Lead a single, pair, triple, straight, or four of a kind.";
+    case ENGINE_ERRORS.comeback:
+      return onTable
+        ? `You passed this trick, so only four of a kind or a 4-pair double run that beats ${midSentence(tableName(onTable))} brings you back — or Pass.`
+        : "You passed this trick, so only four of a kind or a 4-pair double run brings you back — or Pass.";
+    case ENGINE_ERRORS.openingLead:
+      return "The first play of the match must include the 3♠.";
+    case ENGINE_ERRORS.leaderPass:
+      return "You lead this trick, so you can't pass — play any set.";
+    case ENGINE_ERRORS.notACombination:
+      return "Those cards don't make a set. Play a single, pair, triple, straight, or four of a kind — or a double run as a bomb.";
+    case NO_SELECTION:
+      return onTable
+        ? `${NO_SELECTION.slice(0, -1)} — or Pass.`
+        : `${NO_SELECTION.slice(0, -1)} — tap cards in your hand, then Play.`;
+    default:
+      return error;
+  }
 }
 
 function describeUnusedBomb(bomb: UnusedBomb): string {
@@ -176,7 +286,6 @@ function describeUnusedBomb(bomb: UnusedBomb): string {
 // "(leftover 2s / unused bombs)".
 // "Penalty: Rosa pays 3 to You: 2♠, 2♥ held (2 pts), four 9s unused (1 pt)."
 export function penaltyLine(penalty: Penalty): string {
-  const pays = penalty.player === HUMAN ? "pay" : "pays";
   const causes: string[] = [];
   if (penalty.twos.length > 0) {
     const labels = penalty.twos.map((card) => cardLabel(card).text).join(", ");
@@ -186,7 +295,7 @@ export function penaltyLine(penalty: Penalty): string {
   for (const bomb of penalty.bombs) {
     causes.push(`${describeUnusedBomb(bomb)} unused (1 pt)`);
   }
-  return `Penalty: ${SEAT_NAMES[penalty.player]} ${pays} ${penalty.points} to ${SEAT_NAMES[penalty.paidTo]}: ${causes.join(", ")}.`;
+  return `Penalty: ${seatVerb(penalty.player, "pay", "pays")} ${penalty.points} to ${SEAT_NAMES[penalty.paidTo]}: ${causes.join(", ")}.`;
 }
 
 const PLACE_LABELS = ["1st", "2nd", "3rd", "4th"];

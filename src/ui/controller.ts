@@ -11,7 +11,6 @@ import type { Card } from "../engine/cards.js";
 import type { Penalty } from "../engine/scoring.js";
 import type { InstantWinKind } from "../engine/instantWin.js";
 import {
-  SEAT_NAMES,
   HUMAN,
   emptyTrickView,
   applyToTrickView,
@@ -21,6 +20,9 @@ import {
   bombedBombLogLine,
   comebackLogLine,
   validateSelection,
+  seatVerb,
+  playerErrorText,
+  type MessageTone,
   type TrickView,
 } from "./model.js";
 
@@ -28,7 +30,9 @@ import {
 // engine (match / trick / ai). The page (main.js) is a thin adapter
 // that renders this state and forwards button clicks. No rule logic
 // lives here — every play goes through the engine, and engine errors
-// are surfaced as the message line instead of being hidden.
+// are surfaced as the message line instead of being hidden — in
+// player copy (TASK 041: model.playerErrorText maps the engine's
+// string, falling back to it verbatim) and flagged as an error.
 //
 // Options:
 // - onChange(state): called after every state change.
@@ -55,6 +59,11 @@ export interface ControllerState {
   match: Match | null;
   trick: TrickState | null;
   message: string;
+  /** What kind of line `message` is (TASK 041, audit #7): "error"
+      for a rejected action, "hint" for the Hint button's line, ""
+      (or absent) for anything else. The page styles errors apart
+      from hints; nothing in the game reads it. */
+  messageTone?: MessageTone;
   log: string[];
   trickView: TrickView;
   roundSummary: RoundSummary | null;
@@ -93,7 +102,7 @@ export interface Controller {
   humanPlay(cards: Card[]): boolean;
   humanPass(): boolean;
   hint(): Action | null;
-  setMessage(text: string): void;
+  setMessage(text: string, tone?: MessageTone): void;
 }
 
 const INSTANT_WIN_NAMES: Record<InstantWinKind, string> = {
@@ -115,6 +124,7 @@ export function createController(options: ControllerOptions = {}): Controller {
     match: null,
     trick: null,
     message: "",
+    messageTone: "",
     log: [],
     trickView: emptyTrickView(),
     roundSummary: null,
@@ -126,7 +136,6 @@ export function createController(options: ControllerOptions = {}): Controller {
   let roundChops: Chop[] = []; // this round's chop transfers, for the summary
 
   const emit = () => onChange(state);
-  const name = (player: number): string => SEAT_NAMES[player];
 
   function log(line: string): void {
     state.log = [...state.log, line].slice(-60);
@@ -139,6 +148,7 @@ export function createController(options: ControllerOptions = {}): Controller {
     state.trickView = emptyTrickView();
     state.roundSummary = null;
     state.message = "";
+    state.messageTone = "";
     roundChops = [];
     const match = state.match as Match;
     const roundNo = match.roundNumber;
@@ -157,14 +167,14 @@ export function createController(options: ControllerOptions = {}): Controller {
       };
       state.phase = match.winner !== null ? "matchEnd" : "roundEnd";
       log(
-        `${name(start.winner)} wins round ${roundNo} instantly with ${INSTANT_WIN_NAMES[start.kind] ?? start.kind}!`,
+        `${seatVerb(start.winner, "win", "wins")} round ${roundNo} instantly with ${INSTANT_WIN_NAMES[start.kind] ?? start.kind}!`,
       );
       emit();
       return;
     }
     state.trick = start.state;
     state.phase = "playing";
-    log(`Round ${roundNo}: ${name(state.trick.currentPlayer)} leads.`);
+    log(`Round ${roundNo}: ${seatVerb(state.trick.currentPlayer, "lead", "leads")}.`);
     emit();
     maybeCpu();
   }
@@ -182,11 +192,15 @@ export function createController(options: ControllerOptions = {}): Controller {
       if (action.type === "play") playCards(trick, player, action.cards);
       else passTurn(trick, player);
     } catch (error) {
-      state.message = (error as Error).message;
+      // Rejections never change the trick (the engine throws before
+      // it mutates), so the copy can name what is still on the table.
+      state.message = playerErrorText((error as Error).message, trick);
+      state.messageTone = "error";
       emit();
       return false;
     }
     state.message = "";
+    state.messageTone = "";
     // Log first: an action that clears the trick is logged like any
     // other action, even though the trick view then resets.
     if (action.type === "play") {
@@ -198,7 +212,7 @@ export function createController(options: ControllerOptions = {}): Controller {
         detectBomb(action.cards) !== null &&
         (bombTarget(prevPlay.cards) !== null ||
           bombOnBombBeats(action.cards, prevPlay.cards));
-      log(`${name(player)} plays ${describePlay(action.cards, wasBomb)}.`);
+      log(`${seatVerb(player, "play", "plays")} ${describePlay(action.cards, wasBomb)}.`);
       if (wasComeback) log(comebackLogLine(player));
       // Chop: bombing a played 2 / pair of 2s transfers 1 point per
       // 2 from its owner to the bomber, instantly (TASK 012). The
@@ -223,11 +237,11 @@ export function createController(options: ControllerOptions = {}): Controller {
     } else if (trick.trickNumber !== trickNumberBefore) {
       // This pass closed the trick: no lockout to call — the trick
       // is over and the winner leads the next one.
-      log(`${name(player)} passes.`);
+      log(`${seatVerb(player, "pass", "passes")}.`);
     } else {
       // A pass locks the passer out for the rest of the trick
       // (TASK 016, John's phrase).
-      log(`${name(player)} passes — locked out.`);
+      log(`${seatVerb(player, "pass", "passes")} — locked out.`);
     }
     if (trick.trickNumber !== trickNumberBefore) {
       // The action cleared the trick; the new trick starts blank
@@ -256,7 +270,7 @@ export function createController(options: ControllerOptions = {}): Controller {
         matchWinner: result.matchWinner,
       };
       state.phase = result.matchWinner !== null ? "matchEnd" : "roundEnd";
-      log(`Round over. ${name(trick.finishOrder[0])} takes it.`);
+      log(`Round over. ${seatVerb(trick.finishOrder[0], "take", "takes")} it.`);
       emit();
       return true;
     }
@@ -330,7 +344,8 @@ export function createController(options: ControllerOptions = {}): Controller {
       if (state.phase !== "playing" || !state.trick) return false;
       const check = validateSelection(state.trick, HUMAN, cards);
       if (!check.ok) {
-        state.message = check.error;
+        state.message = playerErrorText(check.error, state.trick);
+        state.messageTone = "error";
         emit();
         return false;
       }
@@ -346,8 +361,9 @@ export function createController(options: ControllerOptions = {}): Controller {
       if (state.trick.currentPlayer !== HUMAN) return null;
       return chooseAction(state.trick, HUMAN);
     },
-    setMessage(text: string) {
+    setMessage(text: string, tone: MessageTone = "") {
       state.message = text;
+      state.messageTone = tone;
       emit();
     },
   };

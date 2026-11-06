@@ -64,7 +64,7 @@
       <div class="below">
         <section class="panel">
           <h2>Table talk</h2>
-          <ol class="log" id="log"></ol>
+          <ol class="log" id="log" aria-live="polite"></ol>
         </section>
       </div>
     </div>
@@ -96,8 +96,11 @@
     </div>
 
     <div class="overlay" id="help-overlay" hidden>
-      <div class="modal help">
-        <h2>How to play</h2>
+      <div class="modal help" role="dialog" aria-modal="true" aria-labelledby="help-title">
+        <div class="help-top">
+          <button id="help-close-top" class="ghost small" type="button" aria-label="Close How to play"><span aria-hidden="true">✕</span> Close</button>
+        </div>
+        <h2 id="help-title">How to play</h2>
         <h3>GOAL</h3>
         <p>First to 13 points. Shed all your cards, finish high, and don't get caught holding the big stuff.</p>
         <h3>START</h3>
@@ -105,9 +108,9 @@
         <h3>YOUR TURN</h3>
         <p>Beat the play on the table with the same kind of set, higher — or pass. Passing locks you out of the trick. The trick winner leads next.</p>
         <h3>CARDS</h3>
-        <p>3 is low, 2 is high; suits run ♠ &lt; ♣ &lt; ♦ &lt; ♥, so 2♥ is the biggest card in the game. Sets: singles, pairs, triples, four of a kind, straights, and pair runs.</p>
+        <p>3 is low, 2 is high; suits run ♠ &lt; ♣ &lt; ♦ &lt; ♥, so 2♥ is the biggest card in the game. Sets you lead and beat with: singles, pairs, triples, straights, and four of a kind. A double run (consecutive pairs) is not a set — it plays only as a bomb.</p>
         <h3>BOMBS BEAT 2s</h3>
-        <p>A 3-pair run bombs a single 2; a 4-pair run bombs a pair of 2s; four of a kind bombs either. Already passed? Only four of a kind and the 4-pair run can bring you back in.</p>
+        <p>A 3-pair double run bombs a single 2; a 4-pair double run bombs a pair of 2s; four of a kind bombs either. Already passed? Only four of a kind and the 4-pair double run can bring you back in.</p>
         <p>Example: 4♠4♣ 5♠5♣ 6♠6♣ — a 3-pair double run — bombs a single 2.</p>
         <p>Example: 4♠4♣ 5♠5♣ 6♠6♣ 7♠7♣ — a 4-pair double run — bombs a pair of 2s.</p>
         <p>Example: 9♠9♣9♦9♥ — four of a kind — bombs a single 2 or a pair of 2s.</p>
@@ -117,9 +120,9 @@
         <p>Bomb a 2 and its owner pays you 1 point per 2 — instantly.</p>
         <p>Bomb a bomb and its owner pays you 1 point — instantly. Even a led four of a kind counts: beat it with a higher four of a kind or a 4-pair double run and its owner pays you 1.</p>
         <h3>INSTANT WINS (dealt hands)</h3>
-        <p>Four 2s · six pairs · five straight pairs · dragon straight 3–A · three straight triples. Everyone pays you 2 and the round ends.</p>
+        <p>Four 2s · six pairs · five consecutive pairs · dragon straight 3–A · three consecutive triples. Everyone pays you 2 and the round ends.</p>
         <h3>SCORING</h3>
-        <p>1st +2, 2nd +1, 3rd pays 1 to 2nd, last pays 2 to 1st. Still holding 2s or unused bombs when the round ends: 1 point each, paid to the player above you.</p>
+        <p>1st +2, 2nd +1, 3rd pays 1 to 2nd, last pays 2 to 1st. Last place also pays 1st 1 point for each 2 and each unused bomb still in hand when the round ends.</p>
         <div class="banner-actions">
           <button id="help-close" type="button">Close</button>
         </div>
@@ -127,11 +130,11 @@
     </div>
 
     <div class="overlay" id="odds-overlay" hidden>
-      <div class="modal oddscard">
+      <div class="modal oddscard" role="dialog" aria-modal="true" aria-labelledby="odds-title" aria-describedby="odds-frame">
         <span class="odds-corner tl" aria-hidden="true">2<br>♥</span>
         <span class="odds-corner br" aria-hidden="true">2<br>♥</span>
-        <h2>Bomb odds</h2>
-        <p class="odds-frame">Dealt-hand odds: the chance your 13-card deal holds each one.</p>
+        <h2 id="odds-title">Bomb odds</h2>
+        <p class="odds-frame" id="odds-frame">Dealt-hand odds: the chance your 13-card deal holds each one.</p>
         <h3>BOMBS</h3>
         <table class="odds">
           <tr><td>3-pair double run</td><td class="num">8.36%</td><td class="num">1 in 12</td></tr>
