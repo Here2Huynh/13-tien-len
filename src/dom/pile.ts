@@ -35,7 +35,7 @@ export function resetPileRound(): void {
   lastPlayKey = null;
 }
 
-function miniCard(card: Card): HTMLElement {
+export function miniCard(card: Card): HTMLElement {
   const label = cardLabel(card);
   const node = el("div", `card mini ${label.color}`);
   node.dataset.cardId = card.id;

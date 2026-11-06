@@ -960,6 +960,30 @@ test("controller: an instant win by the human seat logs \"You win round 1 instan
   assert.match(s.log[1], /^You win round 1 instantly with /);
 });
 
+test("controller: an instant-win summary captures the dealt winning hand for the beat (TASK 043)", () => {
+  // Same scripted four-2s deal as the TASK 041 log test above.
+  const twos = createDeck().filter((card) => card.rank === "2");
+  let hands: Card[][] = [];
+  for (let seed = 41; seed < 500; seed++) {
+    const rest = shuffle(createDeck().filter((card) => card.rank !== "2"), seededRng(seed));
+    hands = [[...twos, ...rest.slice(0, 9)], rest.slice(9, 22), rest.slice(22, 35), rest.slice(35, 48)];
+    if (hands.slice(1).every((hand) => detectInstantWin(hand) === null)) break;
+  }
+  const controller = createController({ schedule: sync, dealHands: () => hands });
+  controller.newMatch();
+  const iw = controller.state.roundSummary?.instantWin;
+  assert.ok(iw, "the round is an instant win");
+  assert.equal(iw.hand.length, 13, "the full dealt hand is captured");
+  assert.deepEqual(
+    iw.hand, sortHand(hands[0]),
+    "the captured hand is the winner's dealt hand, in display order",
+  );
+  assert.ok(
+    iw.hand.filter((card) => card.rank === "2").length === 4,
+    "all four 2s are in it",
+  );
+});
+
 // The engine's own strings, read off real rejections — so the mapping
 // can never silently drift from what the engine throws.
 const thrown = (fn: () => void): string => {
