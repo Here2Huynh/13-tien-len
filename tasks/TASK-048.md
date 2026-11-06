@@ -1,6 +1,6 @@
 # TASK-048: Build/docs bundle — serve instructions, in-repo deploy + CI, self-hosted font, bundle cleanups, docs drift (audit #22–#26)
 
-Status: ASSIGNED (builder). Suite baseline: 183.
+Status: ASSIGNED (verifier) — PR #50, head 29bc9c069bef0b5bff103e8197addba8ccbff9fc (branch assembled in 3 commits from builder commit 089f6ef: 88ec583 push-files text files, f90ceef fonts web upload, 29bc9c0 workflow web upload; remote tree verified blob-identical to the builder commit). Suite baseline: 183.
 
 ## Why
 
