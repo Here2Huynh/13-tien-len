@@ -170,6 +170,33 @@ export function bombedBombLogLine({ payer, payee }: Chop): string {
   return `Bomb penalty: ${seatVerb(payer, "pay", "pays")} 1 to ${SEAT_NAMES[payee]} — ${POSSESSIVES[payer]} bomb was bombed.`;
 }
 
+// ---- Round-over banner: bomb-penalty note rows (TASK 042, audit #4) --
+// Mid-round bomb penalties (both kinds — a bombed 2 and a beaten
+// bomb; they share the controller's chops ledger) land on the match
+// scores the moment they happen, so they are inside each seat's
+// TOTAL but never in its ROUND gain. The banner explains the gap with
+// a note under the seat's row: previous + ROUND + note = TOTAL.
+
+/** A seat's net mid-round bomb-penalty points for one round: what it
+    received as a bomber minus what it paid as a bombed seat. */
+export function bombPenaltyNet(chops: readonly Chop[], player: number): number {
+  let net = 0;
+  for (const { payer, payee, points } of chops) {
+    if (payee === player) net += points;
+    if (payer === player) net -= points;
+  }
+  return net;
+}
+
+/** The note line for a seat's nonzero bomb-penalty net (null for a
+    zero net — no note). Signed like the ROUND column ("+2" / "-1").
+    "Bomb penalty: +2 — mid-round, already in her total." */
+export function bombPenaltyNoteLine(player: number, net: number): string | null {
+  if (net === 0) return null;
+  const signed = net > 0 ? `+${net}` : `${net}`;
+  return `Bomb penalty: ${signed} — mid-round, already in ${POSSESSIVES[player]} total.`;
+}
+
 // The companion line when a player who passed earlier in the same
 // trick returns with a comeback bomb (TASK 016).
 export function comebackLogLine(player: number): string {

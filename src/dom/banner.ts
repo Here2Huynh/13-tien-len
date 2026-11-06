@@ -1,5 +1,7 @@
 import type { ControllerState, RoundSummary } from "../ui/controller.js";
-import { SEAT_NAMES, seatVerb, penaltyLine, roundResultRows } from "../ui/model.js";
+import {
+  SEAT_NAMES, seatVerb, penaltyLine, roundResultRows, bombPenaltyNet, bombPenaltyNoteLine,
+} from "../ui/model.js";
 import { els, el, finishMedal } from "./elements.js";
 
 // Round/match summaries (TASK 036 split of main.ts): the round-over
@@ -244,6 +246,21 @@ export function renderBanner(state: ControllerState): void {
       prow.append(cell);
       table.append(prow);
     });
+    // Bomb-penalty note row (TASK 042, audit #4): the seat's net
+    // mid-round bomb penalties (both kinds, from the chops ledger)
+    // are already in TOTAL but not in ROUND, so a nonzero net gets
+    // a small static note under the seat's rows — after its
+    // round-end penalty rows, so those stay directly under the
+    // payer's row. A zero net shows nothing.
+    const note = bombPenaltyNoteLine(row.player, bombPenaltyNet(summary.chops, row.player));
+    if (note !== null) {
+      const nrow = el("tr", "bombnotetr");
+      const cell = el("td");
+      cell.setAttribute("colspan", "4");
+      cell.append(el("p", "note bombnote", note));
+      nrow.append(cell);
+      table.append(nrow);
+    }
   });
   body.append(table);
   els.continueBtn.hidden = state.phase === "matchEnd";

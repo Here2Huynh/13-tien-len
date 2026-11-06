@@ -425,6 +425,11 @@ button.small{padding:9px 14px;font-size:12.5px;border-radius:10px;}
 .sumtable .medal{width:26px;height:26px;font-size:13px;}
 .sumtable .penrowtr td{padding-top:0;border-bottom:none;}
 .sumtable .penrowtr p.note{margin:2px 0 6px;text-align:left;}
+/* TASK 042 (audit #4): the bomb-penalty note under a seat's rows —
+   a static, smaller muted line (a note, not a fifth column; no
+   animation, so reduced motion has nothing to still). */
+.sumtable .bombnotetr td{padding-top:0;border-bottom:none;}
+.sumtable .bombnotetr p.note{margin:2px 0 6px;padding-left:10px;text-align:left;font-size:12.5px;font-weight:600;font-style:italic;}
 .modal p.note{font-size:14.5px;font-weight:600;color:var(--ink-dim);line-height:1.45;}
 .modal .note{font-size:14.5px;font-weight:600;color:var(--ink-dim);line-height:1.45;}
 .banner-actions{margin-top:16px;}

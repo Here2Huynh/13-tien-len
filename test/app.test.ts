@@ -12,6 +12,7 @@ import {
   comebackLogLine, penaltyLine, matchInProgress,
   roundResultRows, scoreRows,
   conjugate, seatVerb, playerErrorText, ENGINE_ERRORS, NO_SELECTION,
+  bombPenaltyNet, bombPenaltyNoteLine,
   type SelectionCheck,
 } from "../src/ui/model.js";
 import { createController, type RoundSummary, type ControllerState } from "../src/ui/controller.js";
@@ -1164,4 +1165,44 @@ test("controller: seeded equivalence — the error-copy path changes no play, sc
   assert.deepEqual(b.log, a.log);
   assert.deepEqual(b.scores, a.scores);
   assert.equal(b.winner, a.winner);
+});
+
+// ---------- TASK 042 (audit #4): banner bomb-penalty note rows ----------
+
+test("model: bombPenaltyNet — a seat's net over both penalty kinds, paid and received (TASK 042)", () => {
+  // No penalties: every seat nets zero.
+  for (const p of [0, 1, 2, 3]) assert.equal(bombPenaltyNet([], p), 0);
+  // The seed-164 round-5 ledger (a bombed 2, then a bomb bombed, then
+  // that bomb bombed back): You receive 1, pay 1, receive 1.
+  const ledger = [
+    { payer: 3, payee: 0, points: 1 }, // Rosa's 2 bombed by You
+    { payer: 0, payee: 1, points: 1 }, // your bomb bombed by Mina
+    { payer: 1, payee: 0, points: 1 }, // Mina's bomb bombed by You
+  ];
+  assert.deepEqual([0, 1, 2, 3].map((p) => bombPenaltyNet(ledger, p)), [1, 0, 0, -1]);
+  // A pair of 2s pays 2; nets are zero-sum across the table.
+  const pair = [
+    { payer: 2, payee: 3, points: 2 },
+    { payer: 3, payee: 1, points: 1 },
+  ];
+  const nets = [0, 1, 2, 3].map((p) => bombPenaltyNet(pair, p));
+  assert.deepEqual(nets, [0, 1, -2, 1]);
+  assert.equal(nets.reduce((a, b) => a + b, 0), 0);
+});
+
+test("model: bombPenaltyNoteLine — 'Bomb penalty' copy, signed amount, per-seat possessive, none for zero (TASK 042)", () => {
+  assert.equal(bombPenaltyNoteLine(0, 1), "Bomb penalty: +1 — mid-round, already in your total.");
+  assert.equal(bombPenaltyNoteLine(1, -1), "Bomb penalty: -1 — mid-round, already in her total.");
+  assert.equal(bombPenaltyNoteLine(2, 2), "Bomb penalty: +2 — mid-round, already in his total.");
+  assert.equal(bombPenaltyNoteLine(3, -2), "Bomb penalty: -2 — mid-round, already in her total.");
+  for (const p of [0, 1, 2, 3]) assert.equal(bombPenaltyNoteLine(p, 0), null, "a zero net shows no note");
+  for (const p of [0, 1, 2, 3]) {
+    for (const net of [-3, -2, -1, 1, 2, 3]) {
+      const line = bombPenaltyNoteLine(p, net) as string;
+      assert.ok(line.startsWith("Bomb penalty: "), line);
+      assert.ok(!/chop/i.test(line), `no chop vocabulary: ${line}`);
+      // The amount parses back to the net (the banner's reconciliation reads it).
+      assert.equal(Number(/^Bomb penalty: ([+-]\d+) /.exec(line)?.[1]), net);
+    }
+  }
 });
