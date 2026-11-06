@@ -1,6 +1,8 @@
 # TASK-048: Build/docs bundle — serve instructions, in-repo deploy + CI, self-hosted font, bundle cleanups, docs drift (audit #22–#26)
 
-Status: ASSIGNED (verifier) — PR #50, head 29bc9c069bef0b5bff103e8197addba8ccbff9fc (branch assembled in 3 commits from builder commit 089f6ef: 88ec583 push-files text files, f90ceef fonts web upload, 29bc9c0 workflow web upload; remote tree verified blob-identical to the builder commit). Suite baseline: 183.
+Status: COMPLETE — PR #50 merged 1c46dd4 (verifier PASS, all 9
+VERIFY-048 items, head 29bc9c0), deployed da18aff2-4162-4a73-9892-2bf70ba461b8.
+Suite 183 -> 183.
 
 ## Why
 
