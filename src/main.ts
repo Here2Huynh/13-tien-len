@@ -97,6 +97,15 @@ export function render(state: ControllerState): void {
   els.playBtn.disabled = !myTurn;
   els.passBtn.disabled = !myTurn;
   els.hintBtn.disabled = !myTurn;
+  // Skip to end (TASK 044): offered only while you have finished
+  // the round and the CPUs are still playing it out; it goes
+  // away with the round-over banner.
+  els.skipBtn.hidden = !(
+    state.phase === "playing" &&
+    state.trick &&
+    !state.trick.roundOver &&
+    state.trick.finishOrder.includes(HUMAN)
+  );
 
   // Log.
   renderLog(state.log);
@@ -204,6 +213,23 @@ els.newMatchTop.addEventListener("click", () => requestNewMatch(opener(els.newMa
 els.startBtn.addEventListener("click", startFreshMatch);
 wireConfirm(startFreshMatch);
 els.resumeBtn.addEventListener("click", () => controller.newMatch(loadScoreSave() ?? undefined));
+
+// Speed + Skip (TASK 044, audit #13): pacing controls in the
+// hand's control row. The speed toggle flips the controller's
+// pacing mode (session-remembered; the next CPU turn uses it)
+// and repaints its own label — no render reads it. Skip drains
+// the rest of the round; render above owns its visibility.
+function paintSpeedBtn(): void {
+  const fast = controller.speed() === "fast";
+  els.speedBtn.textContent = fast ? "Speed: Fast" : "Speed: Normal";
+  els.speedBtn.setAttribute("aria-pressed", fast ? "true" : "false");
+}
+paintSpeedBtn();
+els.speedBtn.addEventListener("click", () => {
+  controller.setSpeed(controller.speed() === "fast" ? "normal" : "fast");
+  paintSpeedBtn();
+});
+els.skipBtn.addEventListener("click", () => controller.skipToRoundEnd());
 
 // How-to-play overlay (TASK 017): pure presentation. It never calls
 // the controller and never renders, so a game in progress resumes

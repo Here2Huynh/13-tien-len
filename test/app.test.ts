@@ -984,6 +984,135 @@ test("controller: an instant-win summary captures the dealt winning hand for the
   );
 });
 
+// ---------- TASK 044: Fast mode + skip to the end of the round ----------
+
+// Drive a full seeded match on a hand-fired timer queue: the
+// human seat plays the hint's action, CPU turns fire one timer
+// at a time, and every armed delay is recorded against the
+// action the turn is due to take. In "skip" mode the driver
+// calls skipToRoundEnd() at every opportunity instead of firing
+// the round's remaining timers.
+function driveMatch044(
+  seed: number,
+  mode: "normal" | "fast" | "skip",
+): {
+  log: string[];
+  scores: number[];
+  winner: number | null;
+  delays: { ms: number; type: Action["type"] }[];
+  skips: number;
+} {
+  const queue: { fn: () => void; ms: number }[] = [];
+  const rng = seededRng(seed);
+  const controller = createController({
+    schedule: (fn, ms) => {
+      queue.push({ fn, ms });
+    },
+    dealHands: () => newDeal(rng),
+  });
+  if (mode === "fast") controller.setSpeed("fast");
+  const delays: { ms: number; type: Action["type"] }[] = [];
+  let skips = 0;
+  controller.newMatch();
+  for (let guard = 0; guard < 20000; guard++) {
+    const st = controller.state;
+    if (st.phase === "matchEnd") {
+      return {
+        log: [...st.log],
+        scores: [...(st.match?.scores ?? [])],
+        winner: st.match?.winner ?? null,
+        delays,
+        skips,
+      };
+    }
+    if (st.phase === "roundEnd") {
+      controller.continueRound();
+      continue;
+    }
+    if (
+      mode === "skip" &&
+      st.trick &&
+      !st.trick.roundOver &&
+      st.trick.finishOrder.includes(0)
+    ) {
+      skips++;
+      controller.skipToRoundEnd();
+      continue;
+    }
+    if (st.trick && st.trick.currentPlayer === 0) {
+      const a = controller.hint();
+      if (a && a.type === "play") controller.humanPlay(a.cards);
+      else controller.humanPass();
+      continue;
+    }
+    const next = queue.shift();
+    assert.ok(next, "a CPU timer is armed while a CPU turn is due");
+    const due = controller.state.trick;
+    assert.ok(due, "a trick is live while a CPU turn is due");
+    delays.push({ ms: next.ms, type: chooseAction(due, due.currentPlayer).type });
+    next.fn();
+  }
+  throw new Error("the driven match never ended");
+}
+
+test("controller: Fast shortens CPU delays (passes quicker than plays); Normal keeps 650 for both; decisions identical (TASK 044)", () => {
+  const normal = driveMatch044(7, "normal");
+  assert.ok(normal.delays.length > 0, "CPU turns were scheduled");
+  assert.ok(
+    normal.delays.every((d) => d.ms === 650),
+    "Normal arms every CPU turn at the original 650 ms, plays and passes alike",
+  );
+  const fast = driveMatch044(7, "fast");
+  assert.equal(fast.delays.length, normal.delays.length, "the same CPU turns are taken");
+  assert.deepEqual(
+    fast.delays.map((d) => d.type),
+    normal.delays.map((d) => d.type),
+    "the same sequence of plays and passes",
+  );
+  for (const d of fast.delays) {
+    assert.equal(d.ms, d.type === "pass" ? 100 : 250, `Fast ${d.type} delay`);
+  }
+  assert.ok(fast.delays.some((d) => d.type === "pass"), "the match contains CPU passes");
+  assert.ok(fast.delays.some((d) => d.type === "play"), "the match contains CPU plays");
+  assert.deepEqual(fast.log, normal.log, "identical log at either speed");
+  assert.deepEqual(fast.scores, normal.scores, "identical final scores");
+  assert.equal(fast.winner, normal.winner, "identical match winner");
+});
+
+test("controller: skip to end of round lands exactly the played-out round (TASK 044)", () => {
+  const played = driveMatch044(1, "normal");
+  const skipped = driveMatch044(1, "skip");
+  assert.ok(skipped.skips > 0, "skip opportunities arose and were taken");
+  assert.deepEqual(skipped.log, played.log, "identical log with skip used at every opportunity");
+  assert.deepEqual(skipped.scores, played.scores, "identical final scores");
+  assert.equal(skipped.winner, played.winner, "identical match winner");
+});
+
+test("controller: skip is a no-op until the human has finished the round; speed starts at Normal (TASK 044)", () => {
+  const queue: { fn: () => void; ms: number }[] = [];
+  const rng = seededRng(3);
+  const controller = createController({
+    schedule: (fn, ms) => {
+      queue.push({ fn, ms });
+    },
+    dealHands: () => newDeal(rng),
+  });
+  assert.equal(controller.speed(), "normal", "a fresh controller paces at Normal");
+  controller.setSpeed("fast");
+  assert.equal(controller.speed(), "fast");
+  controller.setSpeed("normal");
+  assert.equal(controller.speed(), "normal");
+  controller.skipToRoundEnd();
+  assert.equal(controller.state.phase, "idle", "skip at idle does nothing");
+  controller.newMatch();
+  const logBefore = controller.state.log.length;
+  const playerBefore = controller.state.trick?.currentPlayer;
+  controller.skipToRoundEnd();
+  assert.equal(controller.state.phase, "playing", "nobody has finished: the round plays on");
+  assert.equal(controller.state.log.length, logBefore, "no action was taken");
+  assert.equal(controller.state.trick?.currentPlayer, playerBefore, "the same turn stands");
+});
+
 // The engine's own strings, read off real rejections — so the mapping
 // can never silently drift from what the engine throws.
 const thrown = (fn: () => void): string => {

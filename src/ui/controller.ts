@@ -100,6 +100,12 @@ export interface MatchSeed {
   round: number;
 }
 
+/** CPU pacing (TASK 044, audit #13): Normal is the original
+    pacing; Fast shortens the CPU think/pass delays only. Pacing
+    never touches a decision — the policy is deterministic, and
+    the action applied is always chosen when the turn is taken. */
+export type SpeedMode = "normal" | "fast";
+
 export interface Controller {
   state: ControllerState;
   newMatch(seed?: MatchSeed): void;
@@ -108,6 +114,19 @@ export interface Controller {
   humanPass(): boolean;
   hint(): Action | null;
   setMessage(text: string, tone?: MessageTone): void;
+  /** The current CPU pacing mode (TASK 044). Session-scoped: a
+      fresh controller starts at Normal. */
+  speed(): SpeedMode;
+  /** Switch pacing mid-match; the next CPU turn scheduled uses
+      the new mode (a turn already counting down keeps the delay
+      it was armed with). */
+  setSpeed(mode: SpeedMode): void;
+  /** Fast-forward the rest of the round (TASK 044): only once
+      the human seat has finished the round. Takes exactly the
+      CPU turns the timers would have taken, synchronously, so
+      the round lands on its banner with identical plays,
+      scores, penalties and log. A no-op at any other time. */
+  skipToRoundEnd(): void;
 }
 
 const INSTANT_WIN_NAMES: Record<InstantWinKind, string> = {
@@ -118,11 +137,31 @@ const INSTANT_WIN_NAMES: Record<InstantWinKind, string> = {
   "three-consecutive-triples": "three consecutive triples",
 };
 
+// Fast pacing (TASK 044): a play thinks for ~250 ms; a pass is
+// a non-decision and resolves quicker still.
+const FAST_PLAY_MS = 250;
+const FAST_PASS_MS = 100;
+
 export function createController(options: ControllerOptions = {}): Controller {
   const onChange = options.onChange ?? (() => {});
   const schedule = options.schedule ?? ((fn: () => void, ms: number) => setTimeout(fn, ms));
   const cpuDelayMs = options.cpuDelayMs ?? 650;
   const dealHands = options.dealHands ?? (() => newDeal(Math.random));
+  // TASK 044: pacing state. Session-scoped (a fresh controller is
+  // Normal), switchable mid-match, and consulted only when a CPU
+  // turn is scheduled — it can never reach a decision.
+  let speedMode: SpeedMode = "normal";
+  // TASK 044: while a skip drains the round, applyAction's tail
+  // must not arm timers for turns the drain itself is taking.
+  let skipping = false;
+
+  function cpuDelayFor(actionType: Action["type"]): number {
+    if (speedMode === "fast") {
+      return actionType === "pass" ? FAST_PASS_MS : FAST_PLAY_MS;
+    }
+    // Normal: the one original delay for plays and passes alike.
+    return cpuDelayMs;
+  }
 
   const state: ControllerState = {
     phase: "idle", // idle | playing | roundEnd | matchEnd
@@ -320,17 +359,25 @@ export function createController(options: ControllerOptions = {}): Controller {
   }
 
   function maybeCpu(): void {
+    if (skipping) return;
     if (state.phase !== "playing" || !state.trick || state.trick.roundOver) return;
     const player = state.trick.currentPlayer;
     if (player === HUMAN || cpuPending) return;
     cpuPending = true;
+    // TASK 044: the delay depends on what the CPU is about to do
+    // (Fast passes resolve quicker than Fast plays), so the
+    // deterministic policy is peeked to price the pause. The
+    // peek decides nothing: the action applied when the timer
+    // fires is chosen fresh from the state at that moment,
+    // exactly as before.
+    const peeked = chooseAction(state.trick, player);
     schedule(() => {
       cpuPending = false;
       if (state.phase !== "playing" || !state.trick) return;
       const current = state.trick.currentPlayer;
       if (current === HUMAN) return;
       applyAction(current, chooseAction(state.trick, current));
-    }, cpuDelayMs);
+    }, cpuDelayFor(peeked.type));
   }
 
   return {
@@ -382,6 +429,38 @@ export function createController(options: ControllerOptions = {}): Controller {
       state.message = text;
       state.messageTone = tone;
       emit();
+    },
+    speed() {
+      return speedMode;
+    },
+    setSpeed(mode: SpeedMode) {
+      speedMode = mode;
+    },
+    skipToRoundEnd() {
+      if (state.phase !== "playing" || !state.trick || state.trick.roundOver) return;
+      if (!state.trick.finishOrder.includes(HUMAN)) return;
+      // Take the remaining CPU turns now, through the same
+      // applyAction the timers would have called with the same
+      // freshly chosen actions — the round's plays, scores,
+      // penalties and log are exactly the played-out ones; only
+      // the waiting is gone. A CPU timer armed before the skip
+      // may still fire afterwards; its guards (phase, current
+      // player) make it a no-op once the banner is up, the same
+      // standing behavior as a timer pending across a New Match.
+      skipping = true;
+      try {
+        while (
+          state.phase === "playing" &&
+          state.trick &&
+          !state.trick.roundOver &&
+          state.trick.currentPlayer !== HUMAN
+        ) {
+          const current = state.trick.currentPlayer;
+          applyAction(current, chooseAction(state.trick, current));
+        }
+      } finally {
+        skipping = false;
+      }
     },
   };
 }
