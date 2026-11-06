@@ -17,14 +17,17 @@ report + evidence live in the run folder named in the assignment.
    form ("🏆 <Name> wins the match!") — for a CPU winner and, if
    reachable in the harness, the human seat. A normal match end is
    unchanged.
-5. Winning hand shown: during the instant-win celebration beat of
-   a match-ending instant win, the winner's dealt instant-win hand
-   renders as cards — the exact cards of the hand (e.g. four 2s),
-   verified against the deal. Beat timings, skip, and
-   reduced-motion behavior match Task 033's locked values.
-6. Round-level instant win unchanged: a mid-match instant win
-   (match continues) shows the beat and banner exactly as on main —
-   no winner-named match title, no hand display change.
+5. Winning hand shown: during every instant-win celebration beat
+   — round-level and match-ending alike (owner ruling 2026-11-05,
+   option A) — the winner's dealt instant-win hand renders as
+   cards — the exact cards of the hand (e.g. four 2s), verified
+   against the deal. Beat timings, skip, and reduced-motion
+   behavior match Task 033's locked values.
+6. Round-level instant win (amended — owner ruling 2026-11-05,
+   option A): a mid-match instant win DOES show the winning hand
+   in the beat (item 5 applies); everything else is exactly as on
+   main — banner title stays "Instant win!", no winner-named
+   match title, beat/banner timings and layout unchanged.
 7. Equivalence: seeded full matches vs main — identical plays,
    scores, outcomes; presentation-only (final state identical with
    the new title/hand presentation suppressed).

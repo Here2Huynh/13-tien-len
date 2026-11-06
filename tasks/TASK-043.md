@@ -1,6 +1,7 @@
 # TASK-043: Instant-win match end — name the winner, show the winning hand (audit #6)
 
-Status: ASSIGNED (builder). Suite baseline: 171.
+Status: ASSIGNED (verifier) — PR #45, head da96624 (builder
+commit 646bb17). Suite baseline: 171.
 
 ## Why
 
@@ -19,12 +20,17 @@ Owner ruling (2026-11-04 walk-through): the FULL fix — winner named
 - When a match ends on an instant win, the match-over banner title
   names the winner, in the same form as a normal match end
   ("🏆 <Name> wins the match!"). A round-level instant win that does
-  NOT end the match keeps the existing Task 033 beat/banner exactly
-  as-is.
+  NOT end the match keeps the existing banner title ("Instant
+  win!"), the Task 033 beat/banner layout, and all beat/banner
+  timings exactly as-is — the winning-hand display in the next
+  bullet applies to it as well (owner ruling 2026-11-05, option A:
+  the hand shows in EVERY instant-win beat).
 - The winning hand (the dealt instant-win hand: four 2s, six pairs,
   five consecutive pairs, dragon straight 3–A, or three consecutive
   triples) is shown as cards during the instant-win celebration
-  beat, so the hand that ended it is visible before the banner.
+  beat — every instant-win beat, round-level and match-ending alike
+  (owner ruling 2026-11-05, option A) — so the hand that ended it
+  is visible before the banner.
   The beat's existing timings, skip behavior, and reduced-motion
   handling stay as Task 033 locked them; the cards ride the beat,
   they do not extend it.
@@ -45,7 +51,7 @@ Owner ruling (2026-11-04 walk-through): the FULL fix — winner named
   assertion removed or loosened without a build-report disclosure.
 - Presentation-only: seeded full-match equivalence vs main —
   identical plays, scores, outcomes; only the beat/banner
-  presentation of an instant-win match end differs.
+  presentation of instant wins differs.
 - Player-facing vocabulary: "Bomb penalty" only; the word "Chop"
   appears in no player-facing string.
 - Option C probes: patched Chrome for Testing 156.0.8078.80,
