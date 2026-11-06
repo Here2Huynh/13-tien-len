@@ -96,6 +96,7 @@ completion.
 | 044 | Fast mode + Skip to end of round — Normal/Fast speed setting (650 ms / 250 ms plays, 100 ms passes) and a Skip control once you're out that drains the round to the banner | #46 | ✅ Merged · Live |
 | 045 | Visual batch — primaries deepened to AA contrast (blue/red/green ~5.3:1), action buttons ≥44px + CPU counts 12.5px, foil hidden under reduced motion, height-bound stage zoom fits short desktop viewports | #47 | ✅ Merged · Live |
 | 046 | One source of truth for rule predicates — bombAnswers/legalBombs/functionedAsBomb/applyTurn single-sourced in the engine; honest leader typing (all five `as number` casts gone, TrickOptions.leader number \| null) — pure refactor, zero behavior change | #48 | ✅ Merged · Live |
+| 047 | Tests bundle — bomb-odds enumeration becomes a proven checked-in fixture (default suite 36.4s → 9.3s), coverage gaps closed (two instant-win hands in one deal; a save crossing 13 mid-round pins the round-end rule), Option C probe script checked into tools/probe/, CSS assertions compare parsed values with locked values still pinned — src/ byte-untouched | #49 | ✅ Merged · Live |
 
 ## Play
 
