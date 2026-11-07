@@ -3,7 +3,7 @@
 Status: COMPLETE. PR #51 merged 1df83cefb3a26b86c0432801e776b3048b662fed
 (merge method, expectedHeadSha 09fda1bd1538060baf626d23f74a0f955267dae0);
 verifier PASS on all 8 VERIFY-049 items (PR comment 6700167142);
-deployed c52450a1-aa0d-4230-88de-479c39a84e93; live index.html,
+deployed d1bec621-824f-4bf1-9784-1294f6ddc00f; live index.html,
 src/styles.css, src/main.js, src/ui/controller.js and src/dom/fx.js
 byte-match dist, `lastTrickWinner` signature live. Suite 185/185.
 Built 2026-11-05 at 9349c25 off an old base and held; the owner
