@@ -83,6 +83,17 @@ export interface ControllerState {
       +1 at every deal and every time an action clears the trick
       (exactly when the engine's trickNumber moves), never reset. */
   trickId: number;
+  /** Winner of the most recently completed trick in the current
+      round (TASK 049): captured by the controller from the
+      play/pass sequence at the moment the trick cleared — the
+      player who made the standing play (or the play itself, when
+      the play cleared the trick). The engine nulls its own
+      lastPlayer as it clears, so anything reading the trick
+      afterwards finds nobody; this field is the fx layer's
+      collect target. Null until the first trick of a round
+      completes; reset at every deal. Presentation only — no
+      game logic reads it. */
+  lastTrickWinner: number | null;
 }
 
 export interface ControllerOptions {
@@ -174,6 +185,7 @@ export function createController(options: ControllerOptions = {}): Controller {
     roundSummary: null,
     roundId: 0,
     trickId: 0,
+    lastTrickWinner: null,
   };
 
   let cpuPending = false;
@@ -190,6 +202,7 @@ export function createController(options: ControllerOptions = {}): Controller {
     state.roundId += 1;
     state.trickId += 1;
     state.trickView = emptyTrickView();
+    state.lastTrickWinner = null;
     state.roundSummary = null;
     state.message = "";
     state.messageTone = "";
@@ -295,8 +308,14 @@ export function createController(options: ControllerOptions = {}): Controller {
     }
     if (trick.trickNumber !== trickNumberBefore) {
       // The action cleared the trick; the new trick starts blank
-      // under a new trick identity (TASK 036).
+      // under a new trick identity (TASK 036). Capture the winner
+      // NOW, from the sequence that completed the trick (TASK
+      // 049): a clearing play wins itself; a clearing pass leaves
+      // the standing play's owner as winner. The engine has
+      // already nulled its own record by the time anyone renders.
       state.trickId += 1;
+      state.lastTrickWinner =
+        action.type === "play" ? player : (prevPlay?.player ?? state.lastTrickWinner);
       state.trickView = emptyTrickView();
     } else if (action.type === "play") {
       state.trickView = applyToTrickView(state.trickView, {
@@ -342,9 +361,14 @@ export function createController(options: ControllerOptions = {}): Controller {
     while (!trick.roundOver && isDeadComebackTurn(trick, trick.currentPlayer)) {
       const player = trick.currentPlayer;
       const trickNumberBefore = trick.trickNumber;
+      // A declined pass can be the one that clears the trick; the
+      // winner is whoever's play is standing (TASK 049 capture,
+      // same rule as the clearing pass in applyAction).
+      const standing = trick.currentPlay;
       passTurn(trick, player);
       if (trick.trickNumber !== trickNumberBefore) {
         state.trickId += 1;
+        state.lastTrickWinner = standing?.player ?? state.lastTrickWinner;
         state.trickView = emptyTrickView();
       } else {
         state.trickView = applyToTrickView(state.trickView, { type: "pass", player });

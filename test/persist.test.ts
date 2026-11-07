@@ -36,6 +36,7 @@ function stateWith(phase: Phase, match: Match | null): ControllerState {
     roundSummary: null,
     roundId: 1,
     trickId: 1,
+    lastTrickWinner: null,
   };
 }
 

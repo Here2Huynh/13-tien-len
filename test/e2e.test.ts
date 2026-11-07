@@ -1124,9 +1124,9 @@ test("e2e: lockout grey — a CPU lockout pass greys the seat until the round en
 // dealt round (before TASK 036 that was signalled by its new trick
 // object), so it mints ids no controller-driven state ever uses.
 let fixtureIdSeq = 1_000_000;
-function freshIds(): { roundId: number; trickId: number } {
+function freshIds(): { roundId: number; trickId: number; lastTrickWinner: number | null } {
   fixtureIdSeq += 1;
-  return { roundId: fixtureIdSeq, trickId: fixtureIdSeq };
+  return { roundId: fixtureIdSeq, trickId: fixtureIdSeq, lastTrickWinner: null };
 }
 
 test("e2e: LOCKED stamp plays once per lockout — stampplay only on the newly-locked render (TASK 028)", async () => {
@@ -1237,6 +1237,105 @@ test("e2e: animations on vs reduced-motion — identical final state, zero calls
     "expected animation calls with motion on",
   );
   assert.deepEqual(animated, reduced);
+});
+
+test("e2e: pile collect — mid-round trick clears fly the pile to the trick winner's seat (TASK 049)", async () => {
+  await import("../src/main.js");
+  fakeStorage.clear();
+  // Give the four seats distinct layout boxes: the collect ghost
+  // reads its destination from the target seat's rect, so the
+  // seat a ghost flies to is observable in its keyframes. The
+  // pile minis keep zero rects, so a ghost's final translate IS
+  // the winner seat's center.
+  const CENTERS: Record<number, { x: number; y: number }> = {
+    0: { x: 300, y: 500 },
+    1: { x: 100, y: 100 },
+    2: { x: 300, y: 100 },
+    3: { x: 500, y: 100 },
+  };
+  const seatEl = (p: number): FakeElement => (p === 0 ? $("you-area") : $(`seat-${p}`));
+  for (const p of [0, 1, 2, 3]) {
+    const c = CENTERS[p];
+    seatEl(p)._rect = {
+      left: c.x - 50, top: c.y - 25, right: c.x + 50, bottom: c.y + 25,
+      width: 100, height: 50,
+    };
+  }
+  const ghosts = (): FakeElement[] => {
+    const layer = fakeDocument.body.children.find((ch) => ch.className === "fx-layer");
+    return layer
+      ? layer.appendHistory.filter((ch) => (ch.className ?? "").split(/\s+/).includes("fx-ghostcard"))
+      : [];
+  };
+  // The play currently standing on the pile, from the pile's own
+  // "played by" line — the trick winner is whoever made it.
+  const standingPlayer = (): number | null => {
+    const m = /played by (You|Mina|Kenji|Rosa)/.exec($("to-beat").textContent);
+    return m ? SEAT_NAMES.indexOf(m[1] as string) : null;
+  };
+  // The collect ghost is browser-only by design: it clones the
+  // pile minis, and the shared fake element never grew a
+  // cloneNode — so this test lends it one (a faithful structural
+  // clone), scoped to this test only and removed at the end.
+  const cloneFake = (node: FakeElement, deep: boolean): FakeElement => {
+    const copy = new FakeElement(node.tagName);
+    copy.className = node.className;
+    copy._text = node._text;
+    copy._rect = node._rect;
+    copy.dataset = { ...node.dataset };
+    copy.style = { ...node.style };
+    if (deep) for (const child of node.children) copy.appendChild(cloneFake(child, true));
+    return copy;
+  };
+  (FakeElement.prototype as { cloneNode?: (deep?: boolean) => FakeElement }).cloneNode =
+    function (this: FakeElement, deep?: boolean) {
+      return cloneFake(this, deep ?? false);
+    };
+  Math.random = seededRng(101);
+  newMatchTop();
+  // Step the match one atomic action at a time (one timer = one
+  // CPU action; a hint+play pair = one human action), checking
+  // every mid-round collect against the play that was standing
+  // before the step. Round-end collects (banner up) are skipped
+  // — they are not this test's subject.
+  let verified = 0;
+  let seen = ghosts().length;
+  for (let step = 0; step < 6000 && verified < 3; step++) {
+    if (!$("banner").hidden) {
+      if (isMatchEndBanner()) break;
+      $("continue-btn").click();
+      seen = ghosts().length;
+      continue;
+    }
+    const standing = standingPlayer();
+    if (timerQueue.length > 0) {
+      timerQueue.shift()!();
+    } else if (!$("play-btn").disabled) {
+      humanMove();
+    } else {
+      break; // nothing to advance: no timers, not our turn, no banner
+    }
+    const now = ghosts();
+    if (now.length > seen) {
+      const fresh = now.slice(seen);
+      seen = now.length;
+      if (!$("banner").hidden) continue; // the round-end collect
+      assert.ok(standing !== null, "a collect fired with no standing play to credit");
+      const c = CENTERS[standing as number];
+      for (const ghost of fresh) {
+        const frames = ghost.animations[0]?.keyframes as { transform: string }[];
+        assert.equal(
+          frames?.[1]?.transform,
+          `translate(${c.x}px, ${c.y}px) scale(.5)`,
+          `collect ghost flies to ${SEAT_NAMES[standing as number]}'s seat`,
+        );
+      }
+      verified++;
+    }
+  }
+  delete (FakeElement.prototype as { cloneNode?: unknown }).cloneNode;
+  for (const p of [0, 1, 2, 3]) seatEl(p)._rect = undefined;
+  assert.ok(verified >= 3, `expected at least 3 verified mid-round collects, saw ${verified}`);
 });
 
 test("e2e: bomb-penalty float — none on a New match reset, exactly one per genuine chop (TASK 014 fix)", async () => {
@@ -1780,7 +1879,7 @@ test("e2e: score persistence — corrupt and out-of-range saves are discarded (T
   const main = await import("../src/main.js");
   const idle: ControllerState = {
     phase: "idle", match: null, trick: null, message: "", log: [],
-    trickView: emptyTrickView(), roundSummary: null, roundId: 0, trickId: 0,
+    trickView: emptyTrickView(), roundSummary: null, roundId: 0, trickId: 0, lastTrickWinner: null,
   };
   const badPayloads = [
     "not json at all",
@@ -1887,7 +1986,7 @@ test("e2e: start screen — Resume offered iff a save exists, labeled with round
   fakeStorage.throws = false;
   const idle: ControllerState = {
     phase: "idle", match: null, trick: null, message: "", log: [],
-    trickView: emptyTrickView(), roundSummary: null, roundId: 0, trickId: 0,
+    trickView: emptyTrickView(), roundSummary: null, roundId: 0, trickId: 0, lastTrickWinner: null,
   };
   // No save: the gate is exactly as it always was — no Resume
   // control, and the start button keeps its original label.
@@ -3472,7 +3571,7 @@ test("e2e: New Match confirm — nothing to lose stays one tap: match-over banne
   fakeStorage.setItem(SCORE_KEY, JSON.stringify({ scores: [5, -2, 3, 0], round: 4 }));
   main.render({
     phase: "idle", match: null, trick: null, message: "", log: [],
-    trickView: emptyTrickView(), roundSummary: null, roundId: 0, trickId: 0,
+    trickView: emptyTrickView(), roundSummary: null, roundId: 0, trickId: 0, lastTrickWinner: null,
   });
   assert.equal($("start-btn").textContent, "New Match");
   $("start-btn").click();
