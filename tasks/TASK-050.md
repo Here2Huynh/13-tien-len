@@ -1,7 +1,8 @@
 # TASK-050: Bomb animation — "Shockwave"
 
-Status: QUEUED (after the audit batch and TASK-049).
-Suite baseline: 122 (moves with the queue).
+Status: ASSIGNED (builder). Task 049 closed 2026-11-06
+(PR #51 merged, deployed); this is the next task in the queue.
+Suite baseline: 185.
 Source: John's FR 2026-11-04 ("i want to have a animation for
 bombs"). Animated mockups produced the same day
 (~/workspace/13tl-mockups-bomb/: baseline + four variants on the

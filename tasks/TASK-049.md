@@ -1,14 +1,17 @@
 # TASK-049: Restore the mid-round pile-collect animation
 
-Status: ASSIGNED (verifier). Rebased build picked up by the
-foreman 2026-11-06: builder commit 97b875f on main 73ffd24,
-PR #51 open at head 09fda1bd1538060baf626d23f74a0f955267dae0;
-verification per tasks/VERIFY-049.md. Built 2026-11-05
-at 9349c25 off an old base and held; the owner ruled 2026-11-06
-(option B) that the finished build proceeds: rebase onto current
-main, re-verify the merged result, then PR + independent
-verification as usual.
-Suite baseline: 166.
+Status: COMPLETE. PR #51 merged 1df83cefb3a26b86c0432801e776b3048b662fed
+(merge method, expectedHeadSha 09fda1bd1538060baf626d23f74a0f955267dae0);
+verifier PASS on all 8 VERIFY-049 items (PR comment 6700167142);
+deployed c52450a1-aa0d-4230-88de-479c39a84e93; live index.html,
+src/styles.css, src/main.js, src/ui/controller.js and src/dom/fx.js
+byte-match dist, `lastTrickWinner` signature live. Suite 185/185.
+Built 2026-11-05 at 9349c25 off an old base and held; the owner
+ruled 2026-11-06 (option B) that the finished build proceeds:
+rebase onto current main (rebased builder commit 97b875f),
+re-verify the merged result, then PR + independent verification
+as usual.
+Suite baseline: 166 (185 at completion).
 Source: found by the TASK-036 verifier, 2026-11-04 — a
 pre-existing defect present on base and head alike. **John ruled
 "Fix it — restore the mid-round collect" on 2026-11-04.**
