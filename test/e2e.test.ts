@@ -12,6 +12,7 @@ import { newDeal } from "../src/engine/deal.js";
 import { detectInstantWin } from "../src/engine/instantWin.js";
 import type { ControllerState } from "../src/ui/controller.js";
 import { seededRng } from "../src/engine/runner.js";
+import { functionedAsBomb } from "../src/engine/bombs.js";
 
 // Functional end-to-end tests for the playable UI.
 //
@@ -1336,6 +1337,104 @@ test("e2e: pile collect — mid-round trick clears fly the pile to the trick win
   delete (FakeElement.prototype as { cloneNode?: unknown }).cloneNode;
   for (const p of [0, 1, 2, 3]) seatEl(p)._rect = undefined;
   assert.ok(verified >= 3, `expected at least 3 verified mid-round collects, saw ${verified}`);
+});
+
+test("e2e: shockwave — fires on bomb plays only, two rings and a felt pulse per bomb (TASK 050)", async () => {
+  await import("../src/main.js");
+  // pile.js pulls in the DOM element table, so it can only be
+  // imported after the fake document exists (post-main import).
+  const { pilePlays } = await import("../src/dom/pile.js");
+  fakeStorage.clear();
+  const layer = (): FakeElement | undefined =>
+    fakeDocument.body.children.find((ch) => ch.className === "fx-layer");
+  const shockCount = (cls: string): number => {
+    const l = layer();
+    return l
+      ? l.appendHistory.filter((ch) => (ch.className ?? "").split(/\s+/).includes(cls)).length
+      : 0;
+  };
+  const byId = new Map(createDeck().map((c) => [c.id, c]));
+  const prevRandom = Math.random;
+  Math.random = seededRng(38);
+  try {
+    newMatchTop();
+    // Step one atomic action at a time. A step where the pile's
+    // standing play changed is a landed play: classify it with
+    // the same functionedAsBomb the fx layer uses (the pile
+    // tracker's prevPlay is the play it answered) and check the
+    // shock spawns against the verdict.
+    let bombSteps = 0;
+    let landedSteps = 0;
+    for (let step = 0; step < 6000; step++) {
+      if (!$("banner").hidden) {
+        if (isMatchEndBanner()) break;
+        $("continue-btn").click();
+        continue;
+      }
+      const keyBefore = pilePlays().playKey;
+      const ringsBefore = shockCount("fx-shockring");
+      const feltsBefore = shockCount("fx-shockfelt");
+      if (timerQueue.length > 0) {
+        timerQueue.shift()!();
+      } else if (!$("play-btn").disabled) {
+        humanMove();
+      } else {
+        break;
+      }
+      const rings = shockCount("fx-shockring") - ringsBefore;
+      const felts = shockCount("fx-shockfelt") - feltsBefore;
+      const { playKey, prevPlay } = pilePlays();
+      if (playKey !== null && playKey !== keyBefore) {
+        landedSteps++;
+        const cards = playKey
+          .split(":")[1]
+          .split(",")
+          .map((id) => byId.get(id) as Card);
+        if (functionedAsBomb(prevPlay, cards)) {
+          bombSteps++;
+          assert.equal(rings, 2, "a bomb play spawns exactly two shockwave rings");
+          assert.equal(felts, 1, "a bomb play spawns exactly one felt pulse");
+        } else {
+          assert.equal(rings, 0, "a non-bomb play spawns no shockwave rings");
+          assert.equal(felts, 0, "a non-bomb play spawns no felt pulse");
+        }
+      } else {
+        assert.equal(rings, 0, "a pass or re-render spawns no shockwave rings");
+        assert.equal(felts, 0, "a pass or re-render spawns no felt pulse");
+      }
+    }
+    assert.ok(landedSteps > 40, `the match really played out (${landedSteps} landed plays)`);
+    assert.ok(bombSteps >= 2, `expected at least 2 bomb plays in the seed-38 match, saw ${bombSteps}`);
+  } finally {
+    Math.random = prevRandom;
+  }
+});
+
+test("e2e: shockwave — a five-consecutive-pairs instant win spawns nothing (TASK 050)", async () => {
+  await import("../src/main.js");
+  fakeStorage.clear();
+  // Fixture guard: seed 119 deals seat 3 five consecutive pairs.
+  assert.equal(
+    detectInstantWin(newDeal(seededRng(119))[3])?.kind,
+    "five-consecutive-pairs",
+  );
+  const shockTotal = (): number => {
+    const layer = fakeDocument.body.children.find((ch) => ch.className === "fx-layer");
+    return layer
+      ? layer.appendHistory.filter((ch) => /fx-shock(ring|felt)/.test(ch.className ?? "")).length
+      : 0;
+  };
+  const shocksBefore = shockTotal();
+  const prevRandom = Math.random;
+  Math.random = seededRng(119);
+  try {
+    newMatchTop();
+    settle();
+    assert.equal($("banner").hidden, false, "the instant win ends the round at the deal");
+    assert.equal(shockTotal() - shocksBefore, 0, "an instant win is not a bomb: no shockwave, no felt pulse");
+  } finally {
+    Math.random = prevRandom;
+  }
 });
 
 test("e2e: bomb-penalty float — none on a New match reset, exactly one per genuine chop (TASK 014 fix)", async () => {
