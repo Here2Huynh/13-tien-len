@@ -1,6 +1,9 @@
 # TASK-049: Restore the mid-round pile-collect animation
 
-Status: ASSIGNED (builder — rebase + re-verify). Built 2026-11-05
+Status: ASSIGNED (verifier). Rebased build picked up by the
+foreman 2026-11-06: builder commit 97b875f on main 73ffd24,
+PR #51 open at head 09fda1bd1538060baf626d23f74a0f955267dae0;
+verification per tasks/VERIFY-049.md. Built 2026-11-05
 at 9349c25 off an old base and held; the owner ruled 2026-11-06
 (option B) that the finished build proceeds: rebase onto current
 main, re-verify the merged result, then PR + independent
