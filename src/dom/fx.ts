@@ -362,7 +362,12 @@ export function endFx(fx: FxBegin, state: ControllerState, pile: PilePlays): voi
     }
 
     // Trick cleared (a new trickId within the same round) or the
-    // round ended: collect the pile.
+    // round ended: collect the pile. The round-end winner is the
+    // round's first finisher; a mid-round clear collects to the
+    // trick winner the controller captured as the trick cleared
+    // (TASK 049 — the engine nulls trick.lastPlayer in the act of
+    // clearing, so reading it here found nobody and the mid-round
+    // collect never fired).
     if (
       fx.pileMinis.size > 0 &&
       trick &&
@@ -372,7 +377,7 @@ export function endFx(fx: FxBegin, state: ControllerState, pile: PilePlays): voi
       const winner =
         state.phase !== "playing" && trick.finishOrder.length > 0
           ? trick.finishOrder[0]
-          : trick.lastPlayer;
+          : state.lastTrickWinner;
       if (winner !== null && winner !== undefined) collectGhost(fx, winner);
     }
 

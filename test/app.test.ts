@@ -11,7 +11,7 @@ import {
   emptyTrickView, applyToTrickView, describePlay, bombPenaltyLogLine, bombedBombLogLine,
   comebackLogLine, penaltyLine, matchInProgress,
   roundResultRows, scoreRows,
-  conjugate, seatVerb, playerErrorText, ENGINE_ERRORS, NO_SELECTION,
+  conjugate, seatVerb, playerErrorText, ENGINE_ERRORS, NO_SELECTION, SEAT_NAMES,
   bombPenaltyNet, bombPenaltyNoteLine,
   type SelectionCheck,
 } from "../src/ui/model.js";
@@ -414,6 +414,55 @@ test("controller: newMatch seed restores points and round (TASK 031)", () => {
     s.log.some((line) => line.startsWith("Round 4:")),
     "the saved round is the round dealt",
   );
+});
+
+test("controller: lastTrickWinner is the standing play's owner at every mid-round clear (TASK 049)", () => {
+  // Independent oracle: the winner of a cleared trick is whoever
+  // made the last play in the log before the clear — read off the
+  // log lines, not off any engine field (the engine's own record
+  // is nulled by the clear). A mid-round clear is an emission in
+  // phase "playing" whose trickId moved within the same round.
+  const playLine = /^(You|Mina|Kenji|Rosa) plays? /;
+  let prev: { trickId: number; roundId: number; phase: string } | null = null;
+  let clears = 0;
+  // One rng stream for the whole match (the runner's method):
+  // a fresh seededRng per deal would redeal the identical hands
+  // every round — and seed 101's first deal is an instant win.
+  const rng = seededRng(101);
+  const controller = createController({
+    schedule: sync,
+    dealHands: () => newDeal(rng),
+    onChange: (s) => {
+      if (
+        prev && s.phase === "playing" &&
+        s.trickId !== prev.trickId && s.roundId === prev.roundId && prev.phase === "playing"
+      ) {
+        clears++;
+        const plays = s.log.filter((line) => playLine.test(line));
+        const lastPlay = plays[plays.length - 1];
+        assert.ok(lastPlay, "a clear implies a standing play was logged");
+        const winner = SEAT_NAMES.indexOf(playLine.exec(lastPlay)![1] as string);
+        assert.equal(
+          s.lastTrickWinner, winner,
+          "the captured winner is the standing play's owner",
+        );
+      }
+      prev = { trickId: s.trickId, roundId: s.roundId, phase: s.phase };
+    },
+  });
+  controller.newMatch();
+  let guard = 0;
+  while (controller.state.phase !== "matchEnd") {
+    if (++guard > 200000) throw new Error("match never ended");
+    if (controller.state.phase === "roundEnd") { controller.continueRound(); continue; }
+    if (controller.state.phase === "playing") {
+      const action = controller.hint();
+      assert.ok(action);
+      if (action.type === "pass") controller.humanPass();
+      else assert.ok(controller.humanPlay(action.cards));
+    }
+  }
+  assert.ok(clears >= 50, `the sweep covered a real match's worth of clears (saw ${clears})`);
 });
 
 test("controller: a seeded start logs the resume line; an unseeded start logs the new-match line (TASK 039)", () => {
