@@ -99,6 +99,7 @@ completion.
 | 047 | Tests bundle — bomb-odds enumeration becomes a proven checked-in fixture (default suite 36.4s → 9.3s), coverage gaps closed (two instant-win hands in one deal; a save crossing 13 mid-round pins the round-end rule), Option C probe script checked into tools/probe/, CSS assertions compare parsed values with locked values still pinned — src/ byte-untouched | #49 | ✅ Merged · Live |
 | 048 | Build/docs bundle — README serve instructions, in-repo deploy script + test-only PR workflow, self-hosted Nunito (zero external requests), runner.js out of dist + 24 modulepreload links, docs drift fixed through Switch #10 | #50 | ✅ Merged · Live |
 | 049 | Restore the mid-round pile-collect animation — the trick winner is captured at trick clear (`lastTrickWinner`) so the pile minis collect to the winner mid-round again; round-end collect untouched, engine zero-diff, regression test fails on main | #51 | ✅ Merged · Live |
+| 050 | Bomb animation "Shockwave" (design A) — two gold rings expand from the played bomb cards with a radial felt pulse and a settle bounce on every bomb play (human + CPU); purely additive, engine zero-diff, reduced-motion fires nothing | #52 | ✅ Merged · Live |
 
 ## Play
 

@@ -1,9 +1,11 @@
 # TASK-050: Bomb animation — "Shockwave"
 
-Status: ASSIGNED (verifier). Build picked up by the foreman
-2026-11-06: builder commit bdf6bd8, PR #52 open at head
-ffa9e0aab209fb5f386700c508047a26b730700b; verification per
-tasks/VERIFY-050.md.
+Status: COMPLETE. PR #52 merged 97a9c88538cee66cf05658fef5db1a81590189fb
+(merge method, expectedHeadSha ffa9e0aab209fb5f386700c508047a26b730700b);
+verifier PASS on all 8 VERIFY-050 items (PR comment 6702396320);
+deployed 0c40c8b0-c0fc-4562-8599-3eb50e6ac51c; live root index.html,
+src/styles.css, src/main.js and src/dom/fx.js byte-match dist,
+`shockwaveBomb` / `fx-shockring` signature live. Suite 187/187.
 Suite baseline: 185.
 Source: John's FR 2026-11-04 ("i want to have a animation for
 bombs"). Animated mockups produced the same day
