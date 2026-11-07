@@ -1,5 +1,6 @@
 import type { ControllerState } from "../ui/controller.js";
 import type { Match } from "../engine/match.js";
+import type { Card } from "../engine/cards.js";
 import { functionedAsBomb } from "../engine/bombs.js";
 import { HUMAN } from "../ui/model.js";
 import { els, el } from "./elements.js";
@@ -249,6 +250,128 @@ function collectGhost(fx: FxBegin, winner: number): void {
   }
 }
 
+// Shockwave (TASK 050 — design A, the owner's pick from the
+// 2026-11-04 mockups): when a bomb play lands, two gold rings
+// expand outward from the played cards across the felt, the felt
+// brightens in a radial gold pulse centered on the played cards,
+// and the played cards settle with a small overshoot bounce —
+// the independent `scale` property, so the bounce stacks on the
+// landing FLIP instead of fighting it. Spawned nodes live in the
+// fx layer and remove themselves; the final DOM is unchanged.
+// Fires only from endFx's play-landed branch, under the same
+// condition as the pile pulse it layers with — the standing play
+// changed AND the play functioned as a bomb — so passes,
+// non-bomb plays, re-renders of the standing play, and instant
+// wins (no play ever lands) never trigger it, and a bomb-vs-bomb
+// chain re-fires per bomb. Anchored on the played minis' landing
+// boxes as measured by the FLIP loop in endFx BEFORE it applies
+// the FLIP transform — a rectOf read after that would return the
+// mid-FLIP painted box (the cards halfway home), which is the
+// trap the mockup's layout-geometry rule exists to avoid.
+function shockwaveBomb(cards: Card[], landedRects: Map<string, RectLike>): void {
+  if (!motionAllowed()) return;
+  const layer = getFxLayer();
+  if (!layer) return;
+  const minis = cards
+    .map((c) => refs.pileMinis.get(c.id))
+    .filter((m): m is HTMLElement => m !== undefined);
+  if (minis.length === 0) return;
+  // A mini the FLIP loop skipped (no source rect) carries no FLIP
+  // transform, so its live rect already is its landing box.
+  const rects = cards
+    .map((c) => landedRects.get(c.id) ?? (() => {
+      const m = refs.pileMinis.get(c.id);
+      return m ? rectOf(m) : undefined;
+    })())
+    .filter((r): r is RectLike => r !== undefined);
+  if (rects.length === 0) return;
+  const left = Math.min(...rects.map((r) => r.left));
+  const top = Math.min(...rects.map((r) => r.top));
+  const right = Math.max(...rects.map((r) => r.left + r.width));
+  const bottom = Math.max(...rects.map((r) => r.top + r.height));
+  const cx = (left + right) / 2;
+  const cy = (top + bottom) / 2;
+
+  const fire = (
+    node: HTMLElement,
+    keyframes: Keyframe[],
+    options: KeyframeAnimationOptions,
+    cleanupMs: number,
+  ): void => {
+    try {
+      const anim = node.animate(keyframes, options);
+      anim.onfinish = () => node.remove();
+    } catch {
+      node.remove();
+      return;
+    }
+    setTimeout(() => node.remove(), cleanupMs); // belt-and-braces cleanup
+  };
+
+  // Two gold rings expand from the played cards.
+  const size = Math.max(40, bottom - top);
+  [0, 140].forEach((delay, i) => {
+    const ring = el("div", i === 0 ? "fx-shockring" : "fx-shockring two");
+    ring.style.left = `${cx - size / 2}px`;
+    ring.style.top = `${cy - size / 2}px`;
+    ring.style.width = `${size}px`;
+    ring.style.height = `${size}px`;
+    layer.append(ring);
+    fire(
+      ring,
+      [
+        { transform: "scale(.4)", opacity: 0 },
+        { transform: "scale(1)", opacity: 1, offset: 0.12 },
+        { transform: "scale(6.2)", opacity: 0 },
+      ],
+      { duration: 900, delay, easing: "cubic-bezier(.2,.7,.3,1)", fill: "backwards" },
+      1600,
+    );
+  });
+
+  // The felt brightens in a radial gold pulse centered on the
+  // played cards, spanning the table — measured as the union of
+  // the table's own landmarks (the three seats, your area, the
+  // pile), the elements the fx layer already tracks.
+  const felt = el("div", "fx-shockfelt");
+  const landmarks = [els.seats[1], els.seats[2], els.seats[3], els.youArea, els.toBeat]
+    .filter((n): n is HTMLElement => Boolean(n))
+    .map((n) => rectOf(n));
+  const fLeft = Math.min(...landmarks.map((r) => r.left));
+  const fTop = Math.min(...landmarks.map((r) => r.top));
+  const fRight = Math.max(...landmarks.map((r) => r.left + r.width));
+  const fBottom = Math.max(...landmarks.map((r) => r.top + r.height));
+  const fw = fRight - fLeft > 0 ? fRight - fLeft : (right - left) * 4;
+  const fh = fBottom - fTop > 0 ? fBottom - fTop : (bottom - top) * 6;
+  const fx0 = fRight - fLeft > 0 ? fLeft : cx - fw / 2;
+  const fy0 = fBottom - fTop > 0 ? fTop : cy - fh / 2;
+  felt.style.left = `${fx0}px`;
+  felt.style.top = `${fy0}px`;
+  felt.style.width = `${fw}px`;
+  felt.style.height = `${fh}px`;
+  const gx = fw > 0 ? (((cx - fx0) / fw) * 100).toFixed(2) : "50";
+  const gy = fh > 0 ? (((cy - fy0) / fh) * 100).toFixed(2) : "38";
+  felt.style.background =
+    `radial-gradient(circle at ${gx}% ${gy}%, rgba(255,222,120,.5) 0%, rgba(255,178,35,.22) 34%, rgba(255,178,35,0) 68%)`;
+  layer.append(felt);
+  fire(
+    felt,
+    [{ opacity: 0 }, { opacity: 1, offset: 0.25 }, { opacity: 0 }],
+    { duration: 750, easing: "ease-out" },
+    1200,
+  );
+
+  // The played cards settle with a small overshoot bounce.
+  for (const mini of minis) {
+    animate(mini, [
+      { scale: "1.16" },
+      { scale: "0.95", offset: 0.55 },
+      { scale: "1.03", offset: 0.8 },
+      { scale: "1" },
+    ], { duration: 520, delay: 290, easing: "ease-out" });
+  }
+}
+
 const DEAL_FRAMES: Keyframe[] = [
   { transform: "translateY(-18px) scale(.94)", opacity: 0 },
   { transform: "translateY(0) scale(1)", opacity: 1 },
@@ -295,11 +418,13 @@ export function endFx(fx: FxBegin, state: ControllerState, pile: PilePlays): voi
     if (trick?.currentPlay && fx.playKey !== pile.playKey) {
       const cp = trick.currentPlay;
       const seatRect = rectOf(els.seats[cp.player] ?? els.youArea);
+      const landedRects = new Map<string, RectLike>();
       for (const [id, mini] of refs.pileMinis) {
         const src =
           fx.handRects.get(id) ?? (cp.player !== HUMAN ? seatRect : undefined);
         if (!src) continue;
         const dst = rectOf(mini);
+        landedRects.set(id, dst);
         animate(mini, [
           {
             transform: `translate(${(src.left - dst.left) / stageScale()}px, ${(src.top - dst.top) / stageScale()}px) scale(1.05)`,
@@ -315,6 +440,7 @@ export function endFx(fx: FxBegin, state: ControllerState, pile: PilePlays): voi
           { transform: "scale(1.055)", offset: 0.4 },
           { transform: "scale(1)" },
         ], { duration: 380, easing: "ease-out" });
+        shockwaveBomb(cp.cards, landedRects);
       }
     }
 
