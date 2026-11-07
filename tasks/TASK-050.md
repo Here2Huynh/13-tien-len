@@ -1,7 +1,9 @@
 # TASK-050: Bomb animation — "Shockwave"
 
-Status: ASSIGNED (builder). Task 049 closed 2026-11-06
-(PR #51 merged, deployed); this is the next task in the queue.
+Status: ASSIGNED (verifier). Build picked up by the foreman
+2026-11-06: builder commit bdf6bd8, PR #52 open at head
+ffa9e0aab209fb5f386700c508047a26b730700b; verification per
+tasks/VERIFY-050.md.
 Suite baseline: 185.
 Source: John's FR 2026-11-04 ("i want to have a animation for
 bombs"). Animated mockups produced the same day
